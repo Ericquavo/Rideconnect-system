@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'dart:async';
 import 'home_page.dart';
-import 'book_ride_page.dart';
+import 'passenger_booking_flow_page.dart';
 import 'trips_page.dart';
 import 'notifications_page.dart';
 import 'profile_page.dart';
+import '../../services/passenger_language_service.dart';
+import '../../features/mobile/data/mobile_flow_api_service.dart';
 
 /// Main Passenger Dashboard — hosts the bottom navigation and all sub-pages.
 class PassengerDashboard extends StatefulWidget {
@@ -28,7 +31,32 @@ class _PassengerDashboardState extends State<PassengerDashboard> {
   bool _showNotificationsPage = false;
 
   // Unread notification badge count
-  int _notifCount = 3;
+  int _notifCount = 0;
+  final PassengerLanguageService _lang = PassengerLanguageService.instance;
+  Timer? _notificationTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    _lang.languageNotifier.addListener(_onLanguageChanged);
+    _refreshUnreadCount();
+    _notificationTimer = Timer.periodic(
+      const Duration(seconds: 20),
+      (_) => _refreshUnreadCount(),
+    );
+  }
+
+  @override
+  void dispose() {
+    _lang.languageNotifier.removeListener(_onLanguageChanged);
+    _notificationTimer?.cancel();
+    super.dispose();
+  }
+
+  void _onLanguageChanged() {
+    if (!mounted) return;
+    setState(() {});
+  }
 
   List<Widget> _buildPages() {
     return [
@@ -38,7 +66,7 @@ class _PassengerDashboardState extends State<PassengerDashboard> {
         notifCount: _notifCount,
         onOpenNotifications: _openNotifications,
       ),
-      BookRidePage(onBookingCompleted: _onBookingCompleted),
+      PassengerBookingFlowPage(onBookingCompleted: _onBookingCompleted),
       TripsPage(
         key: ValueKey(_tripsRefreshToken),
         bookingSuccessNonce: _bookingSuccessNonce,
@@ -56,7 +84,18 @@ class _PassengerDashboardState extends State<PassengerDashboard> {
   }
 
   Future<void> _openNotifications() async {
+    await _refreshUnreadCount();
     setState(() => _showNotificationsPage = true);
+  }
+
+  Future<void> _refreshUnreadCount() async {
+    try {
+      final unread = await mobileFlowApi.getUnreadCount();
+      if (!mounted) return;
+      setState(() => _notifCount = unread);
+    } catch (_) {
+      // Keep existing badge value on transient API failures.
+    }
   }
 
   @override
@@ -65,7 +104,10 @@ class _PassengerDashboardState extends State<PassengerDashboard> {
     final pages = _buildPages();
     Widget content =
         _showNotificationsPage
-            ? NotificationsPage(onRead: () => setState(() => _notifCount = 0))
+            ? NotificationsPage(
+              onRead: () => setState(() => _notifCount = 0),
+              onUnreadChanged: (count) => setState(() => _notifCount = count),
+            )
             : IndexedStack(index: _currentIndex, children: pages);
 
     if (!isDark) {
@@ -144,7 +186,7 @@ class _PassengerDashboardState extends State<PassengerDashboard> {
                 index: 0,
                 currentIndex: _currentIndex,
                 icon: Icons.home_rounded,
-                label: 'Home',
+                label: _lang.t('nav.home'),
                 activeColor: activeColor,
                 inactiveColor: inactiveColor,
                 onTap:
@@ -157,7 +199,7 @@ class _PassengerDashboardState extends State<PassengerDashboard> {
                 index: 1,
                 currentIndex: _currentIndex,
                 icon: Icons.directions_car_rounded,
-                label: 'Book',
+                label: _lang.t('nav.book'),
                 activeColor: activeColor,
                 inactiveColor: inactiveColor,
                 onTap:
@@ -170,7 +212,7 @@ class _PassengerDashboardState extends State<PassengerDashboard> {
                 index: 2,
                 currentIndex: _currentIndex,
                 icon: Icons.receipt_long_rounded,
-                label: 'Trips',
+                label: _lang.t('nav.trips'),
                 activeColor: activeColor,
                 inactiveColor: inactiveColor,
                 onTap:
@@ -183,7 +225,7 @@ class _PassengerDashboardState extends State<PassengerDashboard> {
                 index: 3,
                 currentIndex: _currentIndex,
                 icon: Icons.person_rounded,
-                label: 'Profile',
+                label: _lang.t('nav.profile'),
                 activeColor: activeColor,
                 inactiveColor: inactiveColor,
                 onTap:

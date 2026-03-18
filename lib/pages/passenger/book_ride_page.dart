@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../features/trips/data/passenger_trips_api_service.dart';
+import '../../services/passenger_language_service.dart';
 
 /// Book Ride screen — passenger selects pickup, destination and ride type.
 class BookRidePage extends StatefulWidget {
@@ -34,6 +35,7 @@ class _BookRidePageState extends State<BookRidePage> {
   bool _isRequesting = false;
   bool _isLoadingOptions = true;
   List<Map<String, dynamic>> _availableOptions = <Map<String, dynamic>>[];
+  PassengerLanguageService get _lang => PassengerLanguageService.instance;
 
   static const List<Map<String, dynamic>> _rideTypes = [
     {
@@ -62,6 +64,7 @@ class _BookRidePageState extends State<BookRidePage> {
   @override
   void initState() {
     super.initState();
+    _lang.languageNotifier.addListener(_onLanguageChanged);
 
     final seedPickup = widget.initialPickup?.trim();
     final seedDropoff = widget.initialDropoff?.trim();
@@ -88,10 +91,17 @@ class _BookRidePageState extends State<BookRidePage> {
 
   @override
   void dispose() {
+    _lang.languageNotifier.removeListener(_onLanguageChanged);
     _pickupController.dispose();
     _destinationController.dispose();
     _seatsController.dispose();
     super.dispose();
+  }
+
+  void _onLanguageChanged() {
+    if (mounted) {
+      setState(() {});
+    }
   }
 
   Future<void> _loadAvailableRides() async {
@@ -152,7 +162,7 @@ class _BookRidePageState extends State<BookRidePage> {
             borderRadius: BorderRadius.circular(12),
           ),
           content: Text(
-            'Please enter a pickup address',
+            _lang.t('book.enterPickup'),
             style: GoogleFonts.poppins(color: Colors.white70),
           ),
         ),
@@ -169,7 +179,7 @@ class _BookRidePageState extends State<BookRidePage> {
             borderRadius: BorderRadius.circular(12),
           ),
           content: Text(
-            'Please enter a dropoff address',
+            _lang.t('book.enterDropoff'),
             style: GoogleFonts.poppins(color: Colors.white70),
           ),
         ),
@@ -186,7 +196,7 @@ class _BookRidePageState extends State<BookRidePage> {
             borderRadius: BorderRadius.circular(12),
           ),
           content: Text(
-            'Seats must be between 1 and 8',
+            _lang.t('book.seatRangeError'),
             style: GoogleFonts.poppins(color: Colors.white70),
           ),
         ),
@@ -209,7 +219,7 @@ class _BookRidePageState extends State<BookRidePage> {
             borderRadius: BorderRadius.circular(12),
           ),
           content: Text(
-            'No backend ride_id found. Refresh available rides and try again.',
+            _lang.t('book.noRideIdError'),
             style: GoogleFonts.poppins(color: Colors.white70),
           ),
         ),
@@ -294,7 +304,7 @@ class _BookRidePageState extends State<BookRidePage> {
                   ),
                   const SizedBox(height: 16),
                   Text(
-                    'Ride Requested! 🚗',
+                    _lang.t('book.rideRequestedTitle'),
                     style: GoogleFonts.poppins(
                       color: Colors.white,
                       fontWeight: FontWeight.w700,
@@ -303,7 +313,13 @@ class _BookRidePageState extends State<BookRidePage> {
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    'Your $_selectedRide ride is confirmed.\nA driver will arrive in ${ride['eta']}.',
+                    _lang.t(
+                      'book.rideRequestedBody',
+                      args: <String, String>{
+                        'ride': _selectedRide,
+                        'eta': ride['eta'].toString(),
+                      },
+                    ),
                     textAlign: TextAlign.center,
                     style: GoogleFonts.poppins(
                       color: Colors.white54,
@@ -313,13 +329,19 @@ class _BookRidePageState extends State<BookRidePage> {
                   ),
                   const SizedBox(height: 20),
                   _InfoRow(
-                    label: 'Estimated Fare',
+                    label: _lang.t('book.estimatedFare'),
                     value: ride['price'] as String,
                   ),
-                  _InfoRow(label: 'ETA', value: ride['eta'] as String),
-                  _InfoRow(label: 'Seats', value: _seatsController.text.trim()),
                   _InfoRow(
-                    label: 'Destination',
+                    label: _lang.t('book.eta'),
+                    value: ride['eta'] as String,
+                  ),
+                  _InfoRow(
+                    label: _lang.t('book.seats'),
+                    value: _seatsController.text.trim(),
+                  ),
+                  _InfoRow(
+                    label: _lang.t('book.destination'),
                     value: _destinationController.text.trim(),
                   ),
                   const SizedBox(height: 20),
@@ -327,7 +349,7 @@ class _BookRidePageState extends State<BookRidePage> {
                     width: double.infinity,
                     height: 50,
                     child: _GradientButton(
-                      label: 'Track Driver',
+                      label: _lang.t('book.trackDriver'),
                       onTap: () {
                         Navigator.pop(context);
                         _handleBookingCompleted();
@@ -364,7 +386,10 @@ class _BookRidePageState extends State<BookRidePage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _buildPageTitle('Book a Ride', Icons.directions_car_rounded),
+              _buildPageTitle(
+                _lang.t('book.title'),
+                Icons.directions_car_rounded,
+              ),
               if (_isLoadingOptions) const SizedBox(height: 10),
               if (_isLoadingOptions)
                 const LinearProgressIndicator(minHeight: 2),
@@ -442,7 +467,7 @@ class _BookRidePageState extends State<BookRidePage> {
                 borderRadius: BorderRadius.circular(16),
               ),
               child: Text(
-                'Tap to set on map',
+                _lang.t('book.tapToSetOnMap'),
                 style: GoogleFonts.poppins(color: Colors.white, fontSize: 11),
               ),
             ),
@@ -464,7 +489,7 @@ class _BookRidePageState extends State<BookRidePage> {
         children: [
           _LocationField(
             controller: _pickupController,
-            hint: 'Pickup location',
+            hint: _lang.t('book.pickupHint'),
             icon: Icons.radio_button_checked_rounded,
             iconColor: const Color(0xFF10B981),
           ),
@@ -483,7 +508,7 @@ class _BookRidePageState extends State<BookRidePage> {
           ),
           _LocationField(
             controller: _destinationController,
-            hint: 'Dropoff address',
+            hint: _lang.t('book.dropoffHint'),
             icon: Icons.location_on_rounded,
             iconColor: const Color(0xFF6C63FF),
           ),
@@ -502,7 +527,7 @@ class _BookRidePageState extends State<BookRidePage> {
           ),
           _LocationField(
             controller: _seatsController,
-            hint: 'Seats (1-8)',
+            hint: _lang.t('book.seatsHint'),
             icon: Icons.event_seat_rounded,
             iconColor: const Color(0xFFFBBF24),
             keyboardType: TextInputType.number,
@@ -519,7 +544,7 @@ class _BookRidePageState extends State<BookRidePage> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          'Choose Ride Type',
+          _lang.t('book.chooseRideType'),
           style: GoogleFonts.poppins(
             color: Colors.white,
             fontWeight: FontWeight.w600,
@@ -608,13 +633,22 @@ class _BookRidePageState extends State<BookRidePage> {
       ),
       child: Column(
         children: [
-          _InfoRow(label: 'Estimated Fare', value: ride['price'] as String),
+          _InfoRow(
+            label: _lang.t('book.estimatedFare'),
+            value: ride['price'] as String,
+          ),
           const SizedBox(height: 10),
-          _InfoRow(label: 'Estimated Arrival', value: ride['eta'] as String),
+          _InfoRow(
+            label: _lang.t('book.estimatedArrival'),
+            value: ride['eta'] as String,
+          ),
           const SizedBox(height: 10),
-          _InfoRow(label: 'Seats', value: _seatsController.text.trim()),
+          _InfoRow(
+            label: _lang.t('book.seats'),
+            value: _seatsController.text.trim(),
+          ),
           const SizedBox(height: 10),
-          _InfoRow(label: 'Ride Type', value: _selectedRide),
+          _InfoRow(label: _lang.t('book.rideType'), value: _selectedRide),
         ],
       ),
     );
@@ -663,7 +697,9 @@ class _BookRidePageState extends State<BookRidePage> {
                     size: 20,
                   ),
           label: Text(
-            _isRequesting ? 'Finding Driver...' : 'Request Ride',
+            _isRequesting
+                ? _lang.t('book.findingDriver')
+                : _lang.t('book.requestRide'),
             style: GoogleFonts.poppins(
               fontSize: 16,
               fontWeight: FontWeight.w600,

@@ -4,6 +4,7 @@ import '../../auth/auth_api.dart';
 import '../../auth/auth_session.dart';
 import '../../services/passenger_api.dart';
 import '../../services/app_theme_service.dart';
+import '../../services/passenger_language_service.dart';
 import '../login_page.dart';
 import 'settings/settings_theme.dart';
 import 'settings/edit_profile_page.dart';
@@ -26,6 +27,14 @@ class ProfilePage extends StatefulWidget {
 }
 
 class _ProfilePageState extends State<ProfilePage> {
+  static const String _idEditProfile = 'editProfile';
+  static const String _idPaymentMethods = 'paymentMethods';
+  static const String _idRidePreferences = 'ridePreferences';
+  static const String _idAppSettings = 'appSettings';
+  static const String _idHelpSupport = 'helpSupport';
+  static const String _idPrivacyPolicy = 'privacyPolicy';
+  static const String _idRateApp = 'rateApp';
+
   bool _darkMode = AppThemeService.isDarkMode;
   bool _notifications = true;
   bool _locationSharing = true;
@@ -36,37 +45,49 @@ class _ProfilePageState extends State<ProfilePage> {
   int _totalRides = 0;
   double _totalSpent = 0;
   double _avgRating = 0;
+  final PassengerLanguageService _lang = PassengerLanguageService.instance;
 
   static const _settingsItems = [
-    {'icon': Icons.edit_rounded, 'label': 'Edit Profile', 'color': 0xFF6C63FF},
     {
-      'icon': Icons.payment_rounded,
-      'label': 'Payment Methods',
-      'color': 0xFF3B82F6,
-    },
-    {
-      'icon': Icons.tune_rounded,
-      'label': 'Ride Preferences',
-      'color': 0xFF10B981,
-    },
-    {
-      'icon': Icons.settings_rounded,
-      'label': 'App Settings',
+      'id': _idEditProfile,
+      'icon': Icons.edit_rounded,
+      'labelKey': 'settings.editProfile',
       'color': 0xFF6C63FF,
     },
     {
-      'icon': Icons.help_outline_rounded,
-      'label': 'Help & Support',
+      'id': _idPaymentMethods,
+      'icon': Icons.payment_rounded,
+      'labelKey': 'settings.paymentMethods',
       'color': 0xFF3B82F6,
     },
     {
-      'icon': Icons.privacy_tip_outlined,
-      'label': 'Privacy Policy',
+      'id': _idRidePreferences,
+      'icon': Icons.tune_rounded,
+      'labelKey': 'settings.ridePreferences',
       'color': 0xFF10B981,
     },
     {
+      'id': _idAppSettings,
+      'icon': Icons.settings_rounded,
+      'labelKey': 'settings.title',
+      'color': 0xFF6C63FF,
+    },
+    {
+      'id': _idHelpSupport,
+      'icon': Icons.help_outline_rounded,
+      'labelKey': 'settings.help',
+      'color': 0xFF3B82F6,
+    },
+    {
+      'id': _idPrivacyPolicy,
+      'icon': Icons.privacy_tip_outlined,
+      'labelKey': 'settings.privacy',
+      'color': 0xFF10B981,
+    },
+    {
+      'id': _idRateApp,
       'icon': Icons.star_outline_rounded,
-      'label': 'Rate RideConnect',
+      'labelKey': 'settings.rate',
       'color': 0xFFFBBF24,
     },
   ];
@@ -79,12 +100,19 @@ class _ProfilePageState extends State<ProfilePage> {
     _loadProfile();
     _loadSummary();
     AppThemeService.themeModeNotifier.addListener(_syncDarkModeFromAppTheme);
+    _lang.languageNotifier.addListener(_onLanguageChanged);
   }
 
   @override
   void dispose() {
     AppThemeService.themeModeNotifier.removeListener(_syncDarkModeFromAppTheme);
+    _lang.languageNotifier.removeListener(_onLanguageChanged);
     super.dispose();
+  }
+
+  void _onLanguageChanged() {
+    if (!mounted) return;
+    setState(() {});
   }
 
   void _syncDarkModeFromAppTheme() {
@@ -207,7 +235,7 @@ class _ProfilePageState extends State<ProfilePage> {
         ),
         const SizedBox(width: 12),
         Text(
-          'Profile',
+          _lang.t('profile.title'),
           style: GoogleFonts.poppins(
             fontSize: 20,
             fontWeight: FontWeight.w700,
@@ -335,7 +363,7 @@ class _ProfilePageState extends State<ProfilePage> {
                       ),
                       const SizedBox(width: 4),
                       Text(
-                        'Verified Passenger',
+                        _lang.t('profile.verified'),
                         style: GoogleFonts.poppins(
                           color: const Color(0xFF10B981),
                           fontSize: 10,
@@ -365,19 +393,19 @@ class _ProfilePageState extends State<ProfilePage> {
     return Row(
       children: [
         _MiniStat(
-          label: 'Total Rides',
+          label: _lang.t('profile.totalRides'),
           value: ridesValue,
           icon: Icons.directions_car_rounded,
         ),
         const SizedBox(width: 12),
         _MiniStat(
-          label: 'Total Spent',
+          label: _lang.t('profile.totalSpent'),
           value: spentValue,
           icon: Icons.wallet_rounded,
         ),
         const SizedBox(width: 12),
         _MiniStat(
-          label: 'Avg Rating',
+          label: _lang.t('profile.avgRating'),
           value: ratingValue,
           icon: Icons.star_rounded,
         ),
@@ -397,7 +425,7 @@ class _ProfilePageState extends State<ProfilePage> {
         children: [
           _ToggleRow(
             icon: Icons.dark_mode_rounded,
-            label: 'Dark Mode',
+            label: _lang.t('profile.darkMode'),
             color: const Color(0xFF6C63FF),
             value: _darkMode,
             onChanged: (v) async {
@@ -408,7 +436,7 @@ class _ProfilePageState extends State<ProfilePage> {
           Divider(color: Colors.white.withValues(alpha: 0.07), height: 20),
           _ToggleRow(
             icon: Icons.notifications_rounded,
-            label: 'Push Notifications',
+            label: _lang.t('profile.pushNotifications'),
             color: const Color(0xFF3B82F6),
             value: _notifications,
             onChanged: (v) => setState(() => _notifications = v),
@@ -416,7 +444,7 @@ class _ProfilePageState extends State<ProfilePage> {
           Divider(color: Colors.white.withValues(alpha: 0.07), height: 20),
           _ToggleRow(
             icon: Icons.location_on_rounded,
-            label: 'Location Sharing',
+            label: _lang.t('profile.locationSharing'),
             color: const Color(0xFF10B981),
             value: _locationSharing,
             onChanged: (v) => setState(() => _locationSharing = v),
@@ -441,7 +469,7 @@ class _ProfilePageState extends State<ProfilePage> {
           return Column(
             children: [
               ListTile(
-                onTap: () => _openSettingPage(item['label'] as String),
+                onTap: () => _openSettingPage(item['id'] as String),
                 contentPadding: const EdgeInsets.symmetric(
                   horizontal: 18,
                   vertical: 4,
@@ -456,7 +484,7 @@ class _ProfilePageState extends State<ProfilePage> {
                   child: Icon(item['icon'] as IconData, color: color, size: 18),
                 ),
                 title: Text(
-                  item['label'] as String,
+                  _lang.t(item['labelKey'] as String),
                   style: GoogleFonts.poppins(
                     color: Colors.white70,
                     fontSize: 14,
@@ -482,9 +510,9 @@ class _ProfilePageState extends State<ProfilePage> {
     );
   }
 
-  Future<void> _openSettingPage(String label) async {
+  Future<void> _openSettingPage(String id) async {
     // Keep profile menu navigation centralized for easier maintenance.
-    if (label == 'Edit Profile') {
+    if (id == _idEditProfile) {
       final result = await Navigator.push<Map<String, dynamic>>(
         context,
         settingsRoute(
@@ -503,32 +531,32 @@ class _ProfilePageState extends State<ProfilePage> {
       return;
     }
 
-    if (label == 'Payment Methods') {
+    if (id == _idPaymentMethods) {
       await Navigator.push(context, settingsRoute(const PaymentMethodsPage()));
       return;
     }
 
-    if (label == 'Ride Preferences') {
+    if (id == _idRidePreferences) {
       await Navigator.push(context, settingsRoute(const RidePreferencesPage()));
       return;
     }
 
-    if (label == 'App Settings') {
+    if (id == _idAppSettings) {
       await Navigator.push(context, settingsRoute(const AppSettingsPage()));
       return;
     }
 
-    if (label == 'Help & Support') {
+    if (id == _idHelpSupport) {
       await Navigator.push(context, settingsRoute(const HelpSupportPage()));
       return;
     }
 
-    if (label == 'Privacy Policy') {
+    if (id == _idPrivacyPolicy) {
       await Navigator.push(context, settingsRoute(const PrivacyPolicyPage()));
       return;
     }
 
-    if (label == 'Rate RideConnect') {
+    if (id == _idRateApp) {
       await Navigator.push(context, settingsRoute(const RateAppPage()));
     }
   }
@@ -551,7 +579,7 @@ class _ProfilePageState extends State<ProfilePage> {
           size: 20,
         ),
         label: Text(
-          'Log Out',
+          _lang.t('profile.logout'),
           style: GoogleFonts.poppins(
             color: const Color(0xFFFF5E5B),
             fontWeight: FontWeight.w600,
@@ -598,7 +626,7 @@ class _ProfilePageState extends State<ProfilePage> {
                   ),
                   const SizedBox(height: 16),
                   Text(
-                    'Log Out?',
+                    _lang.t('profile.logoutTitle'),
                     style: GoogleFonts.poppins(
                       color: Colors.white,
                       fontWeight: FontWeight.w700,
@@ -607,7 +635,7 @@ class _ProfilePageState extends State<ProfilePage> {
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    'Are you sure you want to log out of RideConnect?',
+                    _lang.t('profile.logoutBody'),
                     textAlign: TextAlign.center,
                     style: GoogleFonts.poppins(
                       color: Colors.white54,
@@ -631,7 +659,7 @@ class _ProfilePageState extends State<ProfilePage> {
                             padding: const EdgeInsets.symmetric(vertical: 12),
                           ),
                           child: Text(
-                            'Cancel',
+                            _lang.t('common.cancel'),
                             style: GoogleFonts.poppins(
                               color: Colors.white70,
                               fontWeight: FontWeight.w500,
@@ -667,7 +695,7 @@ class _ProfilePageState extends State<ProfilePage> {
                                     ),
                                   )
                                   : Text(
-                                    'Log Out',
+                                    _lang.t('profile.logout'),
                                     style: GoogleFonts.poppins(
                                       color: Colors.white,
                                       fontWeight: FontWeight.w600,

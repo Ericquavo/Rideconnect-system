@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import '../../../services/passenger_language_service.dart';
 import 'settings_theme.dart';
 
 class RidePreferencesPage extends StatefulWidget {
@@ -19,8 +20,9 @@ class _RidePreferencesPageState extends State<RidePreferencesPage> {
   @override
   Widget build(BuildContext context) {
     final palette = SettingsPalette.of(context);
+    final lang = PassengerLanguageService.instance;
     return SettingsPageLayout(
-      title: 'Ride Preferences',
+      title: lang.t('settings.ridePreferences'),
       icon: Icons.tune_rounded,
       child: SingleChildScrollView(
         padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
@@ -31,7 +33,7 @@ class _RidePreferencesPageState extends State<RidePreferencesPage> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Preferred Ride Type',
+                    lang.t('ride.prefRideType'),
                     style: GoogleFonts.poppins(
                       color: palette.textPrimary,
                       fontWeight: FontWeight.w600,
@@ -67,21 +69,21 @@ class _RidePreferencesPageState extends State<RidePreferencesPage> {
                 children: [
                   _switchTile(
                     context,
-                    'Trip Updates Notifications',
+                    lang.t('ride.tripUpdates'),
                     _notifyTrip,
                     (v) => setState(() => _notifyTrip = v),
                   ),
                   Divider(color: palette.border),
                   _switchTile(
                     context,
-                    'Promotional Notifications',
+                    lang.t('ride.promoNotifications'),
                     _notifyPromo,
                     (v) => setState(() => _notifyPromo = v),
                   ),
                   Divider(color: palette.border),
                   _switchTile(
                     context,
-                    'Quiet Mode',
+                    lang.t('ride.quietMode'),
                     _quietMode,
                     (v) => setState(() => _quietMode = v),
                   ),
@@ -94,7 +96,7 @@ class _RidePreferencesPageState extends State<RidePreferencesPage> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Default Pickup Location',
+                    lang.t('ride.defaultPickup'),
                     style: GoogleFonts.poppins(
                       color: palette.textPrimary,
                       fontWeight: FontWeight.w600,
@@ -125,7 +127,7 @@ class _RidePreferencesPageState extends State<RidePreferencesPage> {
             ),
             const SizedBox(height: 18),
             BrandButton(
-              text: 'Save Preferences',
+              text: lang.t('ride.savePreferences'),
               icon: Icons.check_rounded,
               onPressed: () => Navigator.pop(context),
             ),

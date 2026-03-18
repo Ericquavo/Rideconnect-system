@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../../services/app_theme_service.dart';
+import '../../../services/passenger_language_service.dart';
 import 'settings_theme.dart';
 
 class AppSettingsPage extends StatefulWidget {
@@ -14,13 +15,30 @@ class _AppSettingsPageState extends State<AppSettingsPage> {
   bool _darkMode = AppThemeService.isDarkMode;
   bool _pushNotifications = true;
   bool _locationSharing = true;
-  String _language = 'English';
+  final PassengerLanguageService _lang = PassengerLanguageService.instance;
+
+  @override
+  void initState() {
+    super.initState();
+    _lang.languageNotifier.addListener(_onLanguageChanged);
+  }
+
+  @override
+  void dispose() {
+    _lang.languageNotifier.removeListener(_onLanguageChanged);
+    super.dispose();
+  }
+
+  void _onLanguageChanged() {
+    if (!mounted) return;
+    setState(() {});
+  }
 
   @override
   Widget build(BuildContext context) {
     final palette = SettingsPalette.of(context);
     return SettingsPageLayout(
-      title: 'App Settings',
+      title: _lang.t('settings.title'),
       icon: Icons.settings_rounded,
       child: SingleChildScrollView(
         padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
@@ -31,7 +49,7 @@ class _AppSettingsPageState extends State<AppSettingsPage> {
                 children: [
                   _switchTile(
                     context,
-                    'Dark Mode',
+                    _lang.t('profile.darkMode'),
                     _darkMode,
                     Icons.dark_mode_rounded,
                     (v) async {
@@ -42,7 +60,7 @@ class _AppSettingsPageState extends State<AppSettingsPage> {
                   Divider(color: palette.border),
                   _switchTile(
                     context,
-                    'Push Notifications',
+                    _lang.t('profile.pushNotifications'),
                     _pushNotifications,
                     Icons.notifications_rounded,
                     (v) => setState(() => _pushNotifications = v),
@@ -50,7 +68,7 @@ class _AppSettingsPageState extends State<AppSettingsPage> {
                   Divider(color: palette.border),
                   _switchTile(
                     context,
-                    'Location Sharing',
+                    _lang.t('profile.locationSharing'),
                     _locationSharing,
                     Icons.location_on_rounded,
                     (v) => setState(() => _locationSharing = v),
@@ -69,32 +87,32 @@ class _AppSettingsPageState extends State<AppSettingsPage> {
                   ),
                   const SizedBox(width: 10),
                   Expanded(
-                    child: Text(
-                      'Language',
+                    child: DropdownButton<PassengerLanguage>(
+                      value: _lang.current,
+                      isExpanded: true,
+                      dropdownColor: const Color(0xFF131729),
                       style: GoogleFonts.poppins(
                         color: palette.textPrimary,
                         fontWeight: FontWeight.w600,
                       ),
+                      underline: const SizedBox.shrink(),
+                      items:
+                          PassengerLanguage.values
+                              .map(
+                                (language) =>
+                                    DropdownMenuItem<PassengerLanguage>(
+                                      value: language,
+                                      child: Text(
+                                        _lang.languageLabel(language),
+                                      ),
+                                    ),
+                              )
+                              .toList(),
+                      onChanged: (v) async {
+                        if (v == null) return;
+                        await _lang.setLanguage(v);
+                      },
                     ),
-                  ),
-                  DropdownButton<String>(
-                    value: _language,
-                    underline: const SizedBox.shrink(),
-                    dropdownColor:
-                        palette.isDark ? const Color(0xFF1D2342) : Colors.white,
-                    items: const [
-                      DropdownMenuItem(
-                        value: 'English',
-                        child: Text('English'),
-                      ),
-                      DropdownMenuItem(value: 'French', child: Text('French')),
-                      DropdownMenuItem(
-                        value: 'Kinyarwanda',
-                        child: Text('Kinyarwanda'),
-                      ),
-                    ],
-                    onChanged:
-                        (v) => setState(() => _language = v ?? _language),
                   ),
                 ],
               ),

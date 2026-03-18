@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import '../../../services/passenger_language_service.dart';
 import 'settings_theme.dart';
 
 class EditProfilePage extends StatefulWidget {
@@ -53,8 +54,9 @@ class _EditProfilePageState extends State<EditProfilePage> {
   @override
   Widget build(BuildContext context) {
     final palette = SettingsPalette.of(context);
+    final lang = PassengerLanguageService.instance;
     return SettingsPageLayout(
-      title: 'Edit Profile',
+      title: lang.t('settings.editProfile'),
       icon: Icons.edit_rounded,
       child: SingleChildScrollView(
         padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
@@ -107,7 +109,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
                   ),
                   const SizedBox(height: 12),
                   Text(
-                    'Tap camera icon to change photo',
+                    lang.t('edit.tapCamera'),
                     style: GoogleFonts.poppins(
                       color: palette.textMuted,
                       fontSize: 12,
@@ -123,7 +125,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
                   _field(
                     context,
                     _nameCtrl,
-                    'Full Name',
+                    lang.t('edit.fullName'),
                     Icons.person_rounded,
                     TextInputType.name,
                   ),
@@ -131,7 +133,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
                   _field(
                     context,
                     _emailCtrl,
-                    'Email',
+                    lang.t('edit.email'),
                     Icons.email_rounded,
                     TextInputType.emailAddress,
                   ),
@@ -139,7 +141,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
                   _field(
                     context,
                     _phoneCtrl,
-                    'Phone Number',
+                    lang.t('edit.phone'),
                     Icons.phone_rounded,
                     TextInputType.phone,
                   ),
@@ -148,7 +150,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
             ),
             const SizedBox(height: 18),
             BrandButton(
-              text: _saving ? 'Updating...' : 'Update Profile',
+              text: _saving ? lang.t('edit.updating') : lang.t('edit.update'),
               icon: Icons.check_circle_rounded,
               onPressed: _saving ? null : _save,
             ),

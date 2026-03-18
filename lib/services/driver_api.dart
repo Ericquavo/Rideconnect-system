@@ -9,6 +9,8 @@ class DriverApi {
 
   static final DriverApi instance = DriverApi._();
 
+  static const String _rootBaseUrl =
+      'https://rideconnect-emp0.onrender.com/api/v1';
   static const String _baseUrl =
       'https://rideconnect-emp0.onrender.com/api/v1/driver';
   static const Duration _timeout = Duration(seconds: 20);
@@ -40,6 +42,36 @@ class DriverApi {
     return extractList(response, preferredKeys: const ['bookings']);
   }
 
+  Future<Map<String, dynamic>> confirmBooking(dynamic id) =>
+      _put('/bookings/$id/confirm', <String, dynamic>{});
+
+  Future<Map<String, dynamic>> cancelBooking(dynamic id) =>
+      _put('/bookings/$id/cancel', <String, dynamic>{});
+
+  Future<List<Map<String, dynamic>>> getNotifications() async {
+    final response = await _requestRoot('GET', '/notifications');
+    return extractList(
+      response,
+      preferredKeys: const ['notifications', 'items', 'results'],
+    );
+  }
+
+  Future<int> getUnreadNotificationCount() async {
+    final response = await _requestRoot('GET', '/notifications/unread-count');
+    final data = extractDataMap(response);
+    return readInt(data, const [
+      'unread_count',
+      'count',
+      'unread',
+    ], fallback: 0);
+  }
+
+  Future<Map<String, dynamic>> markNotificationRead(dynamic id) =>
+      _requestRoot('PUT', '/notifications/$id/read', body: <String, dynamic>{});
+
+  Future<Map<String, dynamic>> markAllNotificationsRead() =>
+      _requestRoot('PUT', '/notifications/read-all', body: <String, dynamic>{});
+
   Future<List<Map<String, dynamic>>> getTrips() async {
     final response = await _get('/trips');
     return extractList(response, preferredKeys: const ['trips', 'history']);
@@ -55,6 +87,11 @@ class DriverApi {
     return extractList(response, preferredKeys: const ['requests']);
   }
 
+  Future<List<Map<String, dynamic>>> getTripRequests() async {
+    final response = await _get('/trip-requests');
+    return extractList(response, preferredKeys: const ['requests']);
+  }
+
   Future<Map<String, dynamic>> acceptRequest(dynamic id) =>
       _put('/requests/$id/accept', <String, dynamic>{});
 
@@ -63,6 +100,12 @@ class DriverApi {
 
   Future<Map<String, dynamic>> completeRequest(dynamic id) =>
       _put('/requests/$id/complete', <String, dynamic>{});
+
+  Future<Map<String, dynamic>> startTrip(dynamic id) =>
+      _put('/trips/$id/start', <String, dynamic>{});
+
+  Future<Map<String, dynamic>> cancelTrip(dynamic id) =>
+      _put('/trips/$id/cancel', <String, dynamic>{});
 
   Future<Map<String, dynamic>> getEarnings() => _get('/earnings');
 
@@ -91,10 +134,17 @@ class DriverApi {
 
   Future<Map<String, dynamic>> _delete(String path) => _request('DELETE', path);
 
+  Future<Map<String, dynamic>> _requestRoot(
+    String method,
+    String path, {
+    Map<String, dynamic>? body,
+  }) => _request(method, path, body: body, useRootBaseUrl: true);
+
   Future<Map<String, dynamic>> _request(
     String method,
     String path, {
     Map<String, dynamic>? body,
+    bool useRootBaseUrl = false,
   }) async {
     final session = await AuthSession.load();
     final token = session?.token;
@@ -103,7 +153,7 @@ class DriverApi {
       throw Exception('No auth token found. Please login again.');
     }
 
-    final uri = Uri.parse('$_baseUrl$path');
+    final uri = Uri.parse('${useRootBaseUrl ? _rootBaseUrl : _baseUrl}$path');
     final headers = <String, String>{
       'Accept': 'application/json',
       'Authorization': 'Bearer ${token.trim()}',

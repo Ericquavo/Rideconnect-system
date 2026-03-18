@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import '../../../services/passenger_language_service.dart';
 import 'settings_theme.dart';
 
 class RateAppPage extends StatefulWidget {
@@ -23,8 +24,9 @@ class _RateAppPageState extends State<RateAppPage> {
   @override
   Widget build(BuildContext context) {
     final palette = SettingsPalette.of(context);
+    final lang = PassengerLanguageService.instance;
     return SettingsPageLayout(
-      title: 'Rate RideConnect',
+      title: lang.t('settings.rate'),
       icon: Icons.star_outline_rounded,
       child: SingleChildScrollView(
         padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
@@ -34,7 +36,7 @@ class _RateAppPageState extends State<RateAppPage> {
               child: Column(
                 children: [
                   Text(
-                    'How was your experience?',
+                    lang.t('rate.howWasExperience'),
                     style: GoogleFonts.poppins(
                       color: palette.textPrimary,
                       fontWeight: FontWeight.w700,
@@ -70,7 +72,7 @@ class _RateAppPageState extends State<RateAppPage> {
                       fontSize: 13,
                     ),
                     decoration: InputDecoration(
-                      hintText: 'Tell us what we can improve...',
+                      hintText: lang.t('rate.feedbackHint'),
                       hintStyle: GoogleFonts.poppins(color: palette.textMuted),
                       filled: true,
                       fillColor: palette.surface,
@@ -96,7 +98,7 @@ class _RateAppPageState extends State<RateAppPage> {
             ),
             const SizedBox(height: 16),
             BrandButton(
-              text: 'Submit Review',
+              text: lang.t('rate.submit'),
               icon: Icons.send_rounded,
               onPressed: () {
                 setState(() => _submitted = true);
@@ -104,7 +106,7 @@ class _RateAppPageState extends State<RateAppPage> {
                   SnackBar(
                     behavior: SnackBarBehavior.floating,
                     content: Text(
-                      'Thank you for helping improve RideConnect.',
+                      lang.t('rate.thanks'),
                       style: GoogleFonts.poppins(),
                     ),
                   ),
@@ -114,7 +116,7 @@ class _RateAppPageState extends State<RateAppPage> {
             if (_submitted) ...[
               const SizedBox(height: 10),
               Text(
-                'Thank you for helping improve RideConnect.',
+                lang.t('rate.thanks'),
                 style: GoogleFonts.poppins(
                   color: palette.textSecondary,
                   fontSize: 12,

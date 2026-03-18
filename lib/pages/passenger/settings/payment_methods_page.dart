@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import '../../../services/passenger_language_service.dart';
 import 'settings_theme.dart';
 
 class PaymentMethodsPage extends StatefulWidget {
@@ -34,8 +35,9 @@ class _PaymentMethodsPageState extends State<PaymentMethodsPage> {
   @override
   Widget build(BuildContext context) {
     final palette = SettingsPalette.of(context);
+    final lang = PassengerLanguageService.instance;
     return SettingsPageLayout(
-      title: 'Payment Methods',
+      title: lang.t('settings.paymentMethods'),
       icon: Icons.payment_rounded,
       child: Padding(
         padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
@@ -99,7 +101,7 @@ class _PaymentMethodsPageState extends State<PaymentMethodsPage> {
               ),
             ),
             BrandButton(
-              text: 'Add New Payment Method',
+              text: lang.t('payment.addMethod'),
               icon: Icons.add_card_rounded,
               onPressed: () {
                 ScaffoldMessenger.of(context).showSnackBar(

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import '../../../services/passenger_language_service.dart';
 import 'settings_theme.dart';
 
 class PrivacyPolicyPage extends StatelessWidget {
@@ -8,8 +9,9 @@ class PrivacyPolicyPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = SettingsPalette.of(context);
+    final lang = PassengerLanguageService.instance;
     return SettingsPageLayout(
-      title: 'Privacy Policy',
+      title: lang.t('settings.privacy'),
       icon: Icons.privacy_tip_outlined,
       child: Padding(
         padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),

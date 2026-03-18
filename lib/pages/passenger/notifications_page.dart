@@ -1,84 +1,129 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../../features/mobile/data/mobile_flow_api_service.dart';
+import '../../services/passenger_language_service.dart';
+
 /// Notifications screen — shows ride, payment and promo alerts.
 class NotificationsPage extends StatefulWidget {
   final VoidCallback onRead;
-  const NotificationsPage({super.key, required this.onRead});
+  final ValueChanged<int>? onUnreadChanged;
+
+  const NotificationsPage({
+    super.key,
+    required this.onRead,
+    this.onUnreadChanged,
+  });
 
   @override
   State<NotificationsPage> createState() => _NotificationsPageState();
 }
 
 class _NotificationsPageState extends State<NotificationsPage> {
-  final List<Map<String, dynamic>> _notifications = [
-    {
-      'title': 'Ride Confirmed 🚗',
-      'body': 'Your Economy ride with Ahmed K. has been confirmed. ETA: 4 min.',
-      'time': 'Just now',
-      'icon': Icons.directions_car_rounded,
-      'color': 0xFF3B82F6,
-      'read': false,
-    },
-    {
-      'title': 'Driver Arrived 📍',
-      'body': 'Your driver Sara M. has arrived at your pickup location.',
-      'time': '2 min ago',
-      'icon': Icons.location_on_rounded,
-      'color': 0xFF10B981,
-      'read': false,
-    },
-    {
-      'title': 'Payment Successful 💳',
-      'body': '\$12.50 was charged for your trip to Airport Terminal 1.',
-      'time': '1 hour ago',
-      'icon': Icons.payment_rounded,
-      'color': 0xFF6C63FF,
-      'read': false,
-    },
-    {
-      'title': 'Special Offer 🎉',
-      'body':
-          'Use code RIDE20 and get 20% off your next 3 rides. Limited time!',
-      'time': '3 hours ago',
-      'icon': Icons.local_offer_rounded,
-      'color': 0xFFFBBF24,
-      'read': true,
-    },
-    {
-      'title': 'Ride Completed ✅',
-      'body': 'You have successfully completed a ride to University Campus.',
-      'time': 'Yesterday',
-      'icon': Icons.check_circle_rounded,
-      'color': 0xFF10B981,
-      'read': true,
-    },
-    {
-      'title': 'New Feature Available ✨',
-      'body':
-          'RideConnect now supports scheduled rides. Plan your trips ahead!',
-      'time': '2 days ago',
-      'icon': Icons.new_releases_rounded,
-      'color': 0xFF6C63FF,
-      'read': true,
-    },
-  ];
-
+  final PassengerLanguageService _lang = PassengerLanguageService.instance;
+  List<MobileNotificationItem> _notifications = <MobileNotificationItem>[];
   bool _allRead = false;
+  bool _loading = true;
+  String? _error;
 
-  void _markAllRead() {
+  @override
+  void initState() {
+    super.initState();
+    _loadNotifications();
+  }
+
+  Future<void> _loadNotifications() async {
     setState(() {
-      for (var n in _notifications) {
-        n['read'] = true;
-      }
-      _allRead = true;
+      _loading = true;
+      _error = null;
     });
-    widget.onRead();
+
+    try {
+      final items = await mobileFlowApi.getNotifications();
+      if (!mounted) return;
+
+      final unread = items.where((n) => !n.read).length;
+      widget.onUnreadChanged?.call(unread);
+
+      setState(() {
+        _notifications = items;
+        _allRead = unread == 0;
+        _loading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _error = e.toString().replaceFirst('Exception: ', '');
+      });
+    }
+  }
+
+  Future<void> _markAllRead() async {
+    try {
+      await mobileFlowApi.markAllNotificationsRead();
+      setState(() {
+        _notifications =
+            _notifications
+                .map(
+                  (n) => MobileNotificationItem(
+                    id: n.id,
+                    type: n.type,
+                    title: n.title,
+                    body: n.body,
+                    createdAt: n.createdAt,
+                    read: true,
+                  ),
+                )
+                .toList();
+        _allRead = true;
+      });
+      widget.onUnreadChanged?.call(0);
+      widget.onRead();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.toString().replaceFirst('Exception: ', ''))),
+      );
+    }
+  }
+
+  Future<void> _markSingleRead(MobileNotificationItem item) async {
+    if (item.read) return;
+    try {
+      await mobileFlowApi.markNotificationRead(item.id);
+      if (!mounted) return;
+      setState(() {
+        _notifications =
+            _notifications
+                .map(
+                  (n) =>
+                      n.id == item.id
+                          ? MobileNotificationItem(
+                            id: n.id,
+                            type: n.type,
+                            title: n.title,
+                            body: n.body,
+                            createdAt: n.createdAt,
+                            read: true,
+                          )
+                          : n,
+                )
+                .toList();
+      });
+      final unread = _notifications.where((n) => !n.read).length;
+      widget.onUnreadChanged?.call(unread);
+      if (unread == 0) {
+        widget.onRead();
+      }
+    } catch (_) {
+      // Ignore transient per-item read failures.
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final unread = _notifications.where((n) => !(n['read'] as bool)).length;
+    final unreadCount = _notifications.where((n) => !n.read).length;
 
     return Container(
       decoration: const BoxDecoration(
@@ -101,7 +146,9 @@ class _NotificationsPageState extends State<NotificationsPage> {
                       Container(
                         padding: const EdgeInsets.all(10),
                         decoration: BoxDecoration(
-                          color: const Color(0xFF6C63FF).withValues(alpha: 0.15),
+                          color: const Color(
+                            0xFF6C63FF,
+                          ).withValues(alpha: 0.15),
                           borderRadius: BorderRadius.circular(12),
                         ),
                         child: const Icon(
@@ -115,16 +162,19 @@ class _NotificationsPageState extends State<NotificationsPage> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            'Notifications',
+                            _lang.t('notifications.title'),
                             style: GoogleFonts.poppins(
                               fontSize: 20,
                               fontWeight: FontWeight.w700,
                               color: Colors.white,
                             ),
                           ),
-                          if (unread > 0)
+                          if (unreadCount > 0)
                             Text(
-                              '$unread unread',
+                              _lang.t(
+                                'notifications.unread',
+                                args: {'count': '$unreadCount'},
+                              ),
                               style: GoogleFonts.poppins(
                                 fontSize: 12,
                                 color: const Color(0xFF6C63FF),
@@ -134,7 +184,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
                       ),
                     ],
                   ),
-                  if (!_allRead && unread > 0)
+                  if (!_allRead && unreadCount > 0)
                     GestureDetector(
                       onTap: _markAllRead,
                       child: Container(
@@ -143,14 +193,18 @@ class _NotificationsPageState extends State<NotificationsPage> {
                           vertical: 7,
                         ),
                         decoration: BoxDecoration(
-                          color: const Color(0xFF6C63FF).withValues(alpha: 0.15),
+                          color: const Color(
+                            0xFF6C63FF,
+                          ).withValues(alpha: 0.15),
                           borderRadius: BorderRadius.circular(10),
                           border: Border.all(
-                            color: const Color(0xFF6C63FF).withValues(alpha: 0.3),
+                            color: const Color(
+                              0xFF6C63FF,
+                            ).withValues(alpha: 0.3),
                           ),
                         ),
                         child: Text(
-                          'Mark all read',
+                          _lang.t('notifications.markAllRead'),
                           style: GoogleFonts.poppins(
                             color: const Color(0xFF6C63FF),
                             fontSize: 11,
@@ -163,27 +217,95 @@ class _NotificationsPageState extends State<NotificationsPage> {
               ),
             ),
             Expanded(
-              child: ListView.builder(
-                padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
-                itemCount: _notifications.length,
-                itemBuilder: (_, i) {
-                  final n = _notifications[i];
-                  return _NotifCard(
-                    title: n['title'] as String,
-                    body: n['body'] as String,
-                    time: n['time'] as String,
-                    icon: n['icon'] as IconData,
-                    color: Color(n['color'] as int),
-                    isRead: n['read'] as bool,
-                    onTap: () => setState(() => n['read'] = true),
-                  );
-                },
-              ),
+              child:
+                  _loading
+                      ? const Center(
+                        child: CircularProgressIndicator(
+                          color: Color(0xFF6C63FF),
+                        ),
+                      )
+                      : _error != null
+                      ? Center(
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 24),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                _error!,
+                                textAlign: TextAlign.center,
+                                style: GoogleFonts.poppins(
+                                  color: Colors.white70,
+                                ),
+                              ),
+                              const SizedBox(height: 10),
+                              OutlinedButton(
+                                onPressed: _loadNotifications,
+                                child: Text(_lang.t('common.retry')),
+                              ),
+                            ],
+                          ),
+                        ),
+                      )
+                      : ListView.builder(
+                        padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+                        itemCount: _notifications.length,
+                        itemBuilder: (_, i) {
+                          final n = _notifications[i];
+                          return _NotifCard(
+                            title: n.title,
+                            body: n.body,
+                            time: _relativeTime(n.createdAt),
+                            icon: _iconForType(n.type),
+                            color: _colorForType(n.type),
+                            isRead: n.read,
+                            onTap: () => _markSingleRead(n),
+                          );
+                        },
+                      ),
             ),
           ],
         ),
       ),
     );
+  }
+
+  IconData _iconForType(String type) {
+    final lower = type.toLowerCase();
+    if (lower.contains('booking')) return Icons.book_online_rounded;
+    if (lower.contains('trip')) return Icons.route_rounded;
+    if (lower.contains('cancel')) return Icons.cancel_rounded;
+    if (lower.contains('payment')) return Icons.payment_rounded;
+    return Icons.notifications_rounded;
+  }
+
+  Color _colorForType(String type) {
+    final lower = type.toLowerCase();
+    if (lower.contains('accepted') || lower.contains('confirmed')) {
+      return const Color(0xFF10B981);
+    }
+    if (lower.contains('reject') || lower.contains('cancel')) {
+      return const Color(0xFFFF5E5B);
+    }
+    if (lower.contains('trip')) return const Color(0xFF3B82F6);
+    return const Color(0xFF6C63FF);
+  }
+
+  String _relativeTime(DateTime? value) {
+    if (value == null) return _lang.t('notifications.justNow');
+    final now = DateTime.now();
+    final diff = now.difference(value);
+    if (diff.inMinutes < 1) return _lang.t('notifications.justNow');
+    if (diff.inMinutes < 60) {
+      return _lang.t(
+        'notifications.minutesAgo',
+        args: {'m': '${diff.inMinutes}'},
+      );
+    }
+    if (diff.inHours < 24) {
+      return _lang.t('notifications.hoursAgo', args: {'h': '${diff.inHours}'});
+    }
+    return _lang.t('notifications.daysAgo', args: {'d': '${diff.inDays}'});
   }
 }
 
@@ -217,7 +339,9 @@ class _NotifCard extends StatelessWidget {
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
           color:
-              isRead ? Colors.white.withValues(alpha: 0.04) : color.withValues(alpha: 0.08),
+              isRead
+                  ? Colors.white.withValues(alpha: 0.04)
+                  : color.withValues(alpha: 0.08),
           borderRadius: BorderRadius.circular(16),
           border: Border.all(
             color:
@@ -290,7 +414,10 @@ class _NotifCard extends StatelessWidget {
                   color: color,
                   shape: BoxShape.circle,
                   boxShadow: [
-                    BoxShadow(color: color.withValues(alpha: 0.5), blurRadius: 6),
+                    BoxShadow(
+                      color: color.withValues(alpha: 0.5),
+                      blurRadius: 6,
+                    ),
                   ],
                 ),
               ),

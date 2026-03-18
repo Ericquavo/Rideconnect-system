@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../auth/auth_api.dart';
@@ -15,6 +17,8 @@ import 'driver_help_page.dart';
 import 'driver_payout_page.dart';
 import 'driver_settings_page.dart';
 import 'driver_vehicle_info_page.dart';
+import 'driver_booking_queue_page.dart';
+import 'driver_notifications_page.dart';
 
 class DriverDashboard extends StatefulWidget {
   final String driverName;
@@ -33,6 +37,8 @@ class DriverDashboard extends StatefulWidget {
 class _DriverDashboardState extends State<DriverDashboard> {
   int _currentIndex = 0;
   bool _isOnline = true;
+  int _notificationUnreadCount = 0;
+  Timer? _notificationTimer;
   final DriverLanguageService _lang = DriverLanguageService.instance;
 
   @override
@@ -40,11 +46,17 @@ class _DriverDashboardState extends State<DriverDashboard> {
     super.initState();
     _lang.ensureInitialized();
     _lang.languageNotifier.addListener(_onLanguageChanged);
+    _refreshUnreadNotifications();
+    _notificationTimer = Timer.periodic(
+      const Duration(seconds: 20),
+      (_) => _refreshUnreadNotifications(),
+    );
   }
 
   @override
   void dispose() {
     _lang.languageNotifier.removeListener(_onLanguageChanged);
+    _notificationTimer?.cancel();
     super.dispose();
   }
 
@@ -106,6 +118,29 @@ class _DriverDashboardState extends State<DriverDashboard> {
     ).push(MaterialPageRoute(builder: (_) => const DriverHelpPage()));
   }
 
+  Future<void> _openBookingQueue() async {
+    await Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => const DriverBookingQueuePage()));
+  }
+
+  Future<void> _openNotifications() async {
+    await Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => const DriverNotificationsPage()));
+    await _refreshUnreadNotifications();
+  }
+
+  Future<void> _refreshUnreadNotifications() async {
+    try {
+      final unread = await DriverApi.instance.getUnreadNotificationCount();
+      if (!mounted) return;
+      setState(() => _notificationUnreadCount = unread);
+    } catch (_) {
+      // Keep the previous badge count on transient API failures.
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -130,11 +165,14 @@ class _DriverDashboardState extends State<DriverDashboard> {
       DriverProfilePage(
         driverName: widget.driverName,
         driverEmail: widget.driverEmail,
+        unreadNotificationCount: _notificationUnreadCount,
         isOnline: _isOnline,
         onStatusChanged: _handleStatusChanged,
         onEditProfileTap: _openEditProfile,
         onVehicleInfoTap: _openVehicleInfo,
         onPayoutTap: _openPayout,
+        onBookingQueueTap: _openBookingQueue,
+        onNotificationsTap: _openNotifications,
         onSettingsTap: _openSettings,
         onHelpTap: _openHelp,
         onLogout: () => _logout(context),
@@ -219,6 +257,7 @@ class _DriverDashboardState extends State<DriverDashboard> {
                 label: _lang.t('nav.profile'),
                 activeColor: activeColor,
                 inactiveColor: inactiveColor,
+                badgeCount: _notificationUnreadCount,
                 onTap: (i) => setState(() => _currentIndex = i),
               ),
             ],
@@ -253,6 +292,7 @@ class _NavItem extends StatelessWidget {
   final String label;
   final Color activeColor;
   final Color inactiveColor;
+  final int badgeCount;
   final void Function(int) onTap;
 
   const _NavItem({
@@ -262,6 +302,7 @@ class _NavItem extends StatelessWidget {
     required this.label,
     required this.activeColor,
     required this.inactiveColor,
+    this.badgeCount = 0,
     required this.onTap,
   });
 
@@ -283,7 +324,50 @@ class _NavItem extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, color: isActive ? activeColor : inactiveColor, size: 22),
+            Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Icon(
+                  icon,
+                  color: isActive ? activeColor : inactiveColor,
+                  size: 22,
+                ),
+                if (badgeCount > 0)
+                  Positioned(
+                    right: -7,
+                    top: -6,
+                    child: Container(
+                      constraints: const BoxConstraints(
+                        minWidth: 16,
+                        minHeight: 16,
+                      ),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 4,
+                        vertical: 1,
+                      ),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFF5E5B),
+                        borderRadius: BorderRadius.circular(999),
+                        border: Border.all(
+                          color: Theme.of(context).scaffoldBackgroundColor,
+                          width: 1,
+                        ),
+                      ),
+                      child: Center(
+                        child: Text(
+                          badgeCount > 99 ? '99+' : '$badgeCount',
+                          style: GoogleFonts.poppins(
+                            color: Colors.white,
+                            fontSize: 8,
+                            fontWeight: FontWeight.w700,
+                            height: 1.1,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
             const SizedBox(height: 4),
             Text(
               label,

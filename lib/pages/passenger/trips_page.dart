@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 
 import 'book_ride_page.dart';
 import '../../features/trips/data/passenger_trips_api_service.dart';
+import '../../services/passenger_language_service.dart';
 
 class TripsPage extends StatefulWidget {
   final int bookingSuccessNonce;
@@ -16,6 +17,7 @@ class TripsPage extends StatefulWidget {
 
 class _TripsPageState extends State<TripsPage>
     with SingleTickerProviderStateMixin {
+  PassengerLanguageService get _lang => PassengerLanguageService.instance;
   late TabController _tabController;
   int _lastShownBookingNonce = 0;
   bool _highlightNewestActive = false;
@@ -33,14 +35,22 @@ class _TripsPageState extends State<TripsPage>
   @override
   void initState() {
     super.initState();
+    _lang.languageNotifier.addListener(_onLanguageChanged);
     _tabController = TabController(length: 2, vsync: this);
     _loadTrips();
   }
 
   @override
   void dispose() {
+    _lang.languageNotifier.removeListener(_onLanguageChanged);
     _tabController.dispose();
     super.dispose();
+  }
+
+  void _onLanguageChanged() {
+    if (mounted) {
+      setState(() {});
+    }
   }
 
   Future<void> _loadTrips() async {
@@ -87,8 +97,7 @@ class _TripsPageState extends State<TripsPage>
               ? e.message
               : e.toString().replaceFirst('Exception: ', '');
       if (_isHistoryRouteConflict(message)) {
-        historyError =
-            'History endpoint has a backend route conflict right now. Active trips are still live.';
+        historyError = _lang.t('trips.historyConflict');
       } else {
         historyError = message;
       }
@@ -110,7 +119,10 @@ class _TripsPageState extends State<TripsPage>
 
     String? uiError;
     if (activeError != null && historyError != null) {
-      uiError = 'Failed to load trips. $activeError';
+      uiError = _lang.t(
+        'trips.loadFailed',
+        args: <String, String>{'error': activeError},
+      );
     } else if (historyError != null) {
       uiError = historyError;
     } else if (activeError != null) {
@@ -136,7 +148,7 @@ class _TripsPageState extends State<TripsPage>
           backgroundColor: const Color(0xFF131729),
           behavior: SnackBarBehavior.floating,
           content: Text(
-            'Booking submitted. Active trips updated.',
+            _lang.t('trips.bookingUpdated'),
             style: GoogleFonts.poppins(color: Colors.white70),
           ),
         ),
@@ -244,7 +256,7 @@ class _TripsPageState extends State<TripsPage>
   }
 
   String _statusLabel(String value) {
-    if (value == 'all') return 'All';
+    if (value == 'all') return _lang.t('common.all');
     final text = value.replaceAll('_', ' ');
     return text
         .split(' ')
@@ -345,7 +357,7 @@ class _TripsPageState extends State<TripsPage>
     final rideId = trip['id'];
     if (rideId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Ride details are unavailable.')),
+        SnackBar(content: Text(_lang.t('trips.detailsUnavailable'))),
       );
       return;
     }
@@ -451,7 +463,7 @@ class _TripsPageState extends State<TripsPage>
                           ),
                           TextButton(
                             onPressed: _loadTrips,
-                            child: const Text('Retry'),
+                            child: Text(_lang.t('common.retry')),
                           ),
                         ],
                       ),
@@ -504,7 +516,7 @@ class _TripsPageState extends State<TripsPage>
         ),
         const SizedBox(width: 12),
         Text(
-          'My Trips',
+          _lang.t('trips.myTrips'),
           style: GoogleFonts.poppins(
             fontSize: 20,
             fontWeight: FontWeight.w700,
@@ -528,21 +540,21 @@ class _TripsPageState extends State<TripsPage>
     return Row(
       children: [
         _StatCard(
-          label: 'Total Trips',
+          label: _lang.t('trips.totalTrips'),
           value: '${_trips.length}',
           icon: Icons.directions_car_rounded,
           color: const Color(0xFF3B82F6),
         ),
         const SizedBox(width: 12),
         _StatCard(
-          label: 'Completed',
+          label: _lang.t('status.completed'),
           value: '$completed',
           icon: Icons.check_circle_rounded,
           color: const Color(0xFF10B981),
         ),
         const SizedBox(width: 12),
         _StatCard(
-          label: 'Total Spent',
+          label: _lang.t('trips.totalSpent'),
           value: '\$${totalSpent.toStringAsFixed(2)}',
           icon: Icons.wallet_rounded,
           color: const Color(0xFF6C63FF),
@@ -567,7 +579,7 @@ class _TripsPageState extends State<TripsPage>
                 child: DropdownButtonFormField<String>(
                   value: _statusFilter,
                   dropdownColor: const Color(0xFF131729),
-                  decoration: _filterDecoration('Status'),
+                  decoration: _filterDecoration(_lang.t('trips.status')),
                   style: GoogleFonts.poppins(color: Colors.white, fontSize: 12),
                   items:
                       _availableStatusFilters
@@ -591,7 +603,7 @@ class _TripsPageState extends State<TripsPage>
                 child: DropdownButtonFormField<int>(
                   value: _perPage,
                   dropdownColor: const Color(0xFF131729),
-                  decoration: _filterDecoration('Per page'),
+                  decoration: _filterDecoration(_lang.t('trips.perPage')),
                   style: GoogleFonts.poppins(color: Colors.white, fontSize: 12),
                   items: const [
                     DropdownMenuItem(value: 10, child: Text('10')),
@@ -616,7 +628,7 @@ class _TripsPageState extends State<TripsPage>
                   icon: const Icon(Icons.calendar_today, size: 14),
                   label: Text(
                     _startDate == null
-                        ? 'Start date'
+                        ? _lang.t('trips.startDate')
                         : _formatDate(_startDate)!,
                   ),
                 ),
@@ -627,14 +639,16 @@ class _TripsPageState extends State<TripsPage>
                   onPressed: () => _pickDate(isStart: false),
                   icon: const Icon(Icons.event, size: 14),
                   label: Text(
-                    _endDate == null ? 'End date' : _formatDate(_endDate)!,
+                    _endDate == null
+                        ? _lang.t('trips.endDate')
+                        : _formatDate(_endDate)!,
                   ),
                 ),
               ),
               const SizedBox(width: 10),
               TextButton(
                 onPressed: _clearDateFilters,
-                child: const Text('Clear'),
+                child: Text(_lang.t('common.clear')),
               ),
             ],
           ),
@@ -649,7 +663,7 @@ class _TripsPageState extends State<TripsPage>
     if (_statusFilter != 'all') {
       chips.add(
         _FilterChip(
-          label: 'Status: ${_statusLabel(_statusFilter)}',
+          label: '${_lang.t('trips.status')}: ${_statusLabel(_statusFilter)}',
           onClear: () async {
             setState(() => _statusFilter = 'all');
             await _loadTrips();
@@ -662,14 +676,17 @@ class _TripsPageState extends State<TripsPage>
       final from = _formatDate(_startDate) ?? '...';
       final to = _formatDate(_endDate) ?? '...';
       chips.add(
-        _FilterChip(label: 'Date: $from ? $to', onClear: _clearDateFilters),
+        _FilterChip(
+          label: '${_lang.t('trips.date')}: $from ? $to',
+          onClear: _clearDateFilters,
+        ),
       );
     }
 
     if (_perPage != 20) {
       chips.add(
         _FilterChip(
-          label: 'Per page: $_perPage',
+          label: '${_lang.t('trips.perPage')}: $_perPage',
           onClear: () async {
             setState(() => _perPage = 20);
             await _loadTrips();
@@ -683,7 +700,10 @@ class _TripsPageState extends State<TripsPage>
     }
 
     chips.add(
-      TextButton(onPressed: _resetAllFilters, child: const Text('Clear all')),
+      TextButton(
+        onPressed: _resetAllFilters,
+        child: Text(_lang.t('common.clearAll')),
+      ),
     );
 
     return Wrap(spacing: 8, runSpacing: 8, children: chips);
@@ -715,7 +735,7 @@ class _TripsPageState extends State<TripsPage>
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Backend Query Preview',
+            _lang.t('trips.backendQueryPreview'),
             style: GoogleFonts.poppins(
               color: Colors.white70,
               fontSize: 11,
@@ -809,7 +829,10 @@ class _TripsPageState extends State<TripsPage>
         ),
         labelColor: Colors.white,
         unselectedLabelColor: Colors.white38,
-        tabs: const [Tab(text: 'Active'), Tab(text: 'History')],
+        tabs: [
+          Tab(text: _lang.t('status.active')),
+          Tab(text: _lang.t('trips.history')),
+        ],
       ),
     );
   }
@@ -830,7 +853,7 @@ class _TripsPageState extends State<TripsPage>
                 Icon(Icons.inbox_rounded, color: Colors.white24, size: 56),
                 const SizedBox(height: 12),
                 Text(
-                  'No trips here',
+                  _lang.t('trips.empty'),
                   style: GoogleFonts.poppins(
                     color: Colors.white38,
                     fontSize: 14,
@@ -875,6 +898,7 @@ class _TripCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final lang = PassengerLanguageService.instance;
     final isCancelled = trip['status'] == 'Cancelled';
     final statusColor =
         isCancelled ? const Color(0xFFFF5E5B) : const Color(0xFF10B981);
@@ -954,7 +978,7 @@ class _TripCard extends StatelessWidget {
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: Text(
-                        trip['status'] as String,
+                        _localizedStatus(lang, trip['status'] as String),
                         style: GoogleFonts.poppins(
                           color: statusColor,
                           fontSize: 11,
@@ -979,7 +1003,7 @@ class _TripCard extends StatelessWidget {
                           ),
                         ),
                         child: Text(
-                          'New',
+                          lang.t('common.new'),
                           style: GoogleFonts.poppins(
                             color: const Color(0xFFFBBF24),
                             fontSize: 10,
@@ -1057,7 +1081,7 @@ class _TripCard extends StatelessWidget {
                     color: Color(0xFFFF5E5B),
                   ),
                   label: Text(
-                    'Cancel Ride',
+                    lang.t('trips.cancelRide'),
                     style: GoogleFonts.poppins(
                       color: const Color(0xFFFF5E5B),
                       fontSize: 12,
@@ -1071,13 +1095,21 @@ class _TripCard extends StatelessWidget {
             ],
             const SizedBox(height: 10),
             Text(
-              'Tap card for trip details',
+              lang.t('trips.tapForDetails'),
               style: GoogleFonts.poppins(color: Colors.white38, fontSize: 10),
             ),
           ],
         ),
       ),
     );
+  }
+
+  String _localizedStatus(PassengerLanguageService lang, String status) {
+    final lower = status.toLowerCase();
+    if (lower.contains('cancel')) return lang.t('status.cancelled');
+    if (lower.contains('complete')) return lang.t('status.completed');
+    if (lower.contains('active')) return lang.t('status.active');
+    return status;
   }
 }
 
@@ -1096,6 +1128,7 @@ class _TripDetailsSheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final lang = PassengerLanguageService.instance;
     final status = details['status'].toString();
     final type = details['type'].toString();
     final statusColor = _statusColor(status);
@@ -1109,12 +1142,15 @@ class _TripDetailsSheet extends StatelessWidget {
 
     final timelineSteps = <_TimelineStep>[
       _TimelineStep(
-        label: 'Requested',
+        label: lang.t('trips.requested'),
         state: _TimelineState.done,
         subtitle: requestedAt,
       ),
       _TimelineStep(
-        label: isCancelled ? 'Cancelled' : 'In Progress',
+        label:
+            isCancelled
+                ? lang.t('status.cancelled')
+                : lang.t('trips.inProgress'),
         state:
             isCancelled || isCompleted
                 ? _TimelineState.done
@@ -1122,7 +1158,7 @@ class _TripDetailsSheet extends StatelessWidget {
         subtitle: isCancelled ? (cancelledAt ?? inProgressAt) : inProgressAt,
       ),
       _TimelineStep(
-        label: 'Completed',
+        label: lang.t('status.completed'),
         state:
             isCompleted
                 ? _TimelineState.done
@@ -1163,7 +1199,7 @@ class _TripDetailsSheet extends StatelessWidget {
                   ),
                 ),
                 Text(
-                  'Trip #${details['id']}',
+                  '${lang.t('trips.trip')} #${details['id']}',
                   style: GoogleFonts.poppins(
                     color: Colors.white,
                     fontSize: 18,
@@ -1192,7 +1228,7 @@ class _TripDetailsSheet extends StatelessWidget {
                   children: [
                     Expanded(
                       child: _MetricCard(
-                        label: 'Fare',
+                        label: lang.t('trips.fare'),
                         value: details['price'].toString(),
                         icon: Icons.payments_rounded,
                         color: const Color(0xFF10B981),
@@ -1201,7 +1237,7 @@ class _TripDetailsSheet extends StatelessWidget {
                     const SizedBox(width: 10),
                     Expanded(
                       child: _MetricCard(
-                        label: 'Payment',
+                        label: lang.t('trips.payment'),
                         value: details['payment_status'].toString(),
                         icon: Icons.account_balance_wallet_rounded,
                         color: const Color(0xFF3B82F6),
@@ -1211,7 +1247,7 @@ class _TripDetailsSheet extends StatelessWidget {
                 ),
                 const SizedBox(height: 14),
                 Text(
-                  'Trip Progress',
+                  lang.t('trips.progress'),
                   style: GoogleFonts.poppins(
                     color: Colors.white,
                     fontSize: 13,
@@ -1222,14 +1258,29 @@ class _TripDetailsSheet extends StatelessWidget {
                 _TripTimeline(steps: timelineSteps),
                 const SizedBox(height: 14),
                 _DetailRow(
-                  label: 'Driver',
+                  label: lang.t('trips.driver'),
                   value: details['driver'].toString(),
                 ),
-                _DetailRow(label: 'Date', value: details['date'].toString()),
-                _DetailRow(label: 'Seats', value: details['seats'].toString()),
-                _DetailRow(label: 'Pickup', value: details['from'].toString()),
-                _DetailRow(label: 'Dropoff', value: details['to'].toString()),
-                _DetailRow(label: 'Notes', value: details['notes'].toString()),
+                _DetailRow(
+                  label: lang.t('trips.date'),
+                  value: details['date'].toString(),
+                ),
+                _DetailRow(
+                  label: lang.t('book.seats'),
+                  value: details['seats'].toString(),
+                ),
+                _DetailRow(
+                  label: lang.t('trips.pickup'),
+                  value: details['from'].toString(),
+                ),
+                _DetailRow(
+                  label: lang.t('trips.dropoff'),
+                  value: details['to'].toString(),
+                ),
+                _DetailRow(
+                  label: lang.t('trips.notes'),
+                  value: details['notes'].toString(),
+                ),
                 const SizedBox(height: 10),
                 SizedBox(
                   width: double.infinity,
@@ -1250,7 +1301,7 @@ class _TripDetailsSheet extends StatelessWidget {
                     ),
                     icon: const Icon(Icons.replay_rounded, size: 18),
                     label: Text(
-                      'Rebook This Route',
+                      lang.t('trips.rebookRoute'),
                       style: GoogleFonts.poppins(
                         fontWeight: FontWeight.w600,
                         fontSize: 13,
@@ -1564,10 +1615,13 @@ class _RatingRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final lang = PassengerLanguageService.instance;
     return Row(
       children: [
         Text(
-          currentRating == 0 ? 'Rate driver:' : 'Your rating:',
+          currentRating == 0
+              ? lang.t('trips.rateDriver')
+              : lang.t('trips.yourRating'),
           style: GoogleFonts.poppins(color: Colors.white38, fontSize: 12),
         ),
         const SizedBox(width: 10),

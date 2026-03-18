@@ -9,11 +9,14 @@ import '../../services/driver_sync_service.dart';
 class DriverProfilePage extends StatefulWidget {
   final String driverName;
   final String driverEmail;
+  final int unreadNotificationCount;
   final bool isOnline;
   final ValueChanged<bool> onStatusChanged;
   final VoidCallback onEditProfileTap;
   final VoidCallback onVehicleInfoTap;
   final VoidCallback onPayoutTap;
+  final VoidCallback onBookingQueueTap;
+  final VoidCallback onNotificationsTap;
   final VoidCallback onSettingsTap;
   final VoidCallback onHelpTap;
   final VoidCallback onLogout;
@@ -22,11 +25,14 @@ class DriverProfilePage extends StatefulWidget {
     super.key,
     required this.driverName,
     required this.driverEmail,
+    this.unreadNotificationCount = 0,
     required this.isOnline,
     required this.onStatusChanged,
     required this.onEditProfileTap,
     required this.onVehicleInfoTap,
     required this.onPayoutTap,
+    required this.onBookingQueueTap,
+    required this.onNotificationsTap,
     required this.onSettingsTap,
     required this.onHelpTap,
     required this.onLogout,
@@ -437,19 +443,43 @@ class _DriverProfilePageState extends State<DriverProfilePage> {
 
   Widget _buildSettingsCard() {
     final items = [
-      (Icons.edit_rounded, _lang.t('profile.edit'), widget.onEditProfileTap),
+      (Icons.edit_rounded, _lang.t('profile.edit'), widget.onEditProfileTap, 0),
       (
         Icons.directions_car_rounded,
         _lang.t('profile.vehicleMenu'),
         widget.onVehicleInfoTap,
+        0,
       ),
-      (Icons.payments_rounded, _lang.t('profile.payout'), widget.onPayoutTap),
+      (
+        Icons.payments_rounded,
+        _lang.t('profile.payout'),
+        widget.onPayoutTap,
+        0,
+      ),
+      (
+        Icons.assignment_rounded,
+        _lang.t('profile.bookings'),
+        widget.onBookingQueueTap,
+        0,
+      ),
+      (
+        Icons.notifications_rounded,
+        _lang.t('profile.notifications'),
+        widget.onNotificationsTap,
+        widget.unreadNotificationCount,
+      ),
       (
         Icons.settings_rounded,
         _lang.t('profile.settings'),
         widget.onSettingsTap,
+        0,
       ),
-      (Icons.help_outline_rounded, _lang.t('profile.help'), widget.onHelpTap),
+      (
+        Icons.help_outline_rounded,
+        _lang.t('profile.help'),
+        widget.onHelpTap,
+        0,
+      ),
     ];
 
     return Container(
@@ -475,9 +505,41 @@ class _DriverProfilePageState extends State<DriverProfilePage> {
                   item.$2,
                   style: GoogleFonts.poppins(color: _textMuted, fontSize: 13),
                 ),
-                trailing: const Icon(
-                  Icons.chevron_right_rounded,
-                  color: Color(0xFF94A3B8),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (item.$4 > 0)
+                      Container(
+                        constraints: const BoxConstraints(
+                          minWidth: 18,
+                          minHeight: 18,
+                        ),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 5,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFF5E5B),
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: Center(
+                          child: Text(
+                            item.$4 > 99 ? '99+' : '${item.$4}',
+                            style: GoogleFonts.poppins(
+                              color: Colors.white,
+                              fontSize: 9,
+                              fontWeight: FontWeight.w700,
+                              height: 1.0,
+                            ),
+                          ),
+                        ),
+                      ),
+                    if (item.$4 > 0) const SizedBox(width: 8),
+                    const Icon(
+                      Icons.chevron_right_rounded,
+                      color: Color(0xFF94A3B8),
+                    ),
+                  ],
                 ),
               ),
               if (!last)

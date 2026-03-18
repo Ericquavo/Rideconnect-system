@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../services/passenger_api.dart';
+import '../../services/passenger_language_service.dart';
 import '../../features/trips/data/passenger_trips_api_service.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -34,6 +35,7 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
+  final PassengerLanguageService _lang = PassengerLanguageService.instance;
   // ── Animation controllers ──────────────────────────────────────────────────
   late final AnimationController _pulseCtrl;
   late final Animation<double> _pulseAnim;
@@ -145,8 +147,14 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   @override
   void initState() {
     super.initState();
+    _lang.languageNotifier.addListener(_onLanguageChanged);
     _setupAnimations();
     _loadDashboardData();
+  }
+
+  void _onLanguageChanged() {
+    if (!mounted) return;
+    setState(() {});
   }
 
   void _setupAnimations() {
@@ -173,6 +181,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
 
   @override
   void dispose() {
+    _lang.languageNotifier.removeListener(_onLanguageChanged);
     _pulseCtrl.dispose();
     _driverCtrl.dispose();
     super.dispose();
@@ -272,7 +281,10 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                 // 5 – Ride options
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 20),
-                  child: _buildSectionHeader('Quick Ride Options', null),
+                  child: _buildSectionHeader(
+                    _lang.t('home.quickRideOptions'),
+                    null,
+                  ),
                 ),
                 const SizedBox(height: 14),
                 _buildRideOptions(),
@@ -282,7 +294,10 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                 // 6 – Nearby drivers
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 20),
-                  child: _buildSectionHeader('Nearby Drivers', 'See All'),
+                  child: _buildSectionHeader(
+                    _lang.t('home.nearbyDrivers'),
+                    _lang.t('home.seeAll'),
+                  ),
                 ),
                 const SizedBox(height: 14),
                 Padding(
@@ -329,7 +344,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Hello, $firstName \u{1F44B}',
+                  _lang.t('home.greeting', args: {'name': firstName}),
                   style: GoogleFonts.poppins(
                     fontSize: 24,
                     fontWeight: FontWeight.w700,
@@ -338,7 +353,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                   ),
                 ),
                 Text(
-                  'Where are you heading today?',
+                  _lang.t('home.whereTo'),
                   style: GoogleFonts.poppins(
                     fontSize: 13,
                     color: Colors.white54,
@@ -475,7 +490,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
             GestureDetector(
               onTap: _loadDashboardData,
               child: Text(
-                'Retry',
+                _lang.t('common.retry'),
                 style: GoogleFonts.poppins(
                   color: const Color(0xFF6C63FF),
                   fontSize: 12,
@@ -531,7 +546,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Where are you going?',
+                    _lang.t('home.searchPrompt'),
                     style: GoogleFonts.poppins(
                       color: Colors.white70,
                       fontSize: 15,
@@ -539,7 +554,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                     ),
                   ),
                   Text(
-                    'Tap to search your destination',
+                    _lang.t('home.searchSubPrompt'),
                     style: GoogleFonts.poppins(
                       color: Colors.white30,
                       fontSize: 11,
@@ -581,7 +596,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
-                'Saved Places',
+                _lang.t('home.savedPlaces'),
                 style: GoogleFonts.poppins(
                   color: Colors.white,
                   fontWeight: FontWeight.w600,
@@ -589,7 +604,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                 ),
               ),
               Text(
-                '+ Add Place',
+                _lang.t('home.addPlace'),
                 style: GoogleFonts.poppins(
                   color: const Color(0xFF6C63FF),
                   fontSize: 12,
@@ -643,7 +658,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             Text(
-              'Map Overview',
+              _lang.t('home.mapOverview'),
               style: GoogleFonts.poppins(
                 color: Colors.white,
                 fontWeight: FontWeight.w600,
@@ -668,7 +683,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                   ),
                   const SizedBox(width: 5),
                   Text(
-                    '3 drivers nearby',
+                    _lang.t('home.driversNearby'),
                     style: GoogleFonts.poppins(
                       color: const Color(0xFF10B981),
                       fontSize: 11,
@@ -756,7 +771,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                   left: 14,
                   child: _MapChip(
                     icon: Icons.my_location_rounded,
-                    text: 'Your Location',
+                    text: _lang.t('home.yourLocation'),
                     bg: Colors.white.withValues(alpha: 0.12),
                   ),
                 ),
@@ -1369,7 +1384,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
             ),
             const SizedBox(width: 12),
             Text(
-              'Book a Ride',
+              _lang.t('book.title'),
               style: GoogleFonts.poppins(
                 color: Colors.white,
                 fontWeight: FontWeight.w700,

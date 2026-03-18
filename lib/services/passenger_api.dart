@@ -83,8 +83,44 @@ class PassengerApi {
     return _extractList(response);
   }
 
+  Future<List<Map<String, dynamic>>> getMyBookings() async {
+    final response = await _get('/bookings/my');
+    return _extractList(response);
+  }
+
   Future<Map<String, dynamic>> getBookingById(dynamic bookingId) =>
       _get('/bookings/$bookingId');
+
+  Future<Map<String, dynamic>> createBooking(Map<String, dynamic> payload) =>
+      _post('/bookings', payload);
+
+  Future<Map<String, dynamic>> updateBooking(
+    dynamic bookingId,
+    Map<String, dynamic> payload,
+  ) => _put('/bookings/$bookingId', payload);
+
+  Future<Map<String, dynamic>> cancelBooking(dynamic bookingId) =>
+      _put('/bookings/$bookingId/cancel', <String, dynamic>{});
+
+  Future<List<Map<String, dynamic>>> getOnlineDrivers() async {
+    final response = await _get('/drivers/online');
+    return _extractList(response);
+  }
+
+  Future<Map<String, dynamic>> createRideRequest(
+    Map<String, dynamic> payload,
+  ) => _post('/ride-requests', payload);
+
+  Future<List<Map<String, dynamic>>> getTrips() async {
+    final response = await _get('/trips');
+    return _extractList(response);
+  }
+
+  Future<Map<String, dynamic>> getTripById(dynamic tripId) =>
+      _get('/trips/$tripId');
+
+  Future<Map<String, dynamic>> cancelTrip(dynamic tripId) =>
+      _put('/trips/$tripId/cancel', <String, dynamic>{});
 
   Future<Map<String, dynamic>> createPayment(Map<String, dynamic> payload) =>
       _post('/payments', payload);

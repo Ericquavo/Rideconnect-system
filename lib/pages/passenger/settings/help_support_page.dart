@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import '../../../services/passenger_language_service.dart';
 import 'settings_theme.dart';
 
 class HelpSupportPage extends StatelessWidget {
@@ -8,8 +9,9 @@ class HelpSupportPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = SettingsPalette.of(context);
+    final lang = PassengerLanguageService.instance;
     return SettingsPageLayout(
-      title: 'Help & Support',
+      title: lang.t('settings.help'),
       icon: Icons.help_outline_rounded,
       child: SingleChildScrollView(
         padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
@@ -18,23 +20,11 @@ class HelpSupportPage extends StatelessWidget {
             SettingsCard(
               child: Column(
                 children: [
-                  _faqTile(
-                    context,
-                    'How do I cancel a ride?',
-                    'Open your active trip and tap Cancel before driver arrival.',
-                  ),
+                  _faqTile(context, lang.t('help.q1'), lang.t('help.a1')),
                   Divider(color: palette.border),
-                  _faqTile(
-                    context,
-                    'How is fare calculated?',
-                    'Fare depends on distance, time, demand, and selected ride type.',
-                  ),
+                  _faqTile(context, lang.t('help.q2'), lang.t('help.a2')),
                   Divider(color: palette.border),
-                  _faqTile(
-                    context,
-                    'How do I report an issue?',
-                    'Use Contact Support below and include trip details.',
-                  ),
+                  _faqTile(context, lang.t('help.q3'), lang.t('help.a3')),
                 ],
               ),
             ),
@@ -45,21 +35,21 @@ class HelpSupportPage extends StatelessWidget {
                   _contactButton(
                     context,
                     Icons.chat_bubble_outline_rounded,
-                    'Contact Support',
-                    'Start in-app support chat',
+                    lang.t('help.contact'),
+                    lang.t('help.startChat'),
                   ),
                   const SizedBox(height: 10),
                   _contactButton(
                     context,
                     Icons.email_outlined,
-                    'Email Support',
+                    lang.t('help.emailSupport'),
                     'support@rideconnect.app',
                   ),
                   const SizedBox(height: 10),
                   _contactButton(
                     context,
                     Icons.call_outlined,
-                    'Call Support',
+                    lang.t('help.callSupport'),
                     '+250 700 123 456',
                   ),
                 ],
