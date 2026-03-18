@@ -76,11 +76,26 @@ class _DriverBookingQueuePageState extends State<DriverBookingQueuePage> {
     }
   }
 
-  Future<void> _confirm(dynamic bookingId) async {
+  Future<void> _confirm(
+    dynamic bookingId, {
+    required String passengerId,
+    required String passengerName,
+    required String pickup,
+    required String dropoff,
+  }) async {
     if (_actionBusy) return;
     setState(() => _actionBusy = true);
     try {
       await _api.confirmBooking(bookingId);
+      await _api.notifyPassengerDecision(
+        passengerId: passengerId,
+        accepted: true,
+        bookingDecision: true,
+        passengerName: passengerName,
+        referenceId: '$bookingId',
+        pickup: pickup,
+        dropoff: dropoff,
+      );
       if (!mounted) return;
       await _loadBookings();
       _showSnack(_lang.t('bookings.confirmed'));
@@ -91,11 +106,26 @@ class _DriverBookingQueuePageState extends State<DriverBookingQueuePage> {
     }
   }
 
-  Future<void> _cancel(dynamic bookingId) async {
+  Future<void> _cancel(
+    dynamic bookingId, {
+    required String passengerId,
+    required String passengerName,
+    required String pickup,
+    required String dropoff,
+  }) async {
     if (_actionBusy) return;
     setState(() => _actionBusy = true);
     try {
       await _api.cancelBooking(bookingId);
+      await _api.notifyPassengerDecision(
+        passengerId: passengerId,
+        accepted: false,
+        bookingDecision: true,
+        passengerName: passengerName,
+        referenceId: '$bookingId',
+        pickup: pickup,
+        dropoff: dropoff,
+      );
       if (!mounted) return;
       await _loadBookings();
       _showSnack(_lang.t('bookings.cancelled'));
@@ -239,6 +269,12 @@ class _DriverBookingQueuePageState extends State<DriverBookingQueuePage> {
   Widget _bookingCard(Map<String, dynamic> item) {
     final id = _api.readString(item, const ['id', 'booking_id']);
     final idLabel = id.isEmpty ? '--' : id;
+    final passengerId = _api.readString(item, const [
+      'passenger_id',
+      'user_id',
+      'rider_id',
+      'passengerId',
+    ]);
     final passenger = _api.readString(item, const [
       'passenger_name',
       'passenger',
@@ -333,7 +369,15 @@ class _DriverBookingQueuePageState extends State<DriverBookingQueuePage> {
               Expanded(
                 child: OutlinedButton(
                   onPressed:
-                      actionAllowed && !_actionBusy ? () => _cancel(id) : null,
+                      actionAllowed && !_actionBusy
+                          ? () => _cancel(
+                            id,
+                            passengerId: passengerId,
+                            passengerName: passenger,
+                            pickup: pickup,
+                            dropoff: dropoff,
+                          )
+                          : null,
                   style: OutlinedButton.styleFrom(
                     side: const BorderSide(color: Color(0xFFFF5E5B)),
                   ),
@@ -347,7 +391,15 @@ class _DriverBookingQueuePageState extends State<DriverBookingQueuePage> {
               Expanded(
                 child: ElevatedButton(
                   onPressed:
-                      actionAllowed && !_actionBusy ? () => _confirm(id) : null,
+                      actionAllowed && !_actionBusy
+                          ? () => _confirm(
+                            id,
+                            passengerId: passengerId,
+                            passengerName: passenger,
+                            pickup: pickup,
+                            dropoff: dropoff,
+                          )
+                          : null,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFF10B981),
                     foregroundColor: Colors.white,

@@ -77,11 +77,28 @@ class _DriverRequestsPageState extends State<DriverRequestsPage> {
       final parsed =
           response.map((item) {
             final id = api.readString(item, const ['id', '_id', 'request_id']);
+            final passengerId = api.readString(item, const [
+              'passenger_id',
+              'user_id',
+              'rider_id',
+              'passengerId',
+            ]);
             final passenger = api.readString(item, const [
               'passenger_name',
               'passenger',
               'name',
             ], fallback: _lang.t('home.requestPassenger'));
+            final passengerObj = item['passenger'];
+            final resolvedPassengerId =
+                passengerId.isNotEmpty
+                    ? passengerId
+                    : (passengerObj is Map<String, dynamic>
+                        ? api.readString(passengerObj, const [
+                          'id',
+                          '_id',
+                          'user_id',
+                        ])
+                        : '');
             final pickup = api.readString(item, const [
               'pickup_address',
               'pickup',
@@ -114,6 +131,7 @@ class _DriverRequestsPageState extends State<DriverRequestsPage> {
 
             return _DriverRideRequest(
               id: id,
+              passengerId: resolvedPassengerId,
               passenger: passenger,
               pickup: pickup,
               destination: destination,
@@ -347,6 +365,15 @@ class _DriverRequestsPageState extends State<DriverRequestsPage> {
         );
         stage = DriverTripStageX.fromBackendStatus(status);
       }
+      await DriverApi.instance.notifyPassengerDecision(
+        passengerId: req.passengerId,
+        accepted: true,
+        bookingDecision: false,
+        passengerName: req.passenger,
+        referenceId: req.id,
+        pickup: req.pickup,
+        dropoff: req.destination,
+      );
       DriverSyncService.instance.setActiveTrip(
         DriverActiveTrip(
           requestId: req.id,
@@ -383,6 +410,15 @@ class _DriverRequestsPageState extends State<DriverRequestsPage> {
       if (req.id.isNotEmpty) {
         await DriverApi.instance.rejectRequest(req.id);
       }
+      await DriverApi.instance.notifyPassengerDecision(
+        passengerId: req.passengerId,
+        accepted: false,
+        bookingDecision: false,
+        passengerName: req.passenger,
+        referenceId: req.id,
+        pickup: req.pickup,
+        dropoff: req.destination,
+      );
       if (!mounted) return;
       setState(() => _requests.removeAt(index));
       ScaffoldMessenger.of(context).showSnackBar(
@@ -662,6 +698,7 @@ class _RequestCard extends StatelessWidget {
 class _DriverRideRequest {
   _DriverRideRequest({
     required this.id,
+    required this.passengerId,
     required this.passenger,
     required this.pickup,
     required this.destination,
@@ -672,6 +709,7 @@ class _DriverRideRequest {
   });
 
   final String id;
+  final String passengerId;
   final String passenger;
   final String pickup;
   final String destination;

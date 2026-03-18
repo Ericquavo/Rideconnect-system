@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:geocoding/geocoding.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 import '../../features/trips/data/passenger_trips_api_service.dart';
 import '../../services/passenger_language_service.dart';
@@ -28,10 +30,17 @@ class BookRidePage extends StatefulWidget {
 }
 
 class _BookRidePageState extends State<BookRidePage> {
+  static const LatLng _kigaliCenter = LatLng(-1.9441, 30.0619);
+
   late final TextEditingController _pickupController;
   late final TextEditingController _destinationController;
   late final TextEditingController _seatsController;
+  GoogleMapController? _mapController;
+  double _mapZoom = 13.8;
   String _selectedRide = 'Economy';
+  bool _selectingPickup = false;
+  LatLng _pickupLatLng = _kigaliCenter;
+  LatLng? _destinationLatLng;
   bool _isRequesting = false;
   bool _isLoadingOptions = true;
   List<Map<String, dynamic>> _availableOptions = <Map<String, dynamic>>[];
@@ -92,10 +101,81 @@ class _BookRidePageState extends State<BookRidePage> {
   @override
   void dispose() {
     _lang.languageNotifier.removeListener(_onLanguageChanged);
+    _mapController?.dispose();
     _pickupController.dispose();
     _destinationController.dispose();
     _seatsController.dispose();
     super.dispose();
+  }
+
+  String _coordsLabel(LatLng point) {
+    return '${point.latitude.toStringAsFixed(6)}, ${point.longitude.toStringAsFixed(6)}';
+  }
+
+  Future<String?> _reverseGeocodePoint(LatLng point) async {
+    try {
+      final placemarks = await placemarkFromCoordinates(
+        point.latitude,
+        point.longitude,
+      );
+      if (placemarks.isEmpty) return null;
+
+      final place = placemarks.first;
+      final rawParts = <String?>[
+        place.name,
+        place.street,
+        place.subLocality,
+        place.locality,
+        place.administrativeArea,
+        place.country,
+      ];
+
+      final parts = <String>[];
+      for (final part in rawParts) {
+        final value = (part ?? '').trim();
+        if (value.isEmpty || parts.contains(value)) continue;
+        parts.add(value);
+      }
+      if (parts.isEmpty) return null;
+      return parts.join(', ');
+    } catch (_) {
+      return null;
+    }
+  }
+
+  void _onMapTapped(LatLng point) async {
+    final isPickupSelection = _selectingPickup;
+    setState(() {
+      if (isPickupSelection) {
+        _pickupLatLng = point;
+        _pickupController.text = 'Locating address...';
+      } else {
+        _destinationLatLng = point;
+        _destinationController.text = 'Locating address...';
+      }
+    });
+
+    final address = await _reverseGeocodePoint(point);
+    if (!mounted) return;
+
+    setState(() {
+      final resolvedValue = address ?? _coordsLabel(point);
+      if (isPickupSelection) {
+        _pickupController.text = resolvedValue;
+      } else {
+        _destinationController.text = resolvedValue;
+      }
+    });
+  }
+
+  Future<void> _zoomIn() async {
+    _mapZoom = (_mapZoom + 1).clamp(3, 20).toDouble();
+    await _mapController?.animateCamera(CameraUpdate.zoomTo(_mapZoom));
+  }
+
+  Future<void> _zoomOut() async {
+    _mapZoom = (_mapZoom - 1).clamp(3, 20).toDouble();
+    await _mapController?.animateCamera(CameraUpdate.zoomTo(_mapZoom));
   }
 
   void _onLanguageChanged() {
@@ -436,43 +516,145 @@ class _BookRidePageState extends State<BookRidePage> {
   }
 
   Widget _buildMapContainer() {
-    return Container(
-      height: 160,
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(20),
-        gradient: const LinearGradient(
-          colors: [Color(0xFF1B2A4A), Color(0xFF0D1B3E)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+    final markers = <Marker>{
+      Marker(
+        markerId: const MarkerId('pickup'),
+        position: _pickupLatLng,
+        infoWindow: const InfoWindow(title: 'Pickup'),
+        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen),
       ),
-      child: Stack(
-        children: [
-          CustomPaint(size: Size.infinite, painter: _GridPainter()),
-          const Center(
-            child: Icon(
-              Icons.location_on_rounded,
-              color: Color(0xFF6C63FF),
-              size: 36,
-            ),
+      if (_destinationLatLng != null)
+        Marker(
+          markerId: const MarkerId('destination'),
+          position: _destinationLatLng!,
+          infoWindow: const InfoWindow(title: 'Destination'),
+          icon: BitmapDescriptor.defaultMarkerWithHue(
+            BitmapDescriptor.hueViolet,
           ),
-          Positioned(
-            bottom: 10,
-            right: 10,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-              decoration: BoxDecoration(
-                color: const Color(0xFF6C63FF).withValues(alpha: 0.8),
-                borderRadius: BorderRadius.circular(16),
+        ),
+    };
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(20),
+      child: SizedBox(
+        height: 220,
+        child: Stack(
+          children: [
+            GoogleMap(
+              initialCameraPosition: CameraPosition(
+                target: _kigaliCenter,
+                zoom: _mapZoom,
               ),
-              child: Text(
-                _lang.t('book.tapToSetOnMap'),
-                style: GoogleFonts.poppins(color: Colors.white, fontSize: 11),
+              myLocationButtonEnabled: false,
+              zoomControlsEnabled: true,
+              zoomGesturesEnabled: true,
+              rotateGesturesEnabled: true,
+              scrollGesturesEnabled: true,
+              tiltGesturesEnabled: true,
+              compassEnabled: true,
+              markers: markers,
+              onMapCreated: (controller) => _mapController = controller,
+              onCameraMove: (position) {
+                _mapZoom = position.zoom;
+              },
+              onTap: _onMapTapped,
+            ),
+            Positioned(
+              top: 10,
+              left: 10,
+              right: 10,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.38),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: ChoiceChip(
+                        selected: _selectingPickup,
+                        onSelected:
+                            (_) => setState(() => _selectingPickup = true),
+                        label: Text(
+                          _lang.t('book.pickupHint'),
+                          overflow: TextOverflow.ellipsis,
+                          style: GoogleFonts.poppins(fontSize: 11),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: ChoiceChip(
+                        selected: !_selectingPickup,
+                        onSelected:
+                            (_) => setState(() => _selectingPickup = false),
+                        label: Text(
+                          _lang.t('book.dropoffHint'),
+                          overflow: TextOverflow.ellipsis,
+                          style: GoogleFonts.poppins(fontSize: 11),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
-          ),
-        ],
+            Positioned(
+              bottom: 10,
+              right: 10,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _mapZoomBtn(Icons.remove_rounded, _zoomOut),
+                      const SizedBox(width: 8),
+                      _mapZoomBtn(Icons.add_rounded, _zoomIn),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 5,
+                    ),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF6C63FF).withValues(alpha: 0.88),
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: Text(
+                      _selectingPickup
+                          ? '${_lang.t('book.tapToSetOnMap')} (${_lang.t('book.pickupHint')})'
+                          : '${_lang.t('book.tapToSetOnMap')} (${_lang.t('book.dropoffHint')})',
+                      style: GoogleFonts.poppins(
+                        color: Colors.white,
+                        fontSize: 10,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _mapZoomBtn(IconData icon, VoidCallback onTap) {
+    return Material(
+      color: Colors.black.withValues(alpha: 0.35),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(10),
+        onTap: onTap,
+        child: SizedBox(
+          width: 30,
+          height: 30,
+          child: Icon(icon, size: 18, color: Colors.white),
+        ),
       ),
     );
   }
@@ -846,24 +1028,4 @@ class _GradientButton extends StatelessWidget {
       ),
     );
   }
-}
-
-class _GridPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final p =
-        Paint()
-          ..color = Colors.white.withValues(alpha: 0.04)
-          ..strokeWidth = 1;
-    const s = 30.0;
-    for (double x = 0; x < size.width; x += s) {
-      canvas.drawLine(Offset(x, 0), Offset(x, size.height), p);
-    }
-    for (double y = 0; y < size.height; y += s) {
-      canvas.drawLine(Offset(0, y), Offset(size.width, y), p);
-    }
-  }
-
-  @override
-  bool shouldRepaint(_GridPainter old) => false;
 }

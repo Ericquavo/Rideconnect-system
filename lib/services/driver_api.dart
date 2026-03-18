@@ -72,6 +72,12 @@ class DriverApi {
   Future<Map<String, dynamic>> markAllNotificationsRead() =>
       _requestRoot('PUT', '/notifications/read-all', body: <String, dynamic>{});
 
+  Future<Map<String, dynamic>> clearActionedNotifications() =>
+      _requestRoot('DELETE', '/notifications/clear-actioned');
+
+  Future<Map<String, dynamic>> deleteNotification(dynamic id) =>
+      _requestRoot('DELETE', '/notifications/$id');
+
   Future<List<Map<String, dynamic>>> getTrips() async {
     final response = await _get('/trips');
     return extractList(response, preferredKeys: const ['trips', 'history']);
@@ -92,11 +98,31 @@ class DriverApi {
     return extractList(response, preferredKeys: const ['requests']);
   }
 
-  Future<Map<String, dynamic>> acceptRequest(dynamic id) =>
-      _put('/requests/$id/accept', <String, dynamic>{});
+  Future<Map<String, dynamic>> acceptRequest(dynamic id) async {
+    try {
+      return await _put('/requests/$id/accept', <String, dynamic>{});
+    } catch (_) {
+      // Some backends expose trip-requests instead of requests for this action.
+      return _put('/trip-requests/$id/accept', <String, dynamic>{});
+    }
+  }
 
-  Future<Map<String, dynamic>> rejectRequest(dynamic id) =>
-      _put('/requests/$id/reject', <String, dynamic>{});
+  Future<Map<String, dynamic>> rejectRequest(dynamic id) async {
+    try {
+      return await _put('/requests/$id/reject', <String, dynamic>{});
+    } catch (_) {
+      return _put('/trip-requests/$id/reject', <String, dynamic>{});
+    }
+  }
+
+  Future<bool> clearReadNotifications() async {
+    try {
+      await clearActionedNotifications();
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
 
   Future<Map<String, dynamic>> completeRequest(dynamic id) =>
       _put('/requests/$id/complete', <String, dynamic>{});
@@ -106,6 +132,75 @@ class DriverApi {
 
   Future<Map<String, dynamic>> cancelTrip(dynamic id) =>
       _put('/trips/$id/cancel', <String, dynamic>{});
+
+  Future<bool> notifyPassengerDecision({
+    required String passengerId,
+    required bool accepted,
+    required bool bookingDecision,
+    String passengerName = '',
+    String referenceId = '',
+    String pickup = '',
+    String dropoff = '',
+  }) async {
+    final target = passengerId.trim();
+    if (target.isEmpty) return false;
+
+    final type =
+        bookingDecision
+            ? (accepted ? 'booking_confirmed' : 'booking_rejected')
+            : (accepted ? 'ride_request_accepted' : 'ride_request_rejected');
+
+    final title =
+        bookingDecision
+            ? (accepted ? 'Booking Confirmed' : 'Booking Rejected')
+            : (accepted ? 'Ride Request Accepted' : 'Ride Request Rejected');
+
+    final subjectName =
+        passengerName.trim().isEmpty ? 'Passenger' : passengerName.trim();
+    final message =
+        bookingDecision
+            ? (accepted
+                ? 'Driver confirmed your booking request.'
+                : 'Driver rejected your booking request.')
+            : (accepted
+                ? 'Driver accepted your ride request.'
+                : 'Driver rejected your ride request.');
+
+    final payload = <String, dynamic>{
+      'type': type,
+      'title': title,
+      'message': message,
+      // Send multiple recipient keys for backend compatibility.
+      'recipient_id': target,
+      'user_id': target,
+      'passenger_id': target,
+      'data': <String, dynamic>{
+        'passenger_name': subjectName,
+        'reference_id': referenceId,
+        'pickup': pickup,
+        'dropoff': dropoff,
+        'accepted': accepted,
+        'source': 'driver_app',
+      },
+    };
+
+    const paths = <String>[
+      '/notifications',
+      '/notifications/send',
+      '/passenger/notifications',
+    ];
+
+    for (final path in paths) {
+      try {
+        await _requestRoot('POST', path, body: payload);
+        return true;
+      } catch (_) {
+        // Try alternative endpoint.
+      }
+    }
+
+    return false;
+  }
 
   Future<Map<String, dynamic>> getEarnings() => _get('/earnings');
 
@@ -191,6 +286,10 @@ class DriverApi {
 
     if (!(success ?? ok)) {
       final errorMap = parsed['error'];
+      final errorCode =
+          errorMap is Map<String, dynamic>
+              ? _asString(errorMap['code'])
+              : _asString(parsed['error_code']);
       final nestedError =
           errorMap is Map<String, dynamic>
               ? _asString(errorMap['description'])
@@ -200,7 +299,11 @@ class DriverApi {
           nestedError ??
           _asString(parsed['error']) ??
           'Request failed (${response.statusCode})';
-      throw Exception(message);
+      throw DriverApiException(
+        message: message,
+        statusCode: response.statusCode,
+        errorCode: errorCode,
+      );
     }
 
     return parsed;
@@ -333,4 +436,22 @@ class DriverApi {
     if (value is String) return value;
     return value.toString();
   }
+}
+
+class DriverApiException implements Exception {
+  DriverApiException({
+    required this.message,
+    required this.statusCode,
+    this.errorCode,
+  });
+
+  final String message;
+  final int statusCode;
+  final String? errorCode;
+
+  bool get isActionRequiredConflict =>
+      statusCode == 422 && errorCode == 'notification_not_actioned';
+
+  @override
+  String toString() => message;
 }

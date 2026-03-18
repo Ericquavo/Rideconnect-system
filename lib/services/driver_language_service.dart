@@ -254,7 +254,17 @@ class DriverLanguageService {
       'notifications.title': 'Notifications',
       'notifications.empty': 'No notifications available right now.',
       'notifications.markAllRead': 'Mark all read',
+      'notifications.clearRead': 'Clear read',
+      'notifications.back': 'Back',
       'notifications.type': 'Type',
+      'notifications.passenger': 'Passenger',
+      'notifications.phone': 'Phone',
+      'notifications.passengerNotifyPending':
+          'Action saved. Passenger notification is pending backend delivery.',
+      'notifications.requestIdMissing':
+          'Request id is missing for this notification.',
+      'notifications.bookingIdMissing':
+          'Booking id is missing for this notification.',
       'book.seats': 'Seats',
       'trips.pickup': 'Pickup',
       'trips.dropoff': 'Dropoff',
@@ -441,7 +451,17 @@ class DriverLanguageService {
       'notifications.title': 'Notifications',
       'notifications.empty': 'Aucune notification disponible pour le moment.',
       'notifications.markAllRead': 'Tout marquer lu',
+      'notifications.clearRead': 'Effacer lus',
+      'notifications.back': 'Retour',
       'notifications.type': 'Type',
+      'notifications.passenger': 'Passager',
+      'notifications.phone': 'Telephone',
+      'notifications.passengerNotifyPending':
+          'Action enregistree. La notification passager est en attente de livraison backend.',
+      'notifications.requestIdMissing':
+          'Identifiant de demande manquant pour cette notification.',
+      'notifications.bookingIdMissing':
+          'Identifiant de reservation manquant pour cette notification.',
       'book.seats': 'Places',
       'trips.pickup': 'Depart',
       'trips.dropoff': 'Destination',
@@ -628,7 +648,17 @@ class DriverLanguageService {
       'notifications.title': 'Amamenyesha',
       'notifications.empty': 'Nta menyesha rihari ubu.',
       'notifications.markAllRead': 'Shyira byose ku byasomwe',
+      'notifications.clearRead': 'Siba ibyasomwe',
+      'notifications.back': 'Subira inyuma',
       'notifications.type': 'Ubwoko',
+      'notifications.passenger': 'Umugenzi',
+      'notifications.phone': 'Telefone',
+      'notifications.passengerNotifyPending':
+          'Igikorwa cyabitswe. Ubutumwa bw\'umugenzi buracyategereje koherezwa na backend.',
+      'notifications.requestIdMissing':
+          'Nta nimero y\'ubusabe iri kuri iri menyesha.',
+      'notifications.bookingIdMissing':
+          'Nta nimero ya booking iri kuri iri menyesha.',
       'book.seats': 'Intebe',
       'trips.pickup': 'Aho gufatira',
       'trips.dropoff': 'Aho ujya',

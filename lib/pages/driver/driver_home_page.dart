@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 import '../../services/driver_api.dart';
 import '../../services/driver_language_service.dart';
@@ -23,10 +25,16 @@ class DriverHomePage extends StatefulWidget {
 }
 
 class _DriverHomePageState extends State<DriverHomePage> {
+  static const LatLng _kigaliCenter = LatLng(-1.9441, 30.0619);
   late Future<_DriverHomeData> _homeFuture;
   final DriverLanguageService _lang = DriverLanguageService.instance;
   final DriverSyncService _sync = DriverSyncService.instance;
   bool _processingTripAction = false;
+  GoogleMapController? _mapController;
+  LatLng? _driverLatLng;
+  bool _hasLocationPermission = false;
+  bool _isLocating = false;
+  double _mapZoom = 14;
 
   bool get _isDarkMode => Theme.of(context).brightness == Brightness.dark;
   Color get _bgTop =>
@@ -54,6 +62,7 @@ class _DriverHomePageState extends State<DriverHomePage> {
     _lang.ensureInitialized();
     _lang.languageNotifier.addListener(_onLanguageChanged);
     _homeFuture = _loadHomeData();
+    _initDriverLocation();
     _sync.dataVersionNotifier.addListener(_onSyncDataChanged);
     _sync.activeTripNotifier.addListener(_onActiveTripChanged);
   }
@@ -63,7 +72,102 @@ class _DriverHomePageState extends State<DriverHomePage> {
     _lang.languageNotifier.removeListener(_onLanguageChanged);
     _sync.dataVersionNotifier.removeListener(_onSyncDataChanged);
     _sync.activeTripNotifier.removeListener(_onActiveTripChanged);
+    _mapController?.dispose();
     super.dispose();
+  }
+
+  Future<void> _initDriverLocation() async {
+    if (_isLocating) return;
+    setState(() => _isLocating = true);
+
+    try {
+      final serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) {
+        if (!mounted) return;
+        setState(() {
+          _hasLocationPermission = false;
+          _isLocating = false;
+        });
+        return;
+      }
+
+      var permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+
+      final granted =
+          permission == LocationPermission.whileInUse ||
+          permission == LocationPermission.always;
+      if (!granted) {
+        if (!mounted) return;
+        setState(() {
+          _hasLocationPermission = false;
+          _isLocating = false;
+        });
+        return;
+      }
+
+      final pos = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.best,
+        ),
+      );
+      final point = LatLng(pos.latitude, pos.longitude);
+
+      if (!mounted) return;
+      setState(() {
+        _driverLatLng = point;
+        _hasLocationPermission = true;
+        _isLocating = false;
+      });
+
+      await _mapController?.animateCamera(
+        CameraUpdate.newCameraPosition(
+          CameraPosition(target: point, zoom: _mapZoom),
+        ),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _hasLocationPermission = false;
+        _isLocating = false;
+      });
+    }
+  }
+
+  Set<Marker> _driverMapMarkers() {
+    final center = _driverLatLng ?? _kigaliCenter;
+    return <Marker>{
+      Marker(
+        markerId: const MarkerId('driver_you'),
+        position: center,
+        infoWindow: InfoWindow(title: _lang.t('home.driverLocation')),
+        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
+      ),
+      Marker(
+        markerId: const MarkerId('rider_1'),
+        position: LatLng(center.latitude + 0.0025, center.longitude - 0.0033),
+        infoWindow: InfoWindow(title: _lang.t('home.requests')),
+        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueOrange),
+      ),
+      Marker(
+        markerId: const MarkerId('rider_2'),
+        position: LatLng(center.latitude - 0.0032, center.longitude + 0.0027),
+        infoWindow: InfoWindow(title: _lang.t('home.requests')),
+        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueOrange),
+      ),
+    };
+  }
+
+  Future<void> _zoomIn() async {
+    _mapZoom = (_mapZoom + 1).clamp(3, 20).toDouble();
+    await _mapController?.animateCamera(CameraUpdate.zoomTo(_mapZoom));
+  }
+
+  Future<void> _zoomOut() async {
+    _mapZoom = (_mapZoom - 1).clamp(3, 20).toDouble();
+    await _mapController?.animateCamera(CameraUpdate.zoomTo(_mapZoom));
   }
 
   void _onLanguageChanged() {
@@ -398,6 +502,7 @@ class _DriverHomePageState extends State<DriverHomePage> {
   }
 
   Widget _buildMapPreview() {
+    final center = _driverLatLng ?? _kigaliCenter;
     return Container(
       height: 180,
       decoration: BoxDecoration(
@@ -414,23 +519,44 @@ class _DriverHomePageState extends State<DriverHomePage> {
       ),
       child: Stack(
         children: [
-          CustomPaint(
-            size: Size.infinite,
-            painter: _MapGridPainter(isDarkMode: _isDarkMode),
-          ),
-          const Center(
-            child: Icon(
-              Icons.local_taxi_rounded,
-              color: Color(0xFF6C63FF),
-              size: 38,
+          ClipRRect(
+            borderRadius: BorderRadius.circular(20),
+            child: GoogleMap(
+              initialCameraPosition: CameraPosition(
+                target: center,
+                zoom: _mapZoom,
+              ),
+              markers: _driverMapMarkers(),
+              mapToolbarEnabled: false,
+              myLocationEnabled: _hasLocationPermission,
+              myLocationButtonEnabled: _hasLocationPermission,
+              zoomControlsEnabled: true,
+              zoomGesturesEnabled: true,
+              rotateGesturesEnabled: true,
+              scrollGesturesEnabled: true,
+              tiltGesturesEnabled: true,
+              compassEnabled: true,
+              onMapCreated: (controller) {
+                _mapController = controller;
+                controller.animateCamera(
+                  CameraUpdate.newCameraPosition(
+                    CameraPosition(target: center, zoom: _mapZoom),
+                  ),
+                );
+              },
             ),
           ),
           Positioned(
             left: 12,
             top: 12,
-            child: _chip(
-              Icons.my_location_rounded,
-              _lang.t('home.driverLocation'),
+            child: GestureDetector(
+              onTap: _initDriverLocation,
+              child: _chip(
+                _isLocating
+                    ? Icons.location_searching_rounded
+                    : Icons.my_location_rounded,
+                _lang.t('home.driverLocation'),
+              ),
             ),
           ),
           Positioned(
@@ -438,7 +564,41 @@ class _DriverHomePageState extends State<DriverHomePage> {
             bottom: 12,
             child: _chip(Icons.gps_fixed_rounded, _lang.t('home.liveMap')),
           ),
+          Positioned(
+            right: 12,
+            top: 44,
+            child: Column(
+              children: [
+                _mapZoomBtn(Icons.add_rounded, _zoomIn),
+                const SizedBox(height: 8),
+                _mapZoomBtn(Icons.remove_rounded, _zoomOut),
+              ],
+            ),
+          ),
         ],
+      ),
+    );
+  }
+
+  Widget _mapZoomBtn(IconData icon, VoidCallback onTap) {
+    return Material(
+      color:
+          _isDarkMode
+              ? Colors.white.withValues(alpha: 0.12)
+              : Colors.white.withValues(alpha: 0.84),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(10),
+        onTap: onTap,
+        child: SizedBox(
+          width: 32,
+          height: 32,
+          child: Icon(
+            icon,
+            size: 18,
+            color: _isDarkMode ? Colors.white : const Color(0xFF334155),
+          ),
+        ),
       ),
     );
   }
@@ -970,51 +1130,4 @@ class _StatCard extends StatelessWidget {
       ),
     );
   }
-}
-
-class _MapGridPainter extends CustomPainter {
-  final bool isDarkMode;
-
-  const _MapGridPainter({required this.isDarkMode});
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final grid =
-        Paint()
-          ..color =
-              isDarkMode
-                  ? Colors.white.withValues(alpha: 0.04)
-                  : const Color(0xFF94A3B8).withValues(alpha: 0.22)
-          ..strokeWidth = 1;
-
-    const step = 30.0;
-    for (double x = 0; x < size.width; x += step) {
-      canvas.drawLine(Offset(x, 0), Offset(x, size.height), grid);
-    }
-    for (double y = 0; y < size.height; y += step) {
-      canvas.drawLine(Offset(0, y), Offset(size.width, y), grid);
-    }
-
-    final road =
-        Paint()
-          ..color =
-              isDarkMode
-                  ? Colors.white.withValues(alpha: 0.08)
-                  : const Color(0xFF64748B).withValues(alpha: 0.26)
-          ..strokeWidth = 4
-          ..strokeCap = StrokeCap.round;
-    canvas.drawLine(
-      Offset(0, size.height * 0.35),
-      Offset(size.width, size.height * 0.55),
-      road,
-    );
-    canvas.drawLine(
-      Offset(size.width * 0.2, 0),
-      Offset(size.width * 0.45, size.height),
-      road,
-    );
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

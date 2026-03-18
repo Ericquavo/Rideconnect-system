@@ -1,6 +1,7 @@
-﻿import 'dart:math' as math;
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 import '../../services/passenger_api.dart';
 import '../../services/passenger_language_service.dart';
@@ -34,13 +35,14 @@ class HomePage extends StatefulWidget {
   State<HomePage> createState() => _HomePageState();
 }
 
-class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
+class _HomePageState extends State<HomePage> {
   final PassengerLanguageService _lang = PassengerLanguageService.instance;
-  // ── Animation controllers ──────────────────────────────────────────────────
-  late final AnimationController _pulseCtrl;
-  late final Animation<double> _pulseAnim;
-  late final AnimationController _driverCtrl;
-  late final Animation<double> _driverAnim;
+  static const LatLng _kigaliCenter = LatLng(-1.9441, 30.0619);
+  GoogleMapController? _homeMapController;
+  LatLng? _currentLatLng;
+  bool _hasLocationPermission = false;
+  bool _isLocating = false;
+  double _mapZoom = 14;
 
   // ── API data state ─────────────────────────────────────────────────────────
   bool _isLoading = true;
@@ -148,7 +150,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   void initState() {
     super.initState();
     _lang.languageNotifier.addListener(_onLanguageChanged);
-    _setupAnimations();
+    _initCurrentLocation();
     _loadDashboardData();
   }
 
@@ -157,34 +159,70 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     setState(() {});
   }
 
-  void _setupAnimations() {
-    // Pulsing location pin
-    _pulseCtrl = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1500),
-    )..repeat(reverse: true);
-    _pulseAnim = Tween<double>(
-      begin: 1.0,
-      end: 1.6,
-    ).animate(CurvedAnimation(parent: _pulseCtrl, curve: Curves.easeInOut));
-
-    // Floating driver dots
-    _driverCtrl = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 3),
-    )..repeat(reverse: true);
-    _driverAnim = Tween<double>(
-      begin: 0.0,
-      end: 1.0,
-    ).animate(CurvedAnimation(parent: _driverCtrl, curve: Curves.easeInOut));
-  }
-
   @override
   void dispose() {
     _lang.languageNotifier.removeListener(_onLanguageChanged);
-    _pulseCtrl.dispose();
-    _driverCtrl.dispose();
+    _homeMapController?.dispose();
     super.dispose();
+  }
+
+  Future<void> _initCurrentLocation() async {
+    if (_isLocating) return;
+    setState(() => _isLocating = true);
+    try {
+      final serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) {
+        if (!mounted) return;
+        setState(() {
+          _hasLocationPermission = false;
+          _isLocating = false;
+        });
+        return;
+      }
+
+      var permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+
+      final granted =
+          permission == LocationPermission.whileInUse ||
+          permission == LocationPermission.always;
+      if (!granted) {
+        if (!mounted) return;
+        setState(() {
+          _hasLocationPermission = false;
+          _isLocating = false;
+        });
+        return;
+      }
+
+      final pos = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.best,
+        ),
+      );
+      final point = LatLng(pos.latitude, pos.longitude);
+
+      if (!mounted) return;
+      setState(() {
+        _currentLatLng = point;
+        _hasLocationPermission = true;
+        _isLocating = false;
+      });
+
+      await _homeMapController?.animateCamera(
+        CameraUpdate.newCameraPosition(
+          CameraPosition(target: point, zoom: _mapZoom),
+        ),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _hasLocationPermission = false;
+        _isLocating = false;
+      });
+    }
   }
 
   Future<void> _loadDashboardData() async {
@@ -217,6 +255,45 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     final data = raw['data'];
     if (data is Map<String, dynamic>) return data;
     return raw;
+  }
+
+  Set<Marker> _homeMapMarkers() {
+    final center = _currentLatLng ?? _kigaliCenter;
+    return <Marker>{
+      Marker(
+        markerId: const MarkerId('you'),
+        position: center,
+        infoWindow: const InfoWindow(title: 'You'),
+      ),
+      Marker(
+        markerId: const MarkerId('driver_1'),
+        position: LatLng(center.latitude + 0.0032, center.longitude - 0.0040),
+        infoWindow: InfoWindow(title: _lang.t('home.driversNearby')),
+        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
+      ),
+      Marker(
+        markerId: const MarkerId('driver_2'),
+        position: LatLng(center.latitude - 0.0044, center.longitude + 0.0036),
+        infoWindow: InfoWindow(title: _lang.t('home.driversNearby')),
+        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
+      ),
+      Marker(
+        markerId: const MarkerId('driver_3'),
+        position: LatLng(center.latitude - 0.0021, center.longitude + 0.0065),
+        infoWindow: InfoWindow(title: _lang.t('home.driversNearby')),
+        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
+      ),
+    };
+  }
+
+  Future<void> _zoomIn() async {
+    _mapZoom = (_mapZoom + 1).clamp(3, 20).toDouble();
+    await _homeMapController?.animateCamera(CameraUpdate.zoomTo(_mapZoom));
+  }
+
+  Future<void> _zoomOut() async {
+    _mapZoom = (_mapZoom - 1).clamp(3, 20).toDouble();
+    await _homeMapController?.animateCamera(CameraUpdate.zoomTo(_mapZoom));
   }
 
   // ── Root build ─────────────────────────────────────────────────────────────
@@ -715,53 +792,37 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
             child: Stack(
               children: [
                 // Map background (roads + grid + buildings)
-                SizedBox.expand(child: CustomPaint(painter: _MapPainter())),
-
-                // Animated driver dots
-                AnimatedBuilder(
-                  animation: _driverAnim,
-                  builder:
-                      (_, __) => SizedBox.expand(
-                        child: CustomPaint(
-                          painter: _DriverDotsPainter(
-                            animValue: _driverAnim.value,
+                Positioned.fill(
+                  child: GoogleMap(
+                    initialCameraPosition: CameraPosition(
+                      target: _currentLatLng ?? _kigaliCenter,
+                      zoom: _mapZoom,
+                    ),
+                    myLocationEnabled: _hasLocationPermission,
+                    myLocationButtonEnabled: _hasLocationPermission,
+                    zoomControlsEnabled: true,
+                    zoomGesturesEnabled: true,
+                    rotateGesturesEnabled: true,
+                    scrollGesturesEnabled: true,
+                    tiltGesturesEnabled: true,
+                    compassEnabled: true,
+                    mapToolbarEnabled: false,
+                    markers: _homeMapMarkers(),
+                    onMapCreated: (controller) {
+                      _homeMapController = controller;
+                      final point = _currentLatLng;
+                      if (point != null) {
+                        controller.animateCamera(
+                          CameraUpdate.newCameraPosition(
+                            CameraPosition(target: point, zoom: _mapZoom),
                           ),
-                        ),
-                      ),
-                ),
-
-                // Pulsing user location pin
-                Center(
-                  child: AnimatedBuilder(
-                    animation: _pulseAnim,
-                    builder:
-                        (_, __) => Stack(
-                          alignment: Alignment.center,
-                          clipBehavior: Clip.none,
-                          children: [
-                            Container(
-                              width: 48 * _pulseAnim.value,
-                              height: 48 * _pulseAnim.value,
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                color: const Color(0xFF6C63FF).withValues(
-                                  alpha: (1.6 - _pulseAnim.value) * 0.22,
-                                ),
-                              ),
-                            ),
-                            const Icon(
-                              Icons.location_on_rounded,
-                              color: Color(0xFF6C63FF),
-                              size: 38,
-                              shadows: [
-                                Shadow(
-                                  color: Color(0x886C63FF),
-                                  blurRadius: 12,
-                                ),
-                              ],
-                            ),
-                          ],
-                        ),
+                        );
+                      }
+                    },
+                    onCameraMove: (position) {
+                      _mapZoom = position.zoom;
+                    },
+                    onTap: (_) => widget.onGoToBookRide?.call(),
                   ),
                 ),
 
@@ -769,10 +830,19 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                 Positioned(
                   top: 14,
                   left: 14,
-                  child: _MapChip(
-                    icon: Icons.my_location_rounded,
-                    text: _lang.t('home.yourLocation'),
-                    bg: Colors.white.withValues(alpha: 0.12),
+                  child: GestureDetector(
+                    onTap: _initCurrentLocation,
+                    child: _MapChip(
+                      icon:
+                          _isLocating
+                              ? Icons.location_searching_rounded
+                              : Icons.my_location_rounded,
+                      text:
+                          _hasLocationPermission
+                              ? _lang.t('home.yourLocation')
+                              : 'Enable location',
+                      bg: Colors.white.withValues(alpha: 0.12),
+                    ),
                   ),
                 ),
 
@@ -780,11 +850,25 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                 Positioned(
                   top: 14,
                   right: 14,
-                  child: _MapChip(
-                    icon: Icons.gps_fixed_rounded,
-                    text: 'Live Map',
-                    bg: const Color(0xFF6C63FF).withValues(alpha: 0.88),
-                    fgColor: Colors.white,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      _MapChip(
+                        icon: Icons.gps_fixed_rounded,
+                        text: 'Live Map',
+                        bg: const Color(0xFF6C63FF).withValues(alpha: 0.88),
+                        fgColor: Colors.white,
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          _mapZoomBtn(Icons.remove_rounded, _zoomOut),
+                          const SizedBox(width: 8),
+                          _mapZoomBtn(Icons.add_rounded, _zoomIn),
+                        ],
+                      ),
+                    ],
                   ),
                 ),
 
@@ -844,6 +928,22 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           ),
         ),
       ],
+    );
+  }
+
+  Widget _mapZoomBtn(IconData icon, VoidCallback onTap) {
+    return Material(
+      color: Colors.black.withValues(alpha: 0.35),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(10),
+        onTap: onTap,
+        child: SizedBox(
+          width: 30,
+          height: 30,
+          child: Icon(icon, size: 18, color: Colors.white),
+        ),
+      ),
     );
   }
 
@@ -1602,122 +1702,3 @@ class _MapChip extends StatelessWidget {
 // =============================================================================
 //  Custom Painters
 // =============================================================================
-
-/// Stylised dark map: grid lines, roads, and block buildings.
-class _MapPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    // Background
-    canvas.drawRect(
-      Rect.fromLTWH(0, 0, size.width, size.height),
-      Paint()..color = const Color(0xFF0D1B3E),
-    );
-
-    // Grid
-    final grid =
-        Paint()
-          ..color = Colors.white.withValues(alpha: 0.04)
-          ..strokeWidth = 1;
-    const step = 26.0;
-    for (double x = 0; x < size.width; x += step) {
-      canvas.drawLine(Offset(x, 0), Offset(x, size.height), grid);
-    }
-    for (double y = 0; y < size.height; y += step) {
-      canvas.drawLine(Offset(0, y), Offset(size.width, y), grid);
-    }
-
-    // Major roads
-    final road =
-        Paint()
-          ..color = Colors.white.withValues(alpha: 0.10)
-          ..strokeWidth = 7
-          ..strokeCap = StrokeCap.round;
-    canvas.drawLine(
-      Offset(0, size.height * 0.48),
-      Offset(size.width, size.height * 0.56),
-      road,
-    );
-    canvas.drawLine(
-      Offset(size.width * 0.30, 0),
-      Offset(size.width * 0.42, size.height),
-      road,
-    );
-    canvas.drawLine(
-      Offset(size.width * 0.68, 0),
-      Offset(size.width * 0.60, size.height),
-      road,
-    );
-
-    // Minor roads
-    final minor =
-        Paint()
-          ..color = Colors.white.withValues(alpha: 0.05)
-          ..strokeWidth = 3
-          ..strokeCap = StrokeCap.round;
-    canvas.drawLine(
-      Offset(0, size.height * 0.72),
-      Offset(size.width, size.height * 0.68),
-      minor,
-    );
-    canvas.drawLine(
-      Offset(0, size.height * 0.22),
-      Offset(size.width * 0.55, size.height * 0.18),
-      minor,
-    );
-
-    // Block buildings
-    final bldg =
-        Paint()
-          ..color = Colors.white.withValues(alpha: 0.04)
-          ..style = PaintingStyle.fill;
-    for (final b in [
-      Rect.fromLTWH(size.width * 0.05, size.height * 0.08, 44, 32),
-      Rect.fromLTWH(size.width * 0.56, size.height * 0.06, 52, 38),
-      Rect.fromLTWH(size.width * 0.76, size.height * 0.62, 40, 28),
-      Rect.fromLTWH(size.width * 0.08, size.height * 0.66, 38, 26),
-    ]) {
-      canvas.drawRRect(
-        RRect.fromRectAndRadius(b, const Radius.circular(3)),
-        bldg,
-      );
-    }
-  }
-
-  @override
-  bool shouldRepaint(_MapPainter old) => false;
-}
-
-/// Three driver dots that float gently via sine/cosine offsets.
-class _DriverDotsPainter extends CustomPainter {
-  final double animValue;
-  const _DriverDotsPainter({required this.animValue});
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final bases = [
-      Offset(size.width * 0.20, size.height * 0.28),
-      Offset(size.width * 0.76, size.height * 0.24),
-      Offset(size.width * 0.80, size.height * 0.72),
-    ];
-
-    for (int i = 0; i < bases.length; i++) {
-      final phase = animValue * math.pi * 2 + i * 1.2;
-      final pos =
-          bases[i] + Offset(math.sin(phase) * 4.0, math.cos(phase) * 3.0);
-
-      // Glow halo
-      canvas.drawCircle(
-        pos,
-        16,
-        Paint()..color = const Color(0xFF3B82F6).withValues(alpha: 0.18),
-      );
-      // Filled dot
-      canvas.drawCircle(pos, 8, Paint()..color = const Color(0xFF3B82F6));
-      // White highlight
-      canvas.drawCircle(pos, 3, Paint()..color = Colors.white);
-    }
-  }
-
-  @override
-  bool shouldRepaint(_DriverDotsPainter old) => old.animValue != animValue;
-}

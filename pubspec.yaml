@@ -36,6 +36,9 @@ dependencies:
   font_awesome_flutter: ^10.7.0
   http: ^1.2.2
   shared_preferences: ^2.2.3
+  google_maps_flutter: ^2.9.0
+  geocoding: ^3.0.0
+  geolocator: ^13.0.2
 
 dev_dependencies:
   flutter_test:

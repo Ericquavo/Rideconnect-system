@@ -58,18 +58,42 @@ class MobileFlowApiService {
     final accepted = success is bool ? success : ok;
     if (accepted) return;
     final message = (envelope['message'] ?? 'Request failed').toString();
+    final error = envelope['error'];
+    final errorCode =
+        error is Map<String, dynamic>
+            ? error['code']?.toString()
+            : envelope['error_code']?.toString();
     throw MobileApiException(
       message: message,
       statusCode: response.statusCode,
       envelope: envelope,
+      errorCode: errorCode,
     );
   }
 
   dynamic _envelopeData(Map<String, dynamic> envelope) => envelope['data'];
 
-  Future<List<MobileNotificationItem>> getNotifications() async {
+  Future<List<MobileNotificationItem>> getNotifications({
+    bool? onlyClearable,
+    bool? onlyActionRequired,
+    bool? unreadOnly,
+  }) async {
     final res = await _client
-        .get(_uri('/notifications'), headers: await _headers())
+        .get(
+          _uri('/notifications', <String, String?>{
+            'only_clearable':
+                onlyClearable == null
+                    ? null
+                    : (onlyClearable ? 'true' : 'false'),
+            'only_action_required':
+                onlyActionRequired == null
+                    ? null
+                    : (onlyActionRequired ? 'true' : 'false'),
+            'unread_only':
+                unreadOnly == null ? null : (unreadOnly ? 'true' : 'false'),
+          }),
+          headers: await _headers(),
+        )
         .timeout(const Duration(seconds: 20));
     final envelope = _decodeMap(res);
     _ensureSuccess(res, envelope);
@@ -93,6 +117,26 @@ class MobileFlowApiService {
     }
 
     return <MobileNotificationItem>[];
+  }
+
+  Future<Map<String, dynamic>> clearActionedNotifications() async {
+    final res = await _client
+        .delete(
+          _uri('/notifications/clear-actioned'),
+          headers: await _headers(),
+        )
+        .timeout(const Duration(seconds: 20));
+    final envelope = _decodeMap(res);
+    _ensureSuccess(res, envelope);
+    return envelope;
+  }
+
+  Future<void> deleteNotification(int id) async {
+    final res = await _client
+        .delete(_uri('/notifications/$id'), headers: await _headers())
+        .timeout(const Duration(seconds: 20));
+    final envelope = _decodeMap(res);
+    _ensureSuccess(res, envelope);
   }
 
   Future<int> getUnreadCount() async {
@@ -264,14 +308,18 @@ class MobileApiException implements Exception {
     required this.message,
     required this.statusCode,
     required this.envelope,
+    this.errorCode,
   });
 
   final String message;
   final int statusCode;
   final Map<String, dynamic> envelope;
+  final String? errorCode;
 
   bool get isUnauthorized => statusCode == 401;
   bool get isForbidden => statusCode == 403;
+  bool get isNotificationNotActioned =>
+      statusCode == 422 && errorCode == 'notification_not_actioned';
 
   @override
   String toString() => 'MobileApiException($statusCode): $message';
@@ -285,6 +333,7 @@ class MobileNotificationItem {
     required this.body,
     required this.createdAt,
     required this.read,
+    this.canBeCleared = false,
   });
 
   final int id;
@@ -293,6 +342,7 @@ class MobileNotificationItem {
   final String body;
   final DateTime? createdAt;
   final bool read;
+  final bool canBeCleared;
 
   factory MobileNotificationItem.fromJson(Map<String, dynamic> json) {
     return MobileNotificationItem(
@@ -310,6 +360,8 @@ class MobileNotificationItem {
       read:
           _readBool(json, <String>['read', 'is_read', 'seen']) ??
           (_readString(json, <String>['status']) == 'read'),
+      canBeCleared:
+          _readBool(json, <String>['can_be_cleared', 'canBeCleared']) ?? false,
     );
   }
 }

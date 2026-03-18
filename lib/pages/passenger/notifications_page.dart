@@ -24,6 +24,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
   List<MobileNotificationItem> _notifications = <MobileNotificationItem>[];
   bool _allRead = false;
   bool _loading = true;
+  bool _clearingActioned = false;
   String? _error;
 
   @override
@@ -73,6 +74,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
                     body: n.body,
                     createdAt: n.createdAt,
                     read: true,
+                    canBeCleared: n.canBeCleared,
                   ),
                 )
                 .toList();
@@ -106,6 +108,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
                             body: n.body,
                             createdAt: n.createdAt,
                             read: true,
+                            canBeCleared: n.canBeCleared,
                           )
                           : n,
                 )
@@ -118,6 +121,54 @@ class _NotificationsPageState extends State<NotificationsPage> {
       }
     } catch (_) {
       // Ignore transient per-item read failures.
+    }
+  }
+
+  bool _isClearable(MobileNotificationItem item) {
+    // Only read + backend-marked clearable notifications can be deleted.
+    return item.read && item.canBeCleared;
+  }
+
+  Future<void> _clearActioned() async {
+    if (_clearingActioned) return;
+    setState(() => _clearingActioned = true);
+    try {
+      await mobileFlowApi.clearActionedNotifications();
+      await _loadNotifications();
+    } catch (e) {
+      if (!mounted) return;
+      final msg = e.toString().replaceFirst('Exception: ', '');
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+    } finally {
+      if (mounted) setState(() => _clearingActioned = false);
+    }
+  }
+
+  Future<bool> _deleteNotification(MobileNotificationItem item) async {
+    if (!_isClearable(item)) {
+      if (!mounted) return false;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Notification still requires action.')),
+      );
+      return false;
+    }
+
+    try {
+      await mobileFlowApi.deleteNotification(item.id);
+      return true;
+    } catch (e) {
+      if (!mounted) return false;
+      final text = e.toString().replaceFirst('Exception: ', '');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            e is MobileApiException && e.isNotificationNotActioned
+                ? 'Notification still requires action.'
+                : text,
+          ),
+        ),
+      );
+      return false;
     }
   }
 
@@ -213,6 +264,38 @@ class _NotificationsPageState extends State<NotificationsPage> {
                         ),
                       ),
                     ),
+                  const SizedBox(width: 8),
+                  GestureDetector(
+                    onTap: _clearingActioned ? null : _clearActioned,
+                    child: Opacity(
+                      opacity: _clearingActioned ? 0.6 : 1,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 7,
+                        ),
+                        decoration: BoxDecoration(
+                          color: const Color(
+                            0xFFFF5E5B,
+                          ).withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(
+                            color: const Color(
+                              0xFFFF5E5B,
+                            ).withValues(alpha: 0.3),
+                          ),
+                        ),
+                        child: Text(
+                          'Clear Actioned',
+                          style: GoogleFonts.poppins(
+                            color: const Color(0xFFFF5E5B),
+                            fontSize: 11,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -252,7 +335,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
                         itemCount: _notifications.length,
                         itemBuilder: (_, i) {
                           final n = _notifications[i];
-                          return _NotifCard(
+                          final card = _NotifCard(
                             title: n.title,
                             body: n.body,
                             time: _relativeTime(n.createdAt),
@@ -260,6 +343,49 @@ class _NotificationsPageState extends State<NotificationsPage> {
                             color: _colorForType(n.type),
                             isRead: n.read,
                             onTap: () => _markSingleRead(n),
+                          );
+
+                          if (!_isClearable(n)) return card;
+
+                          return Dismissible(
+                            key: ValueKey<int>(n.id),
+                            direction: DismissDirection.endToStart,
+                            confirmDismiss: (_) => _deleteNotification(n),
+                            onDismissed: (_) {
+                              if (!mounted) return;
+                              setState(() {
+                                _notifications.removeWhere(
+                                  (item) => item.id == n.id,
+                                );
+                              });
+                              final unread =
+                                  _notifications
+                                      .where((item) => !item.read)
+                                      .length;
+                              widget.onUnreadChanged?.call(unread);
+                              if (unread == 0) widget.onRead();
+                            },
+                            background: Container(
+                              margin: const EdgeInsets.only(bottom: 12),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                              ),
+                              alignment: Alignment.centerRight,
+                              decoration: BoxDecoration(
+                                color: const Color(
+                                  0xFFFF5E5B,
+                                ).withValues(alpha: 0.2),
+                                borderRadius: BorderRadius.circular(16),
+                                border: Border.all(
+                                  color: const Color(0xFFFF5E5B),
+                                ),
+                              ),
+                              child: const Icon(
+                                Icons.delete_rounded,
+                                color: Color(0xFFFF5E5B),
+                              ),
+                            ),
+                            child: card,
                           );
                         },
                       ),
