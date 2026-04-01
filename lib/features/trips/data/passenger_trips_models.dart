@@ -64,13 +64,32 @@ class RideSummary {
   factory RideSummary.fromJson(Map<String, dynamic> json) {
     final origin = (json['origin'] as Map<String, dynamic>?) ?? {};
     final destination = (json['destination'] as Map<String, dynamic>?) ?? {};
+    final pickupFallback =
+        (json['pickup_address'] ?? json['pickup_location'] ?? '').toString();
+    final dropoffFallback =
+        (json['dropoff_address'] ?? json['dropoff_location'] ?? '').toString();
     return RideSummary(
-      id: _parseInt(json['id']),
-      originAddress: _addr(origin, json['origin']),
-      destinationAddress: _addr(destination, json['destination']),
-      departureTime: _tryDate(json['departure_time']),
-      availableSeats: _parseInt(json['available_seats']),
-      pricePerSeat: _parseDouble(json['price_per_seat']),
+      id: _parseInt(json['id'] ?? json['ride_id'] ?? json['trip_id']),
+      originAddress:
+          _addr(origin, json['origin']).isNotEmpty
+              ? _addr(origin, json['origin'])
+              : pickupFallback,
+      destinationAddress:
+          _addr(destination, json['destination']).isNotEmpty
+              ? _addr(destination, json['destination'])
+              : dropoffFallback,
+      departureTime: _tryDate(
+        json['departure_time'] ??
+            json['scheduled_at'] ??
+            json['trip_date'] ??
+            json['date'],
+      ),
+      availableSeats: _parseInt(
+        json['available_seats'] ?? json['seats_available'] ?? json['seats'],
+      ),
+      pricePerSeat: _parseDouble(
+        json['price_per_seat'] ?? json['fare'] ?? json['amount'],
+      ),
       status: (json['status'] ?? '').toString(),
       rideType:
           (json['type'] ?? json['ride_type'] ?? json['name'] ?? '').toString(),
@@ -104,6 +123,15 @@ class RideHistoryItem {
 
   factory RideHistoryItem.fromJson(Map<String, dynamic> json) {
     final ride = (json['ride'] as Map<String, dynamic>?) ?? {};
+    final topOrigin =
+        (json['pickup_location'] ?? json['pickup_address'] ?? json['from'])
+            ?.toString();
+    final topDestination =
+        (json['dropoff_location'] ??
+                json['dropoff_address'] ??
+                json['destination'] ??
+                json['to'])
+            ?.toString();
 
     // origin / destination can be a Map<String,dynamic> or a plain String
     final originRaw = ride['origin'];
@@ -114,6 +142,7 @@ class RideHistoryItem {
             : (originRaw ??
                     ride['pickup_location'] ??
                     ride['pickup_address'] ??
+                    topOrigin ??
                     '')
                 .toString();
     final String destination =
@@ -123,16 +152,17 @@ class RideHistoryItem {
                     ride['dropoff_location'] ??
                     ride['dropoff_address'] ??
                     ride['to'] ??
+                    topDestination ??
                     '')
                 .toString();
 
     return RideHistoryItem(
       id: _parseInt(json['id']),
-      rideId: _parseInt(ride['id']),
+      rideId: _parseInt(ride['id'] ?? json['ride_id'] ?? json['trip_id']),
       origin: origin,
       destination: destination,
-      seatsBooked: _parseInt(json['seats_booked']),
-      totalPrice: _parseDouble(json['total_price']),
+      seatsBooked: _parseInt(json['seats_booked'] ?? json['seats']),
+      totalPrice: _parseDouble(json['total_price'] ?? json['fare']),
       status: (json['status'] ?? '').toString(),
       bookedAt: _tryDate(json['booked_at'] ?? json['created_at']),
     );
@@ -227,9 +257,13 @@ class CreateBookingRequest {
 
   Map<String, dynamic> toJson() => {
     'ride_id': rideId,
+    'trip_id': rideId,
     'seats': seats,
+    'seat_count': seats,
     'pickup_address': pickupAddress,
+    'pickup_location': pickupAddress,
     'dropoff_address': dropoffAddress,
+    'dropoff_location': dropoffAddress,
   };
 }
 
@@ -252,12 +286,112 @@ class CreateBookingResponse {
   final String status;
 
   factory CreateBookingResponse.fromJson(Map<String, dynamic> json) {
+    final booking = json['booking'];
+    final trip = json['trip'];
+    final ride = json['ride'];
+    final bookingMap =
+        booking is Map<String, dynamic> ? booking : const <String, dynamic>{};
+    final tripMap =
+        trip is Map<String, dynamic> ? trip : const <String, dynamic>{};
+    final rideMap =
+        ride is Map<String, dynamic> ? ride : const <String, dynamic>{};
+
     return CreateBookingResponse(
-      id: _parseInt(json['id']),
-      rideId: _parseInt(json['ride_id']),
-      seats: _parseInt(json['seats']),
-      totalPrice: _parseDouble(json['total_price']),
-      status: (json['status'] ?? '').toString(),
+      id:
+          _parseInt(json['id'] ?? json['booking_id'] ?? json['trip_id']) > 0
+              ? _parseInt(json['id'] ?? json['booking_id'] ?? json['trip_id'])
+              : _parseInt(
+                bookingMap['id'] ??
+                    bookingMap['booking_id'] ??
+                    tripMap['id'] ??
+                    rideMap['id'],
+              ),
+      rideId: _parseInt(
+        json['ride_id'] ??
+            json['trip_id'] ??
+            bookingMap['ride_id'] ??
+            bookingMap['trip_id'] ??
+            tripMap['ride_id'] ??
+            tripMap['id'] ??
+            rideMap['id'],
+      ),
+      seats: _parseInt(
+        json['seats'] ??
+            json['seat_count'] ??
+            bookingMap['seats'] ??
+            tripMap['seats'],
+      ),
+      totalPrice: _parseDouble(
+        json['total_price'] ??
+            json['amount'] ??
+            json['fare'] ??
+            bookingMap['total_price'] ??
+            bookingMap['amount'] ??
+            tripMap['total_price'] ??
+            tripMap['fare'],
+      ),
+      status:
+          (json['status'] ??
+                  bookingMap['status'] ??
+                  tripMap['status'] ??
+                  'pending')
+              .toString(),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Request body for POST /passenger/payments.
+class CreatePaymentRequest {
+  CreatePaymentRequest({
+    required this.bookingId,
+    required this.amount,
+    required this.paymentMethod,
+    this.currency = 'RWF',
+  });
+
+  final int bookingId;
+  final double amount;
+  final String paymentMethod;
+  final String currency;
+
+  Map<String, dynamic> toJson() => {
+    'booking_id': bookingId,
+    'ride_id': bookingId,
+    'trip_id': bookingId,
+    'amount': amount,
+    'payment_method': paymentMethod,
+    'method': paymentMethod,
+    'currency': currency,
+  };
+}
+
+/// Response body from POST /passenger/payments.
+class CreatePaymentResponse {
+  CreatePaymentResponse({
+    required this.id,
+    required this.status,
+    required this.amount,
+    required this.reference,
+  });
+
+  final int id;
+  final String status;
+  final double amount;
+  final String reference;
+
+  factory CreatePaymentResponse.fromJson(Map<String, dynamic> json) {
+    return CreatePaymentResponse(
+      id: _parseInt(json['id'] ?? json['payment_id']),
+      status: (json['status'] ?? json['payment_status'] ?? '').toString(),
+      amount: _parseDouble(json['amount'] ?? json['paid_amount']),
+      reference:
+          (json['reference'] ??
+                  json['transaction_id'] ??
+                  json['payment_reference'] ??
+                  '')
+              .toString(),
     );
   }
 }

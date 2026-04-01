@@ -43,6 +43,25 @@ class _HomePageState extends State<HomePage> {
   bool _hasLocationPermission = false;
   bool _isLocating = false;
   double _mapZoom = 14;
+  bool get _isDarkMode => Theme.of(context).brightness == Brightness.dark;
+  Color get _bgTop =>
+      _isDarkMode ? const Color(0xFF0A0E1A) : const Color(0xFFEFF4FF);
+  Color get _bgBottom =>
+      _isDarkMode ? const Color(0xFF1A1F3A) : const Color(0xFFDCE8FF);
+  Color get _cardBg =>
+      _isDarkMode
+          ? const Color(0xFF1A1F3A)
+          : Colors.white.withValues(alpha: 0.92);
+  Color get _cardBorder =>
+      _isDarkMode
+          ? Colors.white.withValues(alpha: 0.09)
+          : const Color(0xFFC9D6F2);
+  Color get _textPrimary =>
+      _isDarkMode ? Colors.white : const Color(0xFF0F172A);
+  Color get _textSecondary =>
+      _isDarkMode ? Colors.white70 : const Color(0xFF334155);
+  Color get _textMuted =>
+      _isDarkMode ? Colors.white38 : const Color(0xFF475569);
 
   // ── API data state ─────────────────────────────────────────────────────────
   bool _isLoading = true;
@@ -300,9 +319,9 @@ class _HomePageState extends State<HomePage> {
   @override
   Widget build(BuildContext context) {
     return Container(
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         gradient: LinearGradient(
-          colors: [Color(0xFF090D1A), Color(0xFF131729)],
+          colors: [_bgTop, _bgBottom],
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
         ),
@@ -310,7 +329,7 @@ class _HomePageState extends State<HomePage> {
       child: SafeArea(
         child: RefreshIndicator(
           color: const Color(0xFF6C63FF),
-          backgroundColor: const Color(0xFF1A1F3A),
+          backgroundColor: _cardBg,
           onRefresh: _loadDashboardData,
           child: SingleChildScrollView(
             physics: const BouncingScrollPhysics(
@@ -425,7 +444,7 @@ class _HomePageState extends State<HomePage> {
                   style: GoogleFonts.poppins(
                     fontSize: 24,
                     fontWeight: FontWeight.w700,
-                    color: Colors.white,
+                    color: _textPrimary,
                     letterSpacing: -0.3,
                   ),
                 ),
@@ -433,7 +452,7 @@ class _HomePageState extends State<HomePage> {
                   _lang.t('home.whereTo'),
                   style: GoogleFonts.poppins(
                     fontSize: 13,
-                    color: Colors.white54,
+                    color: _textSecondary,
                   ),
                 ),
               ],
@@ -458,13 +477,21 @@ class _HomePageState extends State<HomePage> {
             width: 44,
             height: 44,
             decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.07),
+              color:
+                  _isDarkMode
+                      ? Colors.white.withValues(alpha: 0.07)
+                      : const Color(0xFFF8FAFF),
               borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+              border: Border.all(
+                color:
+                    _isDarkMode
+                        ? Colors.white.withValues(alpha: 0.1)
+                        : const Color(0xFFD5E1F7),
+              ),
             ),
-            child: const Icon(
+            child: Icon(
               Icons.notifications_outlined,
-              color: Colors.white70,
+              color: _isDarkMode ? Colors.white70 : const Color(0xFF475569),
               size: 22,
             ),
           ),
@@ -588,14 +615,20 @@ class _HomePageState extends State<HomePage> {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
         decoration: BoxDecoration(
-          color: const Color(0xFF1A1F3A),
+          color: _cardBg,
           borderRadius: BorderRadius.circular(18),
           border: Border.all(
-            color: const Color(0xFF6C63FF).withValues(alpha: 0.35),
+            color:
+                _isDarkMode
+                    ? const Color(0xFF6C63FF).withValues(alpha: 0.35)
+                    : const Color(0xFFC9D6F2),
           ),
           boxShadow: [
             BoxShadow(
-              color: const Color(0xFF6C63FF).withValues(alpha: 0.12),
+              color:
+                  _isDarkMode
+                      ? const Color(0xFF6C63FF).withValues(alpha: 0.12)
+                      : const Color(0xFF334155).withValues(alpha: 0.08),
               blurRadius: 20,
               offset: const Offset(0, 4),
             ),
@@ -625,17 +658,14 @@ class _HomePageState extends State<HomePage> {
                   Text(
                     _lang.t('home.searchPrompt'),
                     style: GoogleFonts.poppins(
-                      color: Colors.white70,
+                      color: _textPrimary,
                       fontSize: 15,
                       fontWeight: FontWeight.w500,
                     ),
                   ),
                   Text(
                     _lang.t('home.searchSubPrompt'),
-                    style: GoogleFonts.poppins(
-                      color: Colors.white30,
-                      fontSize: 11,
-                    ),
+                    style: GoogleFonts.poppins(color: _textMuted, fontSize: 11),
                   ),
                 ],
               ),
@@ -675,7 +705,7 @@ class _HomePageState extends State<HomePage> {
               Text(
                 _lang.t('home.savedPlaces'),
                 style: GoogleFonts.poppins(
-                  color: Colors.white,
+                  color: _textPrimary,
                   fontWeight: FontWeight.w600,
                   fontSize: 15,
                 ),
@@ -737,7 +767,7 @@ class _HomePageState extends State<HomePage> {
             Text(
               _lang.t('home.mapOverview'),
               style: GoogleFonts.poppins(
-                color: Colors.white,
+                color: _textPrimary,
                 fontWeight: FontWeight.w600,
                 fontSize: 15,
               ),
@@ -841,7 +871,14 @@ class _HomePageState extends State<HomePage> {
                           _hasLocationPermission
                               ? _lang.t('home.yourLocation')
                               : 'Enable location',
-                      bg: Colors.white.withValues(alpha: 0.12),
+                      bg:
+                          _isDarkMode
+                              ? Colors.white.withValues(alpha: 0.12)
+                              : Colors.white.withValues(alpha: 0.94),
+                      fgColor:
+                          _isDarkMode
+                              ? Colors.white70
+                              : const Color(0xFF334155),
                     ),
                   ),
                 ),
@@ -856,8 +893,16 @@ class _HomePageState extends State<HomePage> {
                       _MapChip(
                         icon: Icons.gps_fixed_rounded,
                         text: 'Live Map',
-                        bg: const Color(0xFF6C63FF).withValues(alpha: 0.88),
-                        fgColor: Colors.white,
+                        bg:
+                            _isDarkMode
+                                ? const Color(
+                                  0xFF6C63FF,
+                                ).withValues(alpha: 0.88)
+                                : Colors.white.withValues(alpha: 0.95),
+                        fgColor:
+                            _isDarkMode
+                                ? Colors.white
+                                : const Color(0xFF6C63FF),
                       ),
                       const SizedBox(height: 8),
                       Row(
@@ -933,7 +978,10 @@ class _HomePageState extends State<HomePage> {
 
   Widget _mapZoomBtn(IconData icon, VoidCallback onTap) {
     return Material(
-      color: Colors.black.withValues(alpha: 0.35),
+      color:
+          _isDarkMode
+              ? Colors.black.withValues(alpha: 0.35)
+              : Colors.white.withValues(alpha: 0.95),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
       child: InkWell(
         borderRadius: BorderRadius.circular(10),
@@ -941,7 +989,11 @@ class _HomePageState extends State<HomePage> {
         child: SizedBox(
           width: 30,
           height: 30,
-          child: Icon(icon, size: 18, color: Colors.white),
+          child: Icon(
+            icon,
+            size: 18,
+            color: _isDarkMode ? Colors.white : const Color(0xFF334155),
+          ),
         ),
       ),
     );
@@ -991,7 +1043,7 @@ class _HomePageState extends State<HomePage> {
           style: GoogleFonts.poppins(
             fontSize: 17,
             fontWeight: FontWeight.w700,
-            color: Colors.white,
+            color: _textPrimary,
           ),
         ),
         if (actionLabel != null)
@@ -1057,12 +1109,18 @@ class _HomePageState extends State<HomePage> {
               width: 152,
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: const Color(0xFF1A1F3A),
+                color: _cardBg,
                 borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: col.withValues(alpha: 0.35)),
+                border: Border.all(
+                  color:
+                      _isDarkMode ? col.withValues(alpha: 0.35) : _cardBorder,
+                ),
                 boxShadow: [
                   BoxShadow(
-                    color: col.withValues(alpha: 0.12),
+                    color:
+                        _isDarkMode
+                            ? col.withValues(alpha: 0.12)
+                            : const Color(0xFF334155).withValues(alpha: 0.08),
                     blurRadius: 18,
                     offset: const Offset(0, 6),
                   ),
@@ -1112,17 +1170,14 @@ class _HomePageState extends State<HomePage> {
                   Text(
                     opt['label'] as String,
                     style: GoogleFonts.poppins(
-                      color: Colors.white,
+                      color: _textPrimary,
                       fontWeight: FontWeight.w700,
                       fontSize: 15,
                     ),
                   ),
                   Text(
                     opt['desc'] as String,
-                    style: GoogleFonts.poppins(
-                      color: Colors.white38,
-                      fontSize: 11,
-                    ),
+                    style: GoogleFonts.poppins(color: _textMuted, fontSize: 11),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -1156,12 +1211,15 @@ class _HomePageState extends State<HomePage> {
           margin: const EdgeInsets.only(bottom: 12),
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            color: const Color(0xFF1A1F3A),
+            color: _cardBg,
             borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: Colors.white.withValues(alpha: 0.07)),
+            border: Border.all(color: _cardBorder),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withValues(alpha: 0.2),
+                color:
+                    _isDarkMode
+                        ? Colors.black.withValues(alpha: 0.2)
+                        : const Color(0xFF334155).withValues(alpha: 0.08),
                 blurRadius: 12,
                 offset: const Offset(0, 4),
               ),
@@ -1192,7 +1250,7 @@ class _HomePageState extends State<HomePage> {
                       child: Text(
                         (d['name'] as String)[0],
                         style: GoogleFonts.poppins(
-                          color: Colors.white,
+                          color: _textPrimary,
                           fontWeight: FontWeight.w700,
                           fontSize: 20,
                         ),
@@ -1227,7 +1285,7 @@ class _HomePageState extends State<HomePage> {
                     Text(
                       d['name'] as String,
                       style: GoogleFonts.poppins(
-                        color: Colors.white,
+                        color: _textPrimary,
                         fontWeight: FontWeight.w600,
                         fontSize: 15,
                       ),
@@ -1236,7 +1294,7 @@ class _HomePageState extends State<HomePage> {
                     Text(
                       d['car'] as String,
                       style: GoogleFonts.poppins(
-                        color: Colors.white54,
+                        color: _textSecondary,
                         fontSize: 12,
                       ),
                     ),
@@ -1252,7 +1310,7 @@ class _HomePageState extends State<HomePage> {
                         Text(
                           '${d['trips']} trips',
                           style: GoogleFonts.poppins(
-                            color: Colors.white38,
+                            color: _textMuted,
                             fontSize: 11,
                           ),
                         ),
@@ -1306,7 +1364,7 @@ class _HomePageState extends State<HomePage> {
                       Text(
                         d['dist'] as String,
                         style: GoogleFonts.poppins(
-                          color: Colors.white54,
+                          color: _textSecondary,
                           fontSize: 12,
                         ),
                       ),
@@ -1557,13 +1615,18 @@ class _SavedPlaceChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final cardBg =
+        isDark ? const Color(0xFF1A1F3A) : Colors.white.withValues(alpha: 0.92);
+    final titleColor = isDark ? Colors.white : const Color(0xFF0F172A);
+    final subtitleColor = isDark ? Colors.white38 : const Color(0xFF475569);
     return GestureDetector(
       onTap: onTap,
       child: Container(
         width: 122,
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         decoration: BoxDecoration(
-          color: const Color(0xFF1A1F3A),
+          color: cardBg,
           borderRadius: BorderRadius.circular(14),
           border: Border.all(color: color.withValues(alpha: 0.28)),
         ),
@@ -1586,7 +1649,7 @@ class _SavedPlaceChip extends StatelessWidget {
                   Text(
                     label,
                     style: GoogleFonts.poppins(
-                      color: Colors.white,
+                      color: titleColor,
                       fontSize: 11,
                       fontWeight: FontWeight.w600,
                     ),
@@ -1594,8 +1657,8 @@ class _SavedPlaceChip extends StatelessWidget {
                   Text(
                     address,
                     style: GoogleFonts.poppins(
-                      color: Colors.white38,
-                      fontSize: 9,
+                      color: subtitleColor,
+                      fontSize: 10,
                     ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
@@ -1626,11 +1689,16 @@ class _StatCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final cardBg =
+        isDark ? const Color(0xFF1A1F3A) : Colors.white.withValues(alpha: 0.92);
+    final valueColor = isDark ? Colors.white : const Color(0xFF0F172A);
+    final labelColor = isDark ? Colors.white54 : const Color(0xFF475569);
     return Expanded(
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 12),
         decoration: BoxDecoration(
-          color: const Color(0xFF1A1F3A),
+          color: cardBg,
           borderRadius: BorderRadius.circular(14),
           border: Border.all(color: color.withValues(alpha: 0.22)),
         ),
@@ -1641,14 +1709,14 @@ class _StatCard extends StatelessWidget {
             Text(
               value,
               style: GoogleFonts.poppins(
-                color: Colors.white,
+                color: valueColor,
                 fontWeight: FontWeight.w700,
                 fontSize: 14,
               ),
             ),
             Text(
               label,
-              style: GoogleFonts.poppins(color: Colors.white54, fontSize: 9),
+              style: GoogleFonts.poppins(color: labelColor, fontSize: 10),
             ),
           ],
         ),
@@ -1673,12 +1741,18 @@ class _MapChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
         color: bg,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
+        border: Border.all(
+          color:
+              isDark
+                  ? Colors.white.withValues(alpha: 0.15)
+                  : const Color(0xFFD5E1F7),
+        ),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,

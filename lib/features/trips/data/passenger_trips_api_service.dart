@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'package:flutter/foundation.dart';
 
 import '../../../auth/auth_session.dart';
 import 'passenger_trips_models.dart';
@@ -19,7 +20,7 @@ typedef AuthHeadersProvider = Future<Map<String, String>> Function();
 // ─────────────────────────────────────────────────────────────────────────────
 
 final PassengerTripsApiService passengerTripsApi = PassengerTripsApiService(
-  baseUrl: 'https://rideconnect-emp0.onrender.com/api/v1',
+  baseUrl: 'https://rideconnect-emp0.onrender.com/v1',
   authHeadersProvider: AuthSession.authHeaders,
 );
 
@@ -35,7 +36,7 @@ class PassengerTripsApiService {
   }) : _authHeadersProvider = authHeadersProvider,
        _client = client ?? http.Client();
 
-  /// e.g. https://host/api/v1  (no trailing slash)
+  /// e.g. https://host/v1  (no trailing slash)
   final String baseUrl;
   final AuthHeadersProvider _authHeadersProvider;
   final http.Client _client;
@@ -62,15 +63,71 @@ class PassengerTripsApiService {
   }
 
   Map<String, dynamic> _decodeBody(http.Response response) {
-    if (response.body.isEmpty) return {};
-    final decoded = jsonDecode(response.body);
-    return decoded is Map<String, dynamic> ? decoded : {};
+    final rawBody = response.body;
+    if (rawBody.trim().isEmpty) return {};
+
+    try {
+      final decoded = jsonDecode(rawBody);
+      return decoded is Map<String, dynamic> ? decoded : {};
+    } on FormatException {
+      return <String, dynamic>{
+        'message': 'Server returned an invalid response format.',
+        'raw_body': rawBody,
+        'invalid_json': true,
+      };
+    }
+  }
+
+  List<Map<String, dynamic>> _extractDataList(Map<String, dynamic> body) {
+    final data = body['data'];
+    if (data is List) {
+      return data.whereType<Map<String, dynamic>>().toList();
+    }
+    if (data is Map<String, dynamic>) {
+      final candidates = <dynamic>[
+        data['items'],
+        data['rides'],
+        data['bookings'],
+        data['history'],
+        data['trips'],
+      ];
+      for (final value in candidates) {
+        if (value is List) {
+          return value.whereType<Map<String, dynamic>>().toList();
+        }
+      }
+    }
+    return <Map<String, dynamic>>[];
+  }
+
+  Map<String, dynamic> _extractDataMap(Map<String, dynamic> body) {
+    final data = body['data'];
+    if (data is Map<String, dynamic>) return data;
+    final fallback = <dynamic>[body['ride'], body['booking'], body['trip']];
+    for (final value in fallback) {
+      if (value is Map<String, dynamic>) return value;
+    }
+    return body;
   }
 
   void _throwIfNotOk(http.Response response, Map<String, dynamic> body) {
+    if (body['invalid_json'] == true) {
+      throw ApiException(
+        (body['message'] ?? 'Server returned an invalid response format.')
+            .toString(),
+        response.statusCode,
+        body,
+      );
+    }
+
     if (response.statusCode >= 200 && response.statusCode < 300) return;
     final msg = (body['message'] ?? 'Request failed').toString();
     throw ApiException(msg, response.statusCode, body);
+  }
+
+  void _logEndpointHit(String operation, String path) {
+    if (!kDebugMode) return;
+    debugPrint('[PassengerTripsApi] $operation -> $path');
   }
 
   // ── Auth endpoints ────────────────────────────────────────────────────────
@@ -108,8 +165,9 @@ class PassengerTripsApiService {
     String? date, // YYYY-MM-DD
     bool? availableOnly,
   }) async {
+    final path = '/passenger/rides/available';
     final res = await _client.get(
-      _uri('/passenger/rides/available', {
+      _uri(path, <String, String?>{
         'status': status,
         'search': search,
         'date': date,
@@ -119,11 +177,8 @@ class PassengerTripsApiService {
     );
     final body = _decodeBody(res);
     _throwIfNotOk(res, body);
-    final list = (body['data'] as List<dynamic>? ?? []);
-    return list
-        .whereType<Map<String, dynamic>>()
-        .map(RideSummary.fromJson)
-        .toList();
+    _logEndpointHit('fetchAvailableRides', path);
+    return _extractDataList(body).map(RideSummary.fromJson).toList();
   }
 
   /// GET /passenger/rides
@@ -134,8 +189,9 @@ class PassengerTripsApiService {
     String? endDate,
     int? perPage,
   }) async {
+    final path = '/passenger/rides';
     final res = await _client.get(
-      _uri('/passenger/rides', {
+      _uri(path, <String, String?>{
         'status': status,
         'start_date': startDate,
         'end_date': endDate,
@@ -145,11 +201,44 @@ class PassengerTripsApiService {
     );
     final body = _decodeBody(res);
     _throwIfNotOk(res, body);
-    final list = (body['data'] as List<dynamic>? ?? []);
-    return list
-        .whereType<Map<String, dynamic>>()
-        .map(RideHistoryItem.fromJson)
-        .toList();
+    _logEndpointHit('fetchMyRides', path);
+    return _extractDataList(body).map(RideHistoryItem.fromJson).toList();
+  }
+
+  /// GET /passenger/bookings/my
+  /// Returns the passenger's booking list to track booking status.
+  Future<List<RideHistoryItem>> fetchMyBookings({
+    String? status,
+    String? startDate,
+    String? endDate,
+    int? perPage,
+  }) async {
+    final res = await _client.get(
+      _uri('/passenger/bookings/my', {
+        'status': status,
+        'start_date': startDate,
+        'end_date': endDate,
+        'per_page': perPage?.toString(),
+      }),
+      headers: await _headers(),
+    );
+    final body = _decodeBody(res);
+    _throwIfNotOk(res, body);
+    _logEndpointHit('fetchMyBookings', '/passenger/bookings/my');
+    return _extractDataList(body).map(RideHistoryItem.fromJson).toList();
+  }
+
+  /// GET /passenger/trips
+  /// Returns active/completed passenger trips.
+  Future<List<RideHistoryItem>> fetchPassengerTrips() async {
+    final res = await _client.get(
+      _uri('/passenger/trips'),
+      headers: await _headers(),
+    );
+    final body = _decodeBody(res);
+    _throwIfNotOk(res, body);
+    _logEndpointHit('fetchPassengerTrips', '/passenger/trips');
+    return _extractDataList(body).map(RideHistoryItem.fromJson).toList();
   }
 
   /// GET /passenger/rides/history
@@ -160,8 +249,9 @@ class PassengerTripsApiService {
     String? endDate,
     int? perPage,
   }) async {
+    final path = '/passenger/rides/history';
     final res = await _client.get(
-      _uri('/passenger/rides/history', {
+      _uri(path, <String, String?>{
         'status': status,
         'start_date': startDate,
         'end_date': endDate,
@@ -171,24 +261,19 @@ class PassengerTripsApiService {
     );
     final body = _decodeBody(res);
     _throwIfNotOk(res, body);
-    final list = (body['data'] as List<dynamic>? ?? []);
-    return list
-        .whereType<Map<String, dynamic>>()
-        .map(RideHistoryItem.fromJson)
-        .toList();
+    _logEndpointHit('fetchRideHistory', path);
+    return _extractDataList(body).map(RideHistoryItem.fromJson).toList();
   }
 
   /// GET /passenger/rides/{id}
   /// Returns full details for a single ride.
   Future<RideDetails> fetchRideDetails(int rideId) async {
-    final res = await _client.get(
-      _uri('/passenger/rides/$rideId'),
-      headers: await _headers(),
-    );
+    final path = '/passenger/rides/$rideId';
+    final res = await _client.get(_uri(path), headers: await _headers());
     final body = _decodeBody(res);
     _throwIfNotOk(res, body);
-    final data = (body['data'] as Map<String, dynamic>? ?? {});
-    return RideDetails.fromJson(data);
+    _logEndpointHit('fetchRideDetails', path);
+    return RideDetails.fromJson(_extractDataMap(body));
   }
 
   /// POST /passenger/rides
@@ -196,29 +281,50 @@ class PassengerTripsApiService {
   Future<CreateBookingResponse> createBooking(
     CreateBookingRequest request,
   ) async {
+    const path = '/passenger/rides';
     final res = await _client.post(
-      _uri('/passenger/rides'),
+      _uri(path),
       headers: await _headers(),
       body: jsonEncode(request.toJson()),
     );
     final body = _decodeBody(res);
     _throwIfNotOk(res, body);
-    final data = (body['data'] as Map<String, dynamic>? ?? {});
-    return CreateBookingResponse.fromJson(data);
+    _logEndpointHit('createBooking', path);
+    return CreateBookingResponse.fromJson(_extractDataMap(body));
+  }
+
+  /// POST /passenger/payments
+  /// Processes payment for a booking/trip.
+  Future<CreatePaymentResponse> createPayment(
+    CreatePaymentRequest request,
+  ) async {
+    final res = await _client.post(
+      _uri('/passenger/payments'),
+      headers: await _headers(),
+      body: jsonEncode(request.toJson()),
+    );
+    final body = _decodeBody(res);
+    _throwIfNotOk(res, body);
+    _logEndpointHit('createPayment', '/passenger/payments');
+    return CreatePaymentResponse.fromJson(_extractDataMap(body));
   }
 
   /// PUT /passenger/rides/{id}/cancel
   /// Cancels a booking.  [reason] is optional.
   Future<void> cancelBooking(int rideId, {String? reason}) async {
+    const pathPrefix = '/passenger/rides';
+    final payload = <String, dynamic>{
+      if (reason != null && reason.trim().isNotEmpty) 'reason': reason.trim(),
+    };
+    final path = '$pathPrefix/$rideId/cancel';
     final res = await _client.put(
-      _uri('/passenger/rides/$rideId/cancel'),
+      _uri(path),
       headers: await _headers(),
-      body: jsonEncode({
-        if (reason != null && reason.trim().isNotEmpty) 'reason': reason.trim(),
-      }),
+      body: jsonEncode(payload),
     );
     final body = _decodeBody(res);
     _throwIfNotOk(res, body);
+    _logEndpointHit('cancelBooking', path);
   }
 
   void dispose() => _client.close();

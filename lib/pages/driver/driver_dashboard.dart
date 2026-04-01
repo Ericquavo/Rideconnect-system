@@ -39,6 +39,7 @@ class _DriverDashboardState extends State<DriverDashboard> {
   bool _isOnline = true;
   int _notificationUnreadCount = 0;
   Timer? _notificationTimer;
+  Timer? _presenceTimer;
   final DriverLanguageService _lang = DriverLanguageService.instance;
 
   @override
@@ -46,10 +47,10 @@ class _DriverDashboardState extends State<DriverDashboard> {
     super.initState();
     _lang.ensureInitialized();
     _lang.languageNotifier.addListener(_onLanguageChanged);
-    _refreshUnreadNotifications();
-    _notificationTimer = Timer.periodic(
-      const Duration(seconds: 20),
-      (_) => _refreshUnreadNotifications(),
+    _syncDriverPresence();
+    _presenceTimer = Timer.periodic(
+      const Duration(seconds: 30),
+      (_) => _syncDriverPresence(),
     );
   }
 
@@ -57,7 +58,17 @@ class _DriverDashboardState extends State<DriverDashboard> {
   void dispose() {
     _lang.languageNotifier.removeListener(_onLanguageChanged);
     _notificationTimer?.cancel();
+    _presenceTimer?.cancel();
     super.dispose();
+  }
+
+  Future<void> _syncDriverPresence() async {
+    if (!_isOnline) return;
+    try {
+      await DriverApi.instance.updateStatus(isOnline: true);
+    } catch (_) {
+      // Keep UI working on transient network failures.
+    }
   }
 
   void _onLanguageChanged() {
@@ -67,10 +78,12 @@ class _DriverDashboardState extends State<DriverDashboard> {
 
   void _handleStatusChanged(bool value) {
     setState(() => _isOnline = value);
-    DriverApi.instance.updateStatus(isOnline: value).catchError((_) {
-      // Keep local toggle responsive even if network update fails.
-      return <String, dynamic>{};
-    });
+    _syncDriverPresence();
+    if (!value) {
+      DriverApi.instance.updateStatus(isOnline: false).catchError((_) {
+        return <String, dynamic>{};
+      });
+    }
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
@@ -128,17 +141,6 @@ class _DriverDashboardState extends State<DriverDashboard> {
     await Navigator.of(
       context,
     ).push(MaterialPageRoute(builder: (_) => const DriverNotificationsPage()));
-    await _refreshUnreadNotifications();
-  }
-
-  Future<void> _refreshUnreadNotifications() async {
-    try {
-      final unread = await DriverApi.instance.getUnreadNotificationCount();
-      if (!mounted) return;
-      setState(() => _notificationUnreadCount = unread);
-    } catch (_) {
-      // Keep the previous badge count on transient API failures.
-    }
   }
 
   @override

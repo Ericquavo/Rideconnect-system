@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
-import '../auth/auth_store.dart';
+import '../auth/auth_api.dart';
 
 class SignupPage extends StatefulWidget {
   const SignupPage({super.key});
@@ -55,15 +55,37 @@ class _SignupPageState extends State<SignupPage>
   void _handleSignup() async {
     if (_formKey.currentState!.validate()) {
       setState(() => _isLoading = true);
-      await Future.delayed(const Duration(seconds: 2));
-      // Save credentials so login can validate them
-      AuthStore.instance.register(
+      final selectedRole =
+          _selectedRole.trim().toLowerCase() == 'driver'
+              ? 'driver'
+              : 'passenger';
+      final result = await AuthApi.register(
         name: _nameController.text.trim(),
         email: _emailController.text.trim(),
+        phone: _phoneController.text.trim(),
         password: _passwordController.text,
+        role: selectedRole,
       );
       setState(() => _isLoading = false);
       if (!mounted) return;
+
+      if (!result.success) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: const Color(0xFF131729),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            content: Text(
+              result.message,
+              style: GoogleFonts.poppins(color: Colors.white70, fontSize: 13),
+            ),
+          ),
+        );
+        return;
+      }
+
       _showSuccessDialog();
     }
   }
@@ -150,7 +172,9 @@ class _SignupPageState extends State<SignupPage>
                         borderRadius: BorderRadius.circular(14),
                         boxShadow: [
                           BoxShadow(
-                            color: const Color(0xFF6C63FF).withValues(alpha: 0.45),
+                            color: const Color(
+                              0xFF6C63FF,
+                            ).withValues(alpha: 0.45),
                             blurRadius: 16,
                             offset: const Offset(0, 6),
                           ),
@@ -521,7 +545,10 @@ class _SignupPageState extends State<SignupPage>
     return Row(
       children: [
         Expanded(
-          child: Divider(color: Colors.white.withValues(alpha: 0.15), thickness: 1),
+          child: Divider(
+            color: Colors.white.withValues(alpha: 0.15),
+            thickness: 1,
+          ),
         ),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 14),
@@ -531,7 +558,10 @@ class _SignupPageState extends State<SignupPage>
           ),
         ),
         Expanded(
-          child: Divider(color: Colors.white.withValues(alpha: 0.15), thickness: 1),
+          child: Divider(
+            color: Colors.white.withValues(alpha: 0.15),
+            thickness: 1,
+          ),
         ),
       ],
     );

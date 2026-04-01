@@ -17,6 +17,16 @@ class _DriverTripsPageState extends State<DriverTripsPage> {
   late Future<List<_Trip>> _tripsFuture;
   final DriverLanguageService _lang = DriverLanguageService.instance;
   final DriverSyncService _sync = DriverSyncService.instance;
+  final TextEditingController _pickupController = TextEditingController();
+  final TextEditingController _dropoffController = TextEditingController();
+  final TextEditingController _departureController = TextEditingController();
+  final TextEditingController _seatsController = TextEditingController(
+    text: '3',
+  );
+  final TextEditingController _priceController = TextEditingController(
+    text: '2500',
+  );
+  bool _creatingRide = false;
 
   bool get _isDarkMode => Theme.of(context).brightness == Brightness.dark;
   Color get _bgTop =>
@@ -41,7 +51,155 @@ class _DriverTripsPageState extends State<DriverTripsPage> {
   void dispose() {
     _lang.languageNotifier.removeListener(_onLanguageChanged);
     _sync.dataVersionNotifier.removeListener(_onSyncDataChanged);
+    _pickupController.dispose();
+    _dropoffController.dispose();
+    _departureController.dispose();
+    _seatsController.dispose();
+    _priceController.dispose();
     super.dispose();
+  }
+
+  Future<void> _showCreateRideDialog() async {
+    _departureController.text =
+        DateTime.now().add(const Duration(minutes: 30)).toIso8601String();
+    await showDialog<void>(
+      context: context,
+      builder:
+          (context) => AlertDialog(
+            backgroundColor: const Color(0xFF131729),
+            title: Text(
+              _lang.t('trips.createRide'),
+              style: GoogleFonts.poppins(
+                color: Colors.white,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  _input(
+                    _pickupController,
+                    _lang.t('home.requestPickupMissing'),
+                  ),
+                  const SizedBox(height: 10),
+                  _input(
+                    _dropoffController,
+                    _lang.t('home.requestDestinationMissing'),
+                  ),
+                  const SizedBox(height: 10),
+                  _input(_departureController, 'Departure (ISO datetime)'),
+                  const SizedBox(height: 10),
+                  _input(_seatsController, 'Available seats'),
+                  const SizedBox(height: 10),
+                  _input(_priceController, 'Price per seat'),
+                ],
+              ),
+            ),
+            actions: <Widget>[
+              TextButton(
+                onPressed:
+                    _creatingRide ? null : () => Navigator.of(context).pop(),
+                child: Text(
+                  _lang.t('common.cancel'),
+                  style: GoogleFonts.poppins(color: Colors.white70),
+                ),
+              ),
+              ElevatedButton(
+                onPressed: _creatingRide ? null : _createRide,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF6C63FF),
+                ),
+                child:
+                    _creatingRide
+                        ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                        : Text(
+                          _lang.t('trips.createRide'),
+                          style: GoogleFonts.poppins(color: Colors.white),
+                        ),
+              ),
+            ],
+          ),
+    );
+  }
+
+  Future<void> _createRide() async {
+    final pickup = _pickupController.text.trim();
+    final dropoff = _dropoffController.text.trim();
+    final departure = _departureController.text.trim();
+    final seats = int.tryParse(_seatsController.text.trim()) ?? 0;
+    final price = double.tryParse(_priceController.text.trim()) ?? 0;
+
+    if (pickup.isEmpty || dropoff.isEmpty || departure.isEmpty) {
+      return;
+    }
+    if (seats <= 0 || price <= 0) {
+      return;
+    }
+
+    setState(() => _creatingRide = true);
+    try {
+      await DriverApi.instance.createRide(<String, dynamic>{
+        'pickup_address': pickup,
+        'dropoff_address': dropoff,
+        'departure_time': departure,
+        'available_seats': seats,
+        'price_per_seat': price,
+      });
+      if (!mounted) return;
+      Navigator.of(context).pop();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: const Color(0xFF10B981),
+          content: Text(
+            _lang.t('trips.createRideSuccess'),
+            style: GoogleFonts.poppins(color: Colors.white),
+          ),
+        ),
+      );
+      setState(() => _tripsFuture = _loadTrips());
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: const Color(0xFFFF5E5B),
+          content: Text(
+            e.toString().replaceFirst('Exception: ', ''),
+            style: GoogleFonts.poppins(color: Colors.white),
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _creatingRide = false);
+      }
+    }
+  }
+
+  Widget _input(TextEditingController controller, String hint) {
+    return TextField(
+      controller: controller,
+      style: GoogleFonts.poppins(color: Colors.white),
+      decoration: InputDecoration(
+        hintText: hint,
+        hintStyle: GoogleFonts.poppins(color: Colors.white54, fontSize: 12),
+        filled: true,
+        fillColor: Colors.white.withValues(alpha: 0.06),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(10),
+          borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.15)),
+        ),
+      ),
+    );
   }
 
   void _onLanguageChanged() {
@@ -138,6 +296,15 @@ class _DriverTripsPageState extends State<DriverTripsPage> {
                       fontSize: 20,
                       fontWeight: FontWeight.w700,
                     ),
+                  ),
+                  const Spacer(),
+                  IconButton(
+                    onPressed: _showCreateRideDialog,
+                    icon: const Icon(
+                      Icons.add_rounded,
+                      color: Color(0xFF6C63FF),
+                    ),
+                    tooltip: _lang.t('trips.createRide'),
                   ),
                 ],
               ),

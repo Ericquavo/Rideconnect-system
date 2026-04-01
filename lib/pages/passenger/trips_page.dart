@@ -69,13 +69,27 @@ class _TripsPageState extends State<TripsPage>
     String? historyError;
 
     try {
-      final activeTyped = await passengerTripsApi.fetchMyRides(
+      final bookingTyped = await passengerTripsApi.fetchMyBookings(
         status: statusQuery,
         startDate: startDate,
         endDate: endDate,
         perPage: _perPage,
       );
-      active = activeTyped.map(_historyItemToMap).toList();
+      active = bookingTyped.map(_historyItemToMap).toList();
+
+      final tripsTyped = await passengerTripsApi.fetchPassengerTrips();
+      final tripMaps = tripsTyped.map(_historyItemToMap).toList();
+      final seenIds =
+          active
+              .map((item) => (item['id'] ?? item['rideId']).toString())
+              .toSet();
+      for (final item in tripMaps) {
+        final key = (item['id'] ?? item['rideId']).toString();
+        if (!seenIds.contains(key)) {
+          active.add(item);
+          seenIds.add(key);
+        }
+      }
     } catch (e) {
       activeError =
           e is ApiException
@@ -176,6 +190,7 @@ class _TripsPageState extends State<TripsPage>
             : '--';
     return {
       'id': r.id,
+      'rideId': r.rideId,
       'from': r.origin.isNotEmpty ? r.origin : '--',
       'to': r.destination.isNotEmpty ? r.destination : '--',
       'date': dateStr,
@@ -333,7 +348,7 @@ class _TripsPageState extends State<TripsPage>
   }
 
   Future<void> _cancelRide(Map<String, dynamic> trip) async {
-    final id = trip['id'];
+    final id = trip['rideId'] ?? trip['id'];
     if (id == null) return;
     try {
       await passengerTripsApi.cancelBooking(id as int);
@@ -354,7 +369,7 @@ class _TripsPageState extends State<TripsPage>
   }
 
   Future<void> _openTripDetails(Map<String, dynamic> trip) async {
-    final rideId = trip['id'];
+    final rideId = trip['rideId'] ?? trip['id'];
     if (rideId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(_lang.t('trips.detailsUnavailable'))),
@@ -720,8 +735,9 @@ class _TripsPageState extends State<TripsPage>
     if (end != null) params['end_date'] = end;
 
     final query = Uri(queryParameters: params).query;
-    final ridesQuery = '/api/v1/passenger/rides?$query';
-    final historyQuery = '/api/v1/passenger/rides/history?$query';
+    final bookingsQuery = '/v1/passenger/bookings/my?$query';
+    final tripsQuery = '/v1/passenger/trips';
+    final historyQuery = '/v1/passenger/rides/history?$query';
 
     return Container(
       width: double.infinity,
@@ -743,7 +759,9 @@ class _TripsPageState extends State<TripsPage>
             ),
           ),
           const SizedBox(height: 6),
-          _buildCopyableQueryLine('GET $ridesQuery'),
+          _buildCopyableQueryLine('GET $bookingsQuery'),
+          const SizedBox(height: 3),
+          _buildCopyableQueryLine('GET $tripsQuery'),
           const SizedBox(height: 3),
           _buildCopyableQueryLine('GET $historyQuery'),
         ],

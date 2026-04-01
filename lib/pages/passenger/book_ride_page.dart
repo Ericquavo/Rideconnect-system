@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 import '../../features/trips/data/passenger_trips_api_service.dart';
+import '../../services/passenger_api.dart';
 import '../../services/passenger_language_service.dart';
 
 /// Book Ride screen — passenger selects pickup, destination and ride type.
@@ -42,8 +43,10 @@ class _BookRidePageState extends State<BookRidePage> {
   LatLng _pickupLatLng = _kigaliCenter;
   LatLng? _destinationLatLng;
   bool _isRequesting = false;
+  bool _isPaying = false;
   bool _isLoadingOptions = true;
   List<Map<String, dynamic>> _availableOptions = <Map<String, dynamic>>[];
+  CreateBookingResponse? _latestBooking;
   PassengerLanguageService get _lang => PassengerLanguageService.instance;
 
   static const List<Map<String, dynamic>> _rideTypes = [
@@ -203,8 +206,12 @@ class _BookRidePageState extends State<BookRidePage> {
               'label': type,
               'icon': _iconForType(type),
               'price': '\$$price',
+              'price_per_seat': r.pricePerSeat,
               'eta': eta,
               'color': _colorForType(type),
+              'available_seats': r.availableSeats,
+              'departure_time': r.departureTime?.toIso8601String(),
+              'is_scheduled': _isScheduledDeparture(r.departureTime),
             };
           }).toList();
 
@@ -219,6 +226,7 @@ class _BookRidePageState extends State<BookRidePage> {
           );
           _selectedRide =
               selectedExists ? _selectedRide : options.first['label'] as String;
+          _syncSeatsToAvailability();
         }
         _isLoadingOptions = false;
       });
@@ -231,7 +239,7 @@ class _BookRidePageState extends State<BookRidePage> {
   void _requestRide() async {
     final pickup = _pickupController.text.trim();
     final dropoff = _destinationController.text.trim();
-    final seats = int.tryParse(_seatsController.text.trim());
+    final seats = int.tryParse(_seatsController.text.trim()) ?? 1;
 
     if (pickup.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -267,7 +275,7 @@ class _BookRidePageState extends State<BookRidePage> {
       return;
     }
 
-    if (seats == null || seats < 1 || seats > 8) {
+    if (seats < 1 || seats > 8) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           backgroundColor: const Color(0xFF131729),
@@ -284,13 +292,8 @@ class _BookRidePageState extends State<BookRidePage> {
       return;
     }
 
-    final options = _effectiveRideTypes();
-    final selected = options.firstWhere(
-      (r) => r['label'] == _selectedRide,
-      orElse: () => options.isNotEmpty ? options.first : <String, dynamic>{},
-    );
-    final rideId = selected['ride_id'] as int?;
-    if (rideId == null) {
+    final maxSeats = _availableSeatsForSelectedRide();
+    if (seats > maxSeats) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           backgroundColor: const Color(0xFF131729),
@@ -299,24 +302,54 @@ class _BookRidePageState extends State<BookRidePage> {
             borderRadius: BorderRadius.circular(12),
           ),
           content: Text(
-            _lang.t('book.noRideIdError'),
+            'Only $maxSeats seat(s) are currently available for this ride.',
             style: GoogleFonts.poppins(color: Colors.white70),
           ),
         ),
       );
+      _syncSeatsToAvailability();
       return;
     }
 
+    final options = _effectiveRideTypes();
+    final selected = options.firstWhere(
+      (r) => r['label'] == _selectedRide,
+      orElse: () => options.isNotEmpty ? options.first : <String, dynamic>{},
+    );
+    final rideId = _readRideId(selected);
+    final selectedDeparture = DateTime.tryParse(
+      (selected['departure_time'] ?? '').toString(),
+    );
+    final isScheduled = _isScheduledDeparture(selectedDeparture);
+
     setState(() => _isRequesting = true);
     try {
-      await passengerTripsApi.createBooking(
-        CreateBookingRequest(
-          rideId: rideId,
+      if (rideId != null && rideId > 0) {
+        final booking = await passengerTripsApi.createBooking(
+          CreateBookingRequest(
+            rideId: rideId,
+            seats: seats,
+            pickupAddress: pickup,
+            dropoffAddress: dropoff,
+          ),
+        );
+        _latestBooking = booking;
+      } else {
+        final fallbackScheduledAt =
+            isScheduled
+                ? (selectedDeparture ??
+                    DateTime.now().add(const Duration(hours: 6)))
+                : null;
+        final selectedFare = _readDoubleValue(selected['price_per_seat']);
+        await _createCustomRideRequest(
+          pickup: pickup,
+          dropoff: dropoff,
           seats: seats,
-          pickupAddress: pickup,
-          dropoffAddress: dropoff,
-        ),
-      );
+          selectedRide: selected,
+          fare: selectedFare,
+          scheduledAt: fallbackScheduledAt,
+        );
+      }
     } catch (e) {
       if (!mounted) return;
       setState(() => _isRequesting = false);
@@ -339,6 +372,79 @@ class _BookRidePageState extends State<BookRidePage> {
     setState(() => _isRequesting = false);
     if (!mounted) return;
     _showRideConfirmationDialog();
+  }
+
+  Future<void> _createCustomRideRequest({
+    required String pickup,
+    required String dropoff,
+    required int seats,
+    required Map<String, dynamic> selectedRide,
+    required double fare,
+    DateTime? scheduledAt,
+  }) async {
+    final drivers = await PassengerApi.instance.getOnlineDrivers();
+    if (drivers.isEmpty) {
+      throw Exception('No available driver found for this request.');
+    }
+
+    final firstDriver = drivers.first;
+    final driverId =
+        _readNumeric(firstDriver['id']) ??
+        _readNumeric(firstDriver['driver_id']) ??
+        _readNumeric(firstDriver['user_id']);
+    if (driverId == null || driverId <= 0) {
+      throw Exception(
+        'No backend ride_id found. Refresh available rides and try again.',
+      );
+    }
+
+    await PassengerApi.instance.createRideRequest(<String, dynamic>{
+      'driver_id': driverId,
+      'ride_id': _readRideId(selectedRide),
+      'pickup_address': pickup,
+      'pickup_location': pickup,
+      'dropoff_address': dropoff,
+      'dropoff_location': dropoff,
+      'seats': seats,
+      'seat_count': seats,
+      'ride_type': _selectedRide,
+      'price_per_seat': fare,
+      'fare': fare,
+      if (scheduledAt != null) 'scheduled_at': scheduledAt.toIso8601String(),
+      if (scheduledAt != null) 'is_scheduled': true,
+      if (scheduledAt != null) 'schedule_type': 'scheduled',
+    });
+  }
+
+  int? _readRideId(Map<String, dynamic> source) {
+    final value = source['ride_id'] ?? source['id'];
+    final parsed = _readNumeric(value);
+    if (parsed == null || parsed <= 0) {
+      return null;
+    }
+    return parsed;
+  }
+
+  int? _readNumeric(dynamic value) {
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    if (value is String) return int.tryParse(value);
+    return null;
+  }
+
+  double _readDoubleValue(dynamic value) {
+    if (value is double) return value;
+    if (value is num) return value.toDouble();
+    if (value is String) {
+      final cleaned = value.replaceAll(RegExp(r'[^0-9.-]'), '');
+      return double.tryParse(cleaned) ?? 0;
+    }
+    return 0;
+  }
+
+  bool _isScheduledDeparture(DateTime? departure) {
+    if (departure == null) return false;
+    return departure.difference(DateTime.now()).inHours >= 6;
   }
 
   void _showRideConfirmationDialog() {
@@ -436,11 +542,117 @@ class _BookRidePageState extends State<BookRidePage> {
                       },
                     ),
                   ),
+                  const SizedBox(height: 10),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 50,
+                    child: OutlinedButton.icon(
+                      onPressed: _isPaying ? null : _payForLatestBooking,
+                      style: OutlinedButton.styleFrom(
+                        side: BorderSide(
+                          color: const Color(0xFF3B82F6).withValues(alpha: 0.6),
+                        ),
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                      ),
+                      icon:
+                          _isPaying
+                              ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
+                              )
+                              : const Icon(Icons.payments_rounded),
+                      label: Text(
+                        _isPaying ? 'Processing payment...' : 'Pay now',
+                        style: GoogleFonts.poppins(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ),
                 ],
               ),
             ),
           ),
     );
+  }
+
+  Future<void> _payForLatestBooking() async {
+    final booking = _latestBooking;
+    if (booking == null || booking.id <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: const Color(0xFF131729),
+          behavior: SnackBarBehavior.floating,
+          content: Text(
+            'No booking found to pay for yet.',
+            style: GoogleFonts.poppins(color: Colors.white70),
+          ),
+        ),
+      );
+      return;
+    }
+
+    final double amount = booking.totalPrice > 0 ? booking.totalPrice : 0.0;
+    if (amount <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: const Color(0xFF131729),
+          behavior: SnackBarBehavior.floating,
+          content: Text(
+            'The booking amount is invalid for payment.',
+            style: GoogleFonts.poppins(color: Colors.white70),
+          ),
+        ),
+      );
+      return;
+    }
+
+    setState(() => _isPaying = true);
+    try {
+      final payment = await passengerTripsApi.createPayment(
+        CreatePaymentRequest(
+          bookingId: booking.id,
+          amount: amount,
+          paymentMethod: 'cash',
+        ),
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: const Color(0xFF131729),
+          behavior: SnackBarBehavior.floating,
+          content: Text(
+            'Payment ${payment.status.isEmpty ? 'processed' : payment.status}.',
+            style: GoogleFonts.poppins(color: Colors.white70),
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      final msg =
+          e is ApiException
+              ? e.message
+              : e.toString().replaceFirst('Exception: ', '');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: const Color(0xFF131729),
+          behavior: SnackBarBehavior.floating,
+          content: Text(msg, style: GoogleFonts.poppins(color: Colors.white70)),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isPaying = false);
+      }
+    }
   }
 
   void _handleBookingCompleted() {
@@ -694,26 +906,6 @@ class _BookRidePageState extends State<BookRidePage> {
             icon: Icons.location_on_rounded,
             iconColor: const Color(0xFF6C63FF),
           ),
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
-            child: Row(
-              children: [
-                Container(
-                  width: 1,
-                  height: 20,
-                  color: Colors.white.withValues(alpha: 0.15),
-                  margin: const EdgeInsets.only(left: 11),
-                ),
-              ],
-            ),
-          ),
-          _LocationField(
-            controller: _seatsController,
-            hint: _lang.t('book.seatsHint'),
-            icon: Icons.event_seat_rounded,
-            iconColor: const Color(0xFFFBBF24),
-            keyboardType: TextInputType.number,
-          ),
         ],
       ),
     );
@@ -742,9 +934,10 @@ class _BookRidePageState extends State<BookRidePage> {
                 return Expanded(
                   child: GestureDetector(
                     onTap:
-                        () => setState(
-                          () => _selectedRide = r['label'] as String,
-                        ),
+                        () => setState(() {
+                          _selectedRide = r['label'] as String;
+                          _syncSeatsToAvailability();
+                        }),
                     child: AnimatedContainer(
                       duration: const Duration(milliseconds: 200),
                       margin: const EdgeInsets.only(right: 10),
@@ -830,9 +1023,61 @@ class _BookRidePageState extends State<BookRidePage> {
             value: _seatsController.text.trim(),
           ),
           const SizedBox(height: 10),
+          _buildSeatSelector(),
+          const SizedBox(height: 10),
           _InfoRow(label: _lang.t('book.rideType'), value: _selectedRide),
         ],
       ),
+    );
+  }
+
+  Widget _buildSeatSelector() {
+    final maxSeats = _availableSeatsForSelectedRide();
+    final choices = List<int>.generate(maxSeats, (index) => index + 1);
+    final selected = int.tryParse(_seatsController.text.trim()) ?? 1;
+    final safeSelected = selected.clamp(1, maxSeats);
+    if ('$safeSelected' != _seatsController.text.trim()) {
+      _seatsController.text = '$safeSelected';
+    }
+
+    return Row(
+      children: [
+        Expanded(
+          child: Text(
+            '${_lang.t('book.seats')} (Available: $maxSeats)',
+            style: GoogleFonts.poppins(color: Colors.white70, fontSize: 12),
+          ),
+        ),
+        const SizedBox(width: 10),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.06),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+          ),
+          child: DropdownButton<int>(
+            value: safeSelected,
+            dropdownColor: const Color(0xFF1A1F3A),
+            underline: const SizedBox.shrink(),
+            iconEnabledColor: Colors.white70,
+            style: GoogleFonts.poppins(color: Colors.white),
+            items:
+                choices
+                    .map(
+                      (seat) => DropdownMenuItem<int>(
+                        value: seat,
+                        child: Text('$seat'),
+                      ),
+                    )
+                    .toList(),
+            onChanged: (value) {
+              if (value == null) return;
+              setState(() => _seatsController.text = '$value');
+            },
+          ),
+        ),
+      ],
     );
   }
 
@@ -899,6 +1144,25 @@ class _BookRidePageState extends State<BookRidePage> {
         : List<Map<String, dynamic>>.from(_rideTypes);
   }
 
+  int _availableSeatsForSelectedRide() {
+    final options = _effectiveRideTypes();
+    final selected = options.firstWhere(
+      (r) => r['label'] == _selectedRide,
+      orElse: () => options.isNotEmpty ? options.first : <String, dynamic>{},
+    );
+    final value = _readNumeric(selected['available_seats']) ?? 8;
+    if (value <= 0) return 1;
+    if (value > 8) return 8;
+    return value;
+  }
+
+  void _syncSeatsToAvailability() {
+    final current = int.tryParse(_seatsController.text.trim()) ?? 1;
+    final maxSeats = _availableSeatsForSelectedRide();
+    final safe = current.clamp(1, maxSeats);
+    _seatsController.text = '$safe';
+  }
+
   int _colorForType(String type) {
     final lower = type.toLowerCase();
     if (lower.contains('premium')) return 0xFF6C63FF;
@@ -921,14 +1185,12 @@ class _LocationField extends StatelessWidget {
   final String hint;
   final IconData icon;
   final Color iconColor;
-  final TextInputType keyboardType;
 
   const _LocationField({
     required this.controller,
     required this.hint,
     required this.icon,
     required this.iconColor,
-    this.keyboardType = TextInputType.text,
   });
 
   @override
@@ -940,7 +1202,6 @@ class _LocationField extends StatelessWidget {
         Expanded(
           child: TextField(
             controller: controller,
-            keyboardType: keyboardType,
             style: GoogleFonts.poppins(color: Colors.white, fontSize: 14),
             decoration: InputDecoration(
               hintText: hint,

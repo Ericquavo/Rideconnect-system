@@ -90,11 +90,12 @@ class _AppSettingsPageState extends State<AppSettingsPage> {
                     child: DropdownButton<PassengerLanguage>(
                       value: _lang.current,
                       isExpanded: true,
-                      dropdownColor: const Color(0xFF131729),
+                      dropdownColor: palette.surface,
                       style: GoogleFonts.poppins(
                         color: palette.textPrimary,
                         fontWeight: FontWeight.w600,
                       ),
+                      iconEnabledColor: palette.textSecondary,
                       underline: const SizedBox.shrink(),
                       items:
                           PassengerLanguage.values

@@ -9,10 +9,9 @@ class DriverApi {
 
   static final DriverApi instance = DriverApi._();
 
-  static const String _rootBaseUrl =
-      'https://rideconnect-emp0.onrender.com/api/v1';
+  static const String _rootBaseUrl = 'https://rideconnect-emp0.onrender.com/v1';
   static const String _baseUrl =
-      'https://rideconnect-emp0.onrender.com/api/v1/driver';
+      'https://rideconnect-emp0.onrender.com/v1/driver';
   static const Duration _timeout = Duration(seconds: 20);
 
   Future<Map<String, dynamic>> getProfile() => _get('/profile');
@@ -20,7 +19,9 @@ class DriverApi {
   Future<Map<String, dynamic>> updateProfile(Map<String, dynamic> payload) =>
       _put('/profile', payload);
 
-  Future<Map<String, dynamic>> getStats() => _get('/stats');
+  Future<Map<String, dynamic>> getStats() async {
+    return _get('/stats');
+  }
 
   Future<List<Map<String, dynamic>>> getRides() async {
     final response = await _get('/rides');
@@ -90,28 +91,33 @@ class DriverApi {
 
   Future<List<Map<String, dynamic>>> getRequests() async {
     final response = await _get('/requests');
-    return extractList(response, preferredKeys: const ['requests']);
+    return extractList(
+      response,
+      preferredKeys: const ['requests', 'items', 'rides'],
+    );
   }
 
   Future<List<Map<String, dynamic>>> getTripRequests() async {
     final response = await _get('/trip-requests');
-    return extractList(response, preferredKeys: const ['requests']);
+    return extractList(
+      response,
+      preferredKeys: const ['trip_requests', 'requests', 'items'],
+    );
   }
 
   Future<Map<String, dynamic>> acceptRequest(dynamic id) async {
     try {
-      return await _put('/requests/$id/accept', <String, dynamic>{});
+      return await _put('/trip-requests/$id/accept', <String, dynamic>{});
     } catch (_) {
-      // Some backends expose trip-requests instead of requests for this action.
-      return _put('/trip-requests/$id/accept', <String, dynamic>{});
+      return _put('/requests/$id/accept', <String, dynamic>{});
     }
   }
 
   Future<Map<String, dynamic>> rejectRequest(dynamic id) async {
     try {
-      return await _put('/requests/$id/reject', <String, dynamic>{});
+      return await _put('/trip-requests/$id/reject', <String, dynamic>{});
     } catch (_) {
-      return _put('/trip-requests/$id/reject', <String, dynamic>{});
+      return _put('/requests/$id/reject', <String, dynamic>{});
     }
   }
 
@@ -124,8 +130,29 @@ class DriverApi {
     }
   }
 
-  Future<Map<String, dynamic>> completeRequest(dynamic id) =>
-      _put('/requests/$id/complete', <String, dynamic>{});
+  Future<Map<String, dynamic>> completeRequest(dynamic id) async {
+    try {
+      return await _put('/trip-requests/$id/complete', <String, dynamic>{});
+    } catch (_) {
+      return _put('/requests/$id/complete', <String, dynamic>{});
+    }
+  }
+
+  Future<Map<String, dynamic>> postLocation({
+    required double latitude,
+    required double longitude,
+    double? heading,
+    double? speed,
+  }) {
+    return _post('/location', <String, dynamic>{
+      'latitude': latitude,
+      'longitude': longitude,
+      if (heading != null) 'heading': heading,
+      if (speed != null) 'speed': speed,
+      'lat': latitude,
+      'lng': longitude,
+    });
+  }
 
   Future<Map<String, dynamic>> startTrip(dynamic id) =>
       _put('/trips/$id/start', <String, dynamic>{});

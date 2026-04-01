@@ -10,7 +10,7 @@ class PassengerApi {
   static final PassengerApi instance = PassengerApi._();
 
   static const String _baseUrl =
-      'https://rideconnect-emp0.onrender.com/api/v1/passenger';
+      'https://rideconnect-emp0.onrender.com/v1/passenger';
   static const Duration _timeout = Duration(seconds: 20);
 
   Future<Map<String, dynamic>> getProfile() => _get('/profile');
@@ -238,6 +238,8 @@ class PassengerApi {
         directData['bookings'],
         directData['payments'],
         directData['history'],
+        directData['drivers'],
+        directData['online_drivers'],
       ];
       for (final value in values) {
         if (value is List) {

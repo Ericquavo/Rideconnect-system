@@ -127,6 +127,17 @@ class _DriverHomePageState extends State<DriverHomePage> {
           CameraPosition(target: point, zoom: _mapZoom),
         ),
       );
+
+      try {
+        await DriverApi.instance.postLocation(
+          latitude: pos.latitude,
+          longitude: pos.longitude,
+          heading: pos.heading,
+          speed: pos.speed,
+        );
+      } catch (_) {
+        // Keep UI responsive if location sync fails.
+      }
     } catch (_) {
       if (!mounted) return;
       setState(() {
@@ -191,6 +202,7 @@ class _DriverHomePageState extends State<DriverHomePage> {
     setState(() {
       _homeFuture = _loadHomeData();
     });
+    await _initDriverLocation();
     await _homeFuture;
   }
 
@@ -266,8 +278,23 @@ class _DriverHomePageState extends State<DriverHomePage> {
 
   Future<_DriverHomeData> _loadHomeData() async {
     final api = DriverApi.instance;
-    final statsResponse = await api.getStats();
-    final requests = await api.getRequests();
+    Map<String, dynamic> statsResponse = <String, dynamic>{};
+    List<Map<String, dynamic>> requests = <Map<String, dynamic>>[];
+
+    try {
+      statsResponse = await api.getStats();
+    } catch (_) {
+      statsResponse = <String, dynamic>{};
+    }
+
+    try {
+      requests = await api.getRequests();
+      if (requests.isEmpty) {
+        requests = await api.getTripRequests();
+      }
+    } catch (_) {
+      requests = <Map<String, dynamic>>[];
+    }
 
     final stats = api.extractDataMap(statsResponse);
 

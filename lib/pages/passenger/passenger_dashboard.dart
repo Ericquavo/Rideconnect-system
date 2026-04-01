@@ -7,7 +7,6 @@ import 'trips_page.dart';
 import 'notifications_page.dart';
 import 'profile_page.dart';
 import '../../services/passenger_language_service.dart';
-import '../../features/mobile/data/mobile_flow_api_service.dart';
 
 /// Main Passenger Dashboard — hosts the bottom navigation and all sub-pages.
 class PassengerDashboard extends StatefulWidget {
@@ -39,11 +38,6 @@ class _PassengerDashboardState extends State<PassengerDashboard> {
   void initState() {
     super.initState();
     _lang.languageNotifier.addListener(_onLanguageChanged);
-    _refreshUnreadCount();
-    _notificationTimer = Timer.periodic(
-      const Duration(seconds: 20),
-      (_) => _refreshUnreadCount(),
-    );
   }
 
   @override
@@ -84,25 +78,14 @@ class _PassengerDashboardState extends State<PassengerDashboard> {
   }
 
   Future<void> _openNotifications() async {
-    await _refreshUnreadCount();
     setState(() => _showNotificationsPage = true);
-  }
-
-  Future<void> _refreshUnreadCount() async {
-    try {
-      final unread = await mobileFlowApi.getUnreadCount();
-      if (!mounted) return;
-      setState(() => _notifCount = unread);
-    } catch (_) {
-      // Keep existing badge value on transient API failures.
-    }
   }
 
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final pages = _buildPages();
-    Widget content =
+    final content =
         _showNotificationsPage
             ? NotificationsPage(
               onRead: () => setState(() => _notifCount = 0),
@@ -110,35 +93,8 @@ class _PassengerDashboardState extends State<PassengerDashboard> {
             )
             : IndexedStack(index: _currentIndex, children: pages);
 
-    if (!isDark) {
-      // Passenger pages were originally designed with a dark palette.
-      // In light mode, invert the page content so all tabs switch theme together.
-      content = ColorFiltered(
-        colorFilter: const ColorFilter.matrix(<double>[
-          -1,
-          0,
-          0,
-          0,
-          255,
-          0,
-          -1,
-          0,
-          0,
-          255,
-          0,
-          0,
-          -1,
-          0,
-          255,
-          0,
-          0,
-          0,
-          1,
-          0,
-        ]),
-        child: content,
-      );
-    }
+    final scaffoldColor =
+        isDark ? const Color(0xFF0A0E1A) : const Color(0xFFEFF4FF);
 
     return PopScope(
       canPop: !_showNotificationsPage,
@@ -148,8 +104,7 @@ class _PassengerDashboardState extends State<PassengerDashboard> {
         }
       },
       child: Scaffold(
-        backgroundColor:
-            isDark ? const Color(0xFF0A0E1A) : const Color(0xFFF2F5FF),
+        backgroundColor: scaffoldColor,
         body: content,
         bottomNavigationBar: _buildBottomNav(),
       ),
@@ -160,17 +115,19 @@ class _PassengerDashboardState extends State<PassengerDashboard> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     const activeColor = Color(0xFF6C63FF);
     final inactiveColor =
-        isDark ? const Color(0xFF4A5080) : const Color(0xFF7A84AA);
-    final bgColor = isDark ? const Color(0xFF131729) : Colors.white;
+        isDark ? const Color(0xFF4A5080) : const Color(0xFF64748B);
+    final bgColor = isDark ? const Color(0xFF131729) : const Color(0xFFFFFFFF);
+    final shadowColor =
+        isDark
+            ? Colors.black.withValues(alpha: 0.4)
+            : const Color(0xFF334155).withValues(alpha: 0.12);
 
     return Container(
       decoration: BoxDecoration(
         color: bgColor,
         boxShadow: [
           BoxShadow(
-            color: (isDark ? Colors.black : const Color(0xFF263560)).withValues(
-              alpha: 0.2,
-            ),
+            color: shadowColor,
             blurRadius: 20,
             offset: const Offset(0, -4),
           ),
@@ -268,10 +225,9 @@ class _NavItem extends StatelessWidget {
     final isActive = index == currentIndex;
     return GestureDetector(
       onTap: () => onTap(index),
-      behavior: HitTestBehavior.opaque,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         decoration: BoxDecoration(
           color:
               isActive

@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
-import 'package:flutter/services.dart';
 import 'auth/auth_api.dart';
 import 'auth/auth_session.dart';
 import 'pages/driver/driver_dashboard.dart';
@@ -18,12 +17,6 @@ Future<void> main() async {
     debugPaintBaselinesEnabled = false;
     return true;
   }());
-  SystemChrome.setSystemUIOverlayStyle(
-    const SystemUiOverlayStyle(
-      statusBarColor: Colors.transparent,
-      statusBarIconBrightness: Brightness.light,
-    ),
-  );
   runApp(const RideConnectApp());
 }
 
@@ -105,10 +98,12 @@ class _AppEntryPageState extends State<AppEntryPage> {
       future: _sessionFuture,
       builder: (context, snapshot) {
         if (snapshot.connectionState != ConnectionState.done) {
-          return const Scaffold(
-            backgroundColor: Color(0xFF0A0E1A),
+          final isDark = Theme.of(context).brightness == Brightness.dark;
+          return Scaffold(
+            backgroundColor:
+                isDark ? const Color(0xFF0A0E1A) : const Color(0xFFF2F5FF),
             body: Center(
-              child: CircularProgressIndicator(color: Color(0xFF6C63FF)),
+              child: const CircularProgressIndicator(color: Color(0xFF6C63FF)),
             ),
           );
         }

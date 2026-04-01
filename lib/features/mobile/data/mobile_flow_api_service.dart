@@ -6,7 +6,7 @@ import 'package:http/http.dart' as http;
 import '../../../auth/auth_session.dart';
 
 final MobileFlowApiService mobileFlowApi = MobileFlowApiService(
-  baseUrl: 'https://rideconnect-emp0.onrender.com/api/v1',
+  baseUrl: 'https://rideconnect-emp0.onrender.com/v1',
   authHeadersProvider: AuthSession.authHeaders,
 );
 
@@ -192,15 +192,17 @@ class MobileFlowApiService {
       return data
           .whereType<Map<String, dynamic>>()
           .map(OnlineDriver.fromJson)
+          .where((d) => d.id > 0)
           .toList();
     }
 
     if (data is Map<String, dynamic>) {
-      final list = data['drivers'] ?? data['items'];
+      final list = data['drivers'] ?? data['items'] ?? data['results'];
       if (list is List) {
         return list
             .whereType<Map<String, dynamic>>()
             .map(OnlineDriver.fromJson)
+            .where((d) => d.id > 0)
             .toList();
       }
     }
@@ -224,7 +226,7 @@ class MobileFlowApiService {
     if (data is Map<String, dynamic>) {
       return RideRequestResult.fromJson(data);
     }
-    return RideRequestResult.empty();
+    return RideRequestResult.fromJson(envelope);
   }
 
   Future<List<PassengerTripSnapshot>> getPassengerTrips() async {
@@ -265,7 +267,7 @@ class MobileFlowApiService {
     if (data is Map<String, dynamic>) {
       return PassengerTripSnapshot.fromJson(data);
     }
-    return PassengerTripSnapshot.empty(id: tripId);
+    return PassengerTripSnapshot.fromJson(envelope);
   }
 
   Future<void> cancelPassengerTrip(int tripId) async {
@@ -380,18 +382,29 @@ class OnlineDriver {
   final String vehicle;
 
   factory OnlineDriver.fromJson(Map<String, dynamic> json) {
+    final user = json['user'];
+    final userMap =
+        user is Map<String, dynamic> ? user : const <String, dynamic>{};
     return OnlineDriver(
-      id: _readInt(json, <String>['id', 'driver_id']) ?? 0,
-      name: _readString(json, <String>['name', 'driver_name']) ?? 'Driver',
+      id:
+          _readInt(json, <String>['id', 'driver_id', 'user_id']) ??
+          _readInt(userMap, <String>['id', 'user_id']) ??
+          0,
+      name:
+          _readString(json, <String>['name', 'driver_name']) ??
+          _readString(userMap, <String>['name', 'full_name']) ??
+          'Driver',
       rating:
           _readDouble(json, <String>[
             'rating',
             'avg_rating',
             'driver_rating',
           ]) ??
+          _readDouble(userMap, <String>['rating', 'avg_rating']) ??
           0,
       vehicle:
           _readString(json, <String>['vehicle', 'vehicle_name', 'car']) ??
+          _readString(userMap, <String>['vehicle', 'car']) ??
           'Vehicle',
     );
   }
@@ -421,12 +434,15 @@ class RideRequestPayload {
   Map<String, dynamic> toJson() => <String, dynamic>{
     'driver_id': driverId,
     'pickup_location': pickupLocation,
+    'pickup_address': pickupLocation,
     'pickup_lat': pickupLat,
     'pickup_lng': pickupLng,
     'dropoff_location': dropoffLocation,
+    'dropoff_address': dropoffLocation,
     'dropoff_lat': dropoffLat,
     'dropoff_lng': dropoffLng,
     'fare': fare,
+    'amount': fare,
   };
 }
 
@@ -442,10 +458,26 @@ class RideRequestResult {
   final String status;
 
   factory RideRequestResult.fromJson(Map<String, dynamic> json) {
+    final trip = json['trip'];
+    final request = json['request'];
+    final tripMap =
+        trip is Map<String, dynamic> ? trip : const <String, dynamic>{};
+    final requestMap =
+        request is Map<String, dynamic> ? request : const <String, dynamic>{};
     return RideRequestResult(
-      tripId: _readInt(json, <String>['trip_id', 'id', 'tripId']),
-      requestId: _readInt(json, <String>['request_id', 'ride_request_id']),
-      status: _readString(json, <String>['status']) ?? 'pending',
+      tripId:
+          _readInt(json, <String>['trip_id', 'tripId']) ??
+          _readInt(tripMap, <String>['id', 'trip_id']) ??
+          _readInt(json, <String>['id']),
+      requestId:
+          _readInt(json, <String>['request_id', 'ride_request_id']) ??
+          _readInt(requestMap, <String>['id', 'request_id']) ??
+          _readInt(json, <String>['id']),
+      status:
+          _readString(json, <String>['status']) ??
+          _readString(tripMap, <String>['status']) ??
+          _readString(requestMap, <String>['status']) ??
+          'pending',
     );
   }
 
@@ -479,11 +511,16 @@ class PassengerTripSnapshot {
   }
 
   factory PassengerTripSnapshot.fromJson(Map<String, dynamic> json) {
+    final driver = json['driver'];
+    final driverMap =
+        driver is Map<String, dynamic> ? driver : const <String, dynamic>{};
     return PassengerTripSnapshot(
       id: _readInt(json, <String>['id', 'trip_id']) ?? 0,
       status: _readString(json, <String>['status', 'trip_status']) ?? 'pending',
       driverName:
-          _readString(json, <String>['driver_name', 'driver', 'name']) ??
+          _readString(json, <String>['driver_name', 'driver']) ??
+          _readString(driverMap, <String>['name', 'driver_name']) ??
+          _readString(json, <String>['name']) ??
           'Driver',
       pickup:
           _readString(json, <String>[
