@@ -20,7 +20,7 @@ typedef AuthHeadersProvider = Future<Map<String, String>> Function();
 // ─────────────────────────────────────────────────────────────────────────────
 
 final PassengerTripsApiService passengerTripsApi = PassengerTripsApiService(
-  baseUrl: 'https://rideconnect-emp0.onrender.com/v1',
+  baseUrl: 'https://rideconnect-emp0.onrender.com/api/v1',
   authHeadersProvider: AuthSession.authHeaders,
 );
 

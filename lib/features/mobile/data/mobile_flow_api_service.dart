@@ -6,7 +6,7 @@ import 'package:http/http.dart' as http;
 import '../../../auth/auth_session.dart';
 
 final MobileFlowApiService mobileFlowApi = MobileFlowApiService(
-  baseUrl: 'https://rideconnect-emp0.onrender.com/v1',
+  baseUrl: 'https://rideconnect-emp0.onrender.com/api/v1',
   authHeadersProvider: AuthSession.authHeaders,
 );
 
@@ -420,6 +420,10 @@ class RideRequestPayload {
     required this.dropoffLat,
     required this.dropoffLng,
     required this.fare,
+    this.seats = 1,
+    this.rideType,
+    this.notes,
+    this.scheduledAt,
   });
 
   final int driverId;
@@ -430,19 +434,25 @@ class RideRequestPayload {
   final double dropoffLat;
   final double dropoffLng;
   final double fare;
+  final int seats;
+  final String? rideType;
+  final String? notes;
+  final DateTime? scheduledAt;
 
   Map<String, dynamic> toJson() => <String, dynamic>{
     'driver_id': driverId,
     'pickup_location': pickupLocation,
-    'pickup_address': pickupLocation,
+    'dropoff_location': dropoffLocation,
+    'fare': fare,
+    'seats': seats,
     'pickup_lat': pickupLat,
     'pickup_lng': pickupLng,
-    'dropoff_location': dropoffLocation,
-    'dropoff_address': dropoffLocation,
     'dropoff_lat': dropoffLat,
     'dropoff_lng': dropoffLng,
-    'fare': fare,
-    'amount': fare,
+    if (rideType != null && rideType!.trim().isNotEmpty)
+      'ride_type': rideType!.trim(),
+    if (notes != null && notes!.trim().isNotEmpty) 'notes': notes!.trim(),
+    if (scheduledAt != null) 'scheduled_at': scheduledAt!.toIso8601String(),
   };
 }
 

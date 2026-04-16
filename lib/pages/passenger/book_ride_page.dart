@@ -3,8 +3,8 @@ import 'package:geocoding/geocoding.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
+import '../../features/mobile/data/mobile_flow_api_service.dart';
 import '../../features/trips/data/passenger_trips_api_service.dart';
-import '../../services/passenger_api.dart';
 import '../../services/passenger_language_service.dart';
 
 /// Book Ride screen — passenger selects pickup, destination and ride type.
@@ -45,6 +45,7 @@ class _BookRidePageState extends State<BookRidePage> {
   bool _isRequesting = false;
   bool _isPaying = false;
   bool _isLoadingOptions = true;
+  String _selectedPaymentMethod = 'cash';
   List<Map<String, dynamic>> _availableOptions = <Map<String, dynamic>>[];
   CreateBookingResponse? _latestBooking;
   PassengerLanguageService get _lang => PassengerLanguageService.instance;
@@ -76,6 +77,7 @@ class _BookRidePageState extends State<BookRidePage> {
   @override
   void initState() {
     super.initState();
+    _lang.ensureInitialized();
     _lang.languageNotifier.addListener(_onLanguageChanged);
 
     final seedPickup = widget.initialPickup?.trim();
@@ -87,7 +89,7 @@ class _BookRidePageState extends State<BookRidePage> {
     _pickupController = TextEditingController(
       text:
           (seedPickup == null || seedPickup.isEmpty)
-              ? 'Current Location'
+              ? _lang.t('book.currentLocation')
               : seedPickup,
     );
     _destinationController = TextEditingController(text: seedDropoff ?? '');
@@ -113,6 +115,23 @@ class _BookRidePageState extends State<BookRidePage> {
 
   String _coordsLabel(LatLng point) {
     return '${point.latitude.toStringAsFixed(6)}, ${point.longitude.toStringAsFixed(6)}';
+  }
+
+  void _showSnack(String message) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        backgroundColor: isDark ? const Color(0xFF131729) : Colors.white,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        content: Text(
+          message,
+          style: GoogleFonts.poppins(
+            color: isDark ? Colors.white70 : const Color(0xFF334155),
+          ),
+        ),
+      ),
+    );
   }
 
   Future<String?> _reverseGeocodePoint(LatLng point) async {
@@ -151,10 +170,10 @@ class _BookRidePageState extends State<BookRidePage> {
     setState(() {
       if (isPickupSelection) {
         _pickupLatLng = point;
-        _pickupController.text = 'Locating address...';
+        _pickupController.text = _lang.t('book.locatingAddress');
       } else {
         _destinationLatLng = point;
-        _destinationController.text = 'Locating address...';
+        _destinationController.text = _lang.t('book.locatingAddress');
       }
     });
 
@@ -242,70 +261,24 @@ class _BookRidePageState extends State<BookRidePage> {
     final seats = int.tryParse(_seatsController.text.trim()) ?? 1;
 
     if (pickup.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          backgroundColor: const Color(0xFF131729),
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
-          content: Text(
-            _lang.t('book.enterPickup'),
-            style: GoogleFonts.poppins(color: Colors.white70),
-          ),
-        ),
-      );
+      _showSnack(_lang.t('book.enterPickup'));
       return;
     }
 
     if (dropoff.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          backgroundColor: const Color(0xFF131729),
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
-          content: Text(
-            _lang.t('book.enterDropoff'),
-            style: GoogleFonts.poppins(color: Colors.white70),
-          ),
-        ),
-      );
+      _showSnack(_lang.t('book.enterDropoff'));
       return;
     }
 
     if (seats < 1 || seats > 8) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          backgroundColor: const Color(0xFF131729),
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
-          content: Text(
-            _lang.t('book.seatRangeError'),
-            style: GoogleFonts.poppins(color: Colors.white70),
-          ),
-        ),
-      );
+      _showSnack(_lang.t('book.seatRangeError'));
       return;
     }
 
     final maxSeats = _availableSeatsForSelectedRide();
     if (seats > maxSeats) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          backgroundColor: const Color(0xFF131729),
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
-          content: Text(
-            'Only $maxSeats seat(s) are currently available for this ride.',
-            style: GoogleFonts.poppins(color: Colors.white70),
-          ),
-        ),
+      _showSnack(
+        _lang.t('book.availableSeatsOnly', args: {'count': '$maxSeats'}),
       );
       _syncSeatsToAvailability();
       return;
@@ -331,6 +304,8 @@ class _BookRidePageState extends State<BookRidePage> {
             seats: seats,
             pickupAddress: pickup,
             dropoffAddress: dropoff,
+            rideType: _selectedRide,
+            scheduledAt: isScheduled ? selectedDeparture : null,
           ),
         );
         _latestBooking = booking;
@@ -357,16 +332,7 @@ class _BookRidePageState extends State<BookRidePage> {
           e is ApiException
               ? e.message
               : e.toString().replaceFirst('Exception: ', '');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          backgroundColor: const Color(0xFF131729),
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
-          content: Text(msg, style: GoogleFonts.poppins(color: Colors.white70)),
-        ),
-      );
+      _showSnack(msg);
       return;
     }
     setState(() => _isRequesting = false);
@@ -382,38 +348,34 @@ class _BookRidePageState extends State<BookRidePage> {
     required double fare,
     DateTime? scheduledAt,
   }) async {
-    final drivers = await PassengerApi.instance.getOnlineDrivers();
+    final drivers = await mobileFlowApi.getOnlineDrivers();
     if (drivers.isEmpty) {
       throw Exception('No available driver found for this request.');
     }
 
     final firstDriver = drivers.first;
-    final driverId =
-        _readNumeric(firstDriver['id']) ??
-        _readNumeric(firstDriver['driver_id']) ??
-        _readNumeric(firstDriver['user_id']);
-    if (driverId == null || driverId <= 0) {
+    final driverId = firstDriver.id;
+    if (driverId <= 0) {
       throw Exception(
         'No backend ride_id found. Refresh available rides and try again.',
       );
     }
 
-    await PassengerApi.instance.createRideRequest(<String, dynamic>{
-      'driver_id': driverId,
-      'ride_id': _readRideId(selectedRide),
-      'pickup_address': pickup,
-      'pickup_location': pickup,
-      'dropoff_address': dropoff,
-      'dropoff_location': dropoff,
-      'seats': seats,
-      'seat_count': seats,
-      'ride_type': _selectedRide,
-      'price_per_seat': fare,
-      'fare': fare,
-      if (scheduledAt != null) 'scheduled_at': scheduledAt.toIso8601String(),
-      if (scheduledAt != null) 'is_scheduled': true,
-      if (scheduledAt != null) 'schedule_type': 'scheduled',
-    });
+    await mobileFlowApi.createRideRequest(
+      RideRequestPayload(
+        driverId: driverId,
+        pickupLocation: pickup,
+        pickupLat: _pickupLatLng.latitude,
+        pickupLng: _pickupLatLng.longitude,
+        dropoffLocation: dropoff,
+        dropoffLat: _destinationLatLng?.latitude ?? _pickupLatLng.latitude,
+        dropoffLng: _destinationLatLng?.longitude ?? _pickupLatLng.longitude,
+        fare: fare,
+        seats: seats,
+        rideType: _selectedRide,
+        scheduledAt: scheduledAt,
+      ),
+    );
   }
 
   int? _readRideId(Map<String, dynamic> source) {
@@ -502,7 +464,7 @@ class _BookRidePageState extends State<BookRidePage> {
                     _lang.t(
                       'book.rideRequestedBody',
                       args: <String, String>{
-                        'ride': _selectedRide,
+                        'ride': _rideTypeLabel(_selectedRide),
                         'eta': ride['eta'].toString(),
                       },
                     ),
@@ -546,6 +508,12 @@ class _BookRidePageState extends State<BookRidePage> {
                   SizedBox(
                     width: double.infinity,
                     height: 50,
+                    child: _buildPaymentMethodSelector(),
+                  ),
+                  const SizedBox(height: 10),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 50,
                     child: OutlinedButton.icon(
                       onPressed: _isPaying ? null : _payForLatestBooking,
                       style: OutlinedButton.styleFrom(
@@ -569,7 +537,19 @@ class _BookRidePageState extends State<BookRidePage> {
                               )
                               : const Icon(Icons.payments_rounded),
                       label: Text(
-                        _isPaying ? 'Processing payment...' : 'Pay now',
+                        _isPaying
+                            ? _lang.t(
+                              'book.processingPayment',
+                              args: {
+                                'method': _paymentLabel(_selectedPaymentMethod),
+                              },
+                            )
+                            : _lang.t(
+                              'book.payNowWithMethod',
+                              args: {
+                                'method': _paymentLabel(_selectedPaymentMethod),
+                              },
+                            ),
                         style: GoogleFonts.poppins(
                           color: Colors.white,
                           fontWeight: FontWeight.w600,
@@ -587,31 +567,13 @@ class _BookRidePageState extends State<BookRidePage> {
   Future<void> _payForLatestBooking() async {
     final booking = _latestBooking;
     if (booking == null || booking.id <= 0) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          backgroundColor: const Color(0xFF131729),
-          behavior: SnackBarBehavior.floating,
-          content: Text(
-            'No booking found to pay for yet.',
-            style: GoogleFonts.poppins(color: Colors.white70),
-          ),
-        ),
-      );
+      _showSnack(_lang.t('book.noBookingToPay'));
       return;
     }
 
     final double amount = booking.totalPrice > 0 ? booking.totalPrice : 0.0;
     if (amount <= 0) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          backgroundColor: const Color(0xFF131729),
-          behavior: SnackBarBehavior.floating,
-          content: Text(
-            'The booking amount is invalid for payment.',
-            style: GoogleFonts.poppins(color: Colors.white70),
-          ),
-        ),
-      );
+      _showSnack(_lang.t('book.invalidBookingAmount'));
       return;
     }
 
@@ -621,18 +583,17 @@ class _BookRidePageState extends State<BookRidePage> {
         CreatePaymentRequest(
           bookingId: booking.id,
           amount: amount,
-          paymentMethod: 'cash',
+          paymentMethod: _selectedPaymentMethod,
+          reference: 'booking-${booking.id}',
         ),
       );
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          backgroundColor: const Color(0xFF131729),
-          behavior: SnackBarBehavior.floating,
-          content: Text(
-            'Payment ${payment.status.isEmpty ? 'processed' : payment.status}.',
-            style: GoogleFonts.poppins(color: Colors.white70),
-          ),
+      _showSnack(
+        _lang.t(
+          'book.paymentStatus',
+          args: {
+            'status': payment.status.isEmpty ? 'processed' : payment.status,
+          },
         ),
       );
     } catch (e) {
@@ -641,18 +602,38 @@ class _BookRidePageState extends State<BookRidePage> {
           e is ApiException
               ? e.message
               : e.toString().replaceFirst('Exception: ', '');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          backgroundColor: const Color(0xFF131729),
-          behavior: SnackBarBehavior.floating,
-          content: Text(msg, style: GoogleFonts.poppins(color: Colors.white70)),
-        ),
-      );
+      _showSnack(msg);
     } finally {
       if (mounted) {
         setState(() => _isPaying = false);
       }
     }
+  }
+
+  Widget _buildPaymentMethodSelector() {
+    const methods = <String>['cash', 'mobile_money', 'card'];
+    return Row(
+      children:
+          methods
+              .map(
+                (method) => Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.only(right: 6),
+                    child: ChoiceChip(
+                      selected: _selectedPaymentMethod == method,
+                      label: Text(
+                        _paymentLabel(method),
+                        style: GoogleFonts.poppins(fontSize: 11),
+                      ),
+                      onSelected: (_) {
+                        setState(() => _selectedPaymentMethod = method);
+                      },
+                    ),
+                  ),
+                ),
+              )
+              .toList(),
+    );
   }
 
   void _handleBookingCompleted() {
@@ -662,12 +643,29 @@ class _BookRidePageState extends State<BookRidePage> {
     }
   }
 
+  String _paymentLabel(String method) {
+    switch (method) {
+      case 'cash':
+        return _lang.t('payment.cash');
+      case 'mobile_money':
+        return _lang.t('payment.mobileMoney');
+      case 'card':
+        return _lang.t('payment.card');
+      default:
+        return method.replaceAll('_', ' ');
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Container(
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         gradient: LinearGradient(
-          colors: [Color(0xFF0A0E1A), Color(0xFF1A1F3A)],
+          colors:
+              isDark
+                  ? const [Color(0xFF0A0E1A), Color(0xFF1A1F3A)]
+                  : const [Color(0xFFEFF4FF), Color(0xFFDCE8FF)],
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
         ),
@@ -704,6 +702,7 @@ class _BookRidePageState extends State<BookRidePage> {
   }
 
   Widget _buildPageTitle(String title, IconData icon) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Row(
       children: [
         Container(
@@ -720,7 +719,7 @@ class _BookRidePageState extends State<BookRidePage> {
           style: GoogleFonts.poppins(
             fontSize: 20,
             fontWeight: FontWeight.w700,
-            color: Colors.white,
+            color: isDark ? Colors.white : const Color(0xFF0F172A),
           ),
         ),
       ],
@@ -872,12 +871,21 @@ class _BookRidePageState extends State<BookRidePage> {
   }
 
   Widget _buildLocationCard() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.05),
+        color:
+            isDark
+                ? Colors.white.withValues(alpha: 0.05)
+                : Colors.white.withValues(alpha: 0.92),
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+        border: Border.all(
+          color:
+              isDark
+                  ? Colors.white.withValues(alpha: 0.1)
+                  : const Color(0xFFCBD5E1),
+        ),
       ),
       child: Column(
         children: [
@@ -894,7 +902,10 @@ class _BookRidePageState extends State<BookRidePage> {
                 Container(
                   width: 1,
                   height: 20,
-                  color: Colors.white.withValues(alpha: 0.15),
+                  color:
+                      isDark
+                          ? Colors.white.withValues(alpha: 0.15)
+                          : const Color(0xFFCBD5E1),
                   margin: const EdgeInsets.only(left: 11),
                 ),
               ],
@@ -912,6 +923,7 @@ class _BookRidePageState extends State<BookRidePage> {
   }
 
   Widget _buildRideTypeSection() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final rideTypes = _effectiveRideTypes();
 
     return Column(
@@ -920,7 +932,7 @@ class _BookRidePageState extends State<BookRidePage> {
         Text(
           _lang.t('book.chooseRideType'),
           style: GoogleFonts.poppins(
-            color: Colors.white,
+            color: isDark ? Colors.white : const Color(0xFF0F172A),
             fontWeight: FontWeight.w600,
             fontSize: 15,
           ),
@@ -949,13 +961,17 @@ class _BookRidePageState extends State<BookRidePage> {
                         color:
                             isSelected
                                 ? color.withValues(alpha: 0.15)
-                                : Colors.white.withValues(alpha: 0.05),
+                                : (isDark
+                                    ? Colors.white.withValues(alpha: 0.05)
+                                    : Colors.white.withValues(alpha: 0.92)),
                         borderRadius: BorderRadius.circular(14),
                         border: Border.all(
                           color:
                               isSelected
                                   ? color
-                                  : Colors.white.withValues(alpha: 0.1),
+                                  : (isDark
+                                      ? Colors.white.withValues(alpha: 0.1)
+                                      : const Color(0xFFCBD5E1)),
                           width: isSelected ? 1.5 : 1,
                         ),
                       ),
@@ -963,14 +979,24 @@ class _BookRidePageState extends State<BookRidePage> {
                         children: [
                           Icon(
                             r['icon'] as IconData,
-                            color: isSelected ? color : Colors.white38,
+                            color:
+                                isSelected
+                                    ? color
+                                    : (isDark
+                                        ? Colors.white38
+                                        : const Color(0xFF64748B)),
                             size: 22,
                           ),
                           const SizedBox(height: 6),
                           Text(
-                            r['label'] as String,
+                            _rideTypeLabel(r['label'] as String),
                             style: GoogleFonts.poppins(
-                              color: isSelected ? color : Colors.white54,
+                              color:
+                                  isSelected
+                                      ? color
+                                      : (isDark
+                                          ? Colors.white54
+                                          : const Color(0xFF475569)),
                               fontSize: 11,
                               fontWeight: FontWeight.w600,
                             ),
@@ -978,7 +1004,12 @@ class _BookRidePageState extends State<BookRidePage> {
                           Text(
                             r['price'] as String,
                             style: GoogleFonts.poppins(
-                              color: isSelected ? color : Colors.white38,
+                              color:
+                                  isSelected
+                                      ? color
+                                      : (isDark
+                                          ? Colors.white38
+                                          : const Color(0xFF94A3B8)),
                               fontSize: 10,
                             ),
                           ),
@@ -994,6 +1025,7 @@ class _BookRidePageState extends State<BookRidePage> {
   }
 
   Widget _buildFareCard() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final options = _effectiveRideTypes();
     final ride = options.firstWhere(
       (r) => r['label'] == _selectedRide,
@@ -1002,9 +1034,17 @@ class _BookRidePageState extends State<BookRidePage> {
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.05),
+        color:
+            isDark
+                ? Colors.white.withValues(alpha: 0.05)
+                : Colors.white.withValues(alpha: 0.92),
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+        border: Border.all(
+          color:
+              isDark
+                  ? Colors.white.withValues(alpha: 0.08)
+                  : const Color(0xFFCBD5E1),
+        ),
       ),
       child: Column(
         children: [
@@ -1025,13 +1065,17 @@ class _BookRidePageState extends State<BookRidePage> {
           const SizedBox(height: 10),
           _buildSeatSelector(),
           const SizedBox(height: 10),
-          _InfoRow(label: _lang.t('book.rideType'), value: _selectedRide),
+          _InfoRow(
+            label: _lang.t('book.rideType'),
+            value: _rideTypeLabel(_selectedRide),
+          ),
         ],
       ),
     );
   }
 
   Widget _buildSeatSelector() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final maxSeats = _availableSeatsForSelectedRide();
     final choices = List<int>.generate(maxSeats, (index) => index + 1);
     final selected = int.tryParse(_seatsController.text.trim()) ?? 1;
@@ -1045,23 +1089,36 @@ class _BookRidePageState extends State<BookRidePage> {
         Expanded(
           child: Text(
             '${_lang.t('book.seats')} (Available: $maxSeats)',
-            style: GoogleFonts.poppins(color: Colors.white70, fontSize: 12),
+            style: GoogleFonts.poppins(
+              color: isDark ? Colors.white70 : const Color(0xFF334155),
+              fontSize: 12,
+            ),
           ),
         ),
         const SizedBox(width: 10),
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 12),
           decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.06),
+            color:
+                isDark
+                    ? Colors.white.withValues(alpha: 0.06)
+                    : const Color(0xFFF8FAFC),
             borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+            border: Border.all(
+              color:
+                  isDark
+                      ? Colors.white.withValues(alpha: 0.1)
+                      : const Color(0xFFCBD5E1),
+            ),
           ),
           child: DropdownButton<int>(
             value: safeSelected,
-            dropdownColor: const Color(0xFF1A1F3A),
+            dropdownColor: isDark ? const Color(0xFF1A1F3A) : Colors.white,
             underline: const SizedBox.shrink(),
-            iconEnabledColor: Colors.white70,
-            style: GoogleFonts.poppins(color: Colors.white),
+            iconEnabledColor: isDark ? Colors.white70 : const Color(0xFF475569),
+            style: GoogleFonts.poppins(
+              color: isDark ? Colors.white : const Color(0xFF0F172A),
+            ),
             items:
                 choices
                     .map(
@@ -1176,6 +1233,13 @@ class _BookRidePageState extends State<BookRidePage> {
     if (lower.contains('bike')) return Icons.electric_bike_rounded;
     return Icons.directions_car_rounded;
   }
+
+  String _rideTypeLabel(String value) {
+    final lower = value.toLowerCase();
+    if (lower.contains('premium')) return _lang.t('rideType.premium');
+    if (lower.contains('bike')) return _lang.t('rideType.bike');
+    return _lang.t('rideType.economy');
+  }
 }
 
 // ─── Shared Widgets ───────────────────────────────────────────────────────────
@@ -1195,6 +1259,7 @@ class _LocationField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Row(
       children: [
         Icon(icon, color: iconColor, size: 20),
@@ -1202,11 +1267,14 @@ class _LocationField extends StatelessWidget {
         Expanded(
           child: TextField(
             controller: controller,
-            style: GoogleFonts.poppins(color: Colors.white, fontSize: 14),
+            style: GoogleFonts.poppins(
+              color: isDark ? Colors.white : const Color(0xFF0F172A),
+              fontSize: 14,
+            ),
             decoration: InputDecoration(
               hintText: hint,
               hintStyle: GoogleFonts.poppins(
-                color: Colors.white38,
+                color: isDark ? Colors.white38 : const Color(0xFF94A3B8),
                 fontSize: 14,
               ),
               border: InputBorder.none,
@@ -1227,17 +1295,21 @@ class _InfoRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
         Text(
           label,
-          style: GoogleFonts.poppins(color: Colors.white54, fontSize: 13),
+          style: GoogleFonts.poppins(
+            color: isDark ? Colors.white54 : const Color(0xFF64748B),
+            fontSize: 13,
+          ),
         ),
         Text(
           value,
           style: GoogleFonts.poppins(
-            color: Colors.white,
+            color: isDark ? Colors.white : const Color(0xFF0F172A),
             fontWeight: FontWeight.w600,
             fontSize: 13,
           ),

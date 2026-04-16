@@ -10,7 +10,7 @@ class PassengerApi {
   static final PassengerApi instance = PassengerApi._();
 
   static const String _baseUrl =
-      'https://rideconnect-emp0.onrender.com/v1/passenger';
+      'https://rideconnect-emp0.onrender.com/api/v1/passenger';
   static const Duration _timeout = Duration(seconds: 20);
 
   Future<Map<String, dynamic>> getProfile() => _get('/profile');
@@ -63,13 +63,44 @@ class PassengerApi {
     String? endDate,
     int? perPage,
   }) async {
-    final response = await _getWithQuery('/rides/history', {
-      'status': status,
-      'start_date': startDate,
-      'end_date': endDate,
-      'per_page': perPage,
-    });
+    Map<String, dynamic> response;
+    try {
+      response = await _getWithQuery('/rides/history', {
+        'status': status,
+        'start_date': startDate,
+        'end_date': endDate,
+        'per_page': perPage,
+      });
+    } catch (_) {
+      response = await _getWithQuery('/rides', {
+        'status': status,
+        'start_date': startDate,
+        'end_date': endDate,
+        'per_page': perPage,
+      });
+    }
     return _extractList(response);
+  }
+
+  Future<List<Map<String, dynamic>>> getRidesOrHistory({
+    String? status,
+    String? startDate,
+    String? endDate,
+    int? perPage,
+  }) async {
+    final rides = await getRides(
+      status: status,
+      startDate: startDate,
+      endDate: endDate,
+      perPage: perPage,
+    );
+    if (rides.isNotEmpty) return rides;
+    return getRideHistory(
+      status: status,
+      startDate: startDate,
+      endDate: endDate,
+      perPage: perPage,
+    );
   }
 
   Future<Map<String, dynamic>> getRideById(dynamic rideId) =>

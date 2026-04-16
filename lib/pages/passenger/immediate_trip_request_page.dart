@@ -23,6 +23,9 @@ class _ImmediateTripRequestPageState extends State<ImmediateTripRequestPage> {
   final TextEditingController _fareController = TextEditingController(
     text: '3500',
   );
+  final TextEditingController _seatsController = TextEditingController(
+    text: '1',
+  );
 
   List<OnlineDriver> _drivers = <OnlineDriver>[];
   bool _loadingDrivers = true;
@@ -30,6 +33,7 @@ class _ImmediateTripRequestPageState extends State<ImmediateTripRequestPage> {
   String? _error;
 
   int? _selectedDriverId;
+  String _selectedRideType = 'Economy';
   int? _activeTripId;
   PassengerTripSnapshot? _activeTrip;
   Timer? _pollTimer;
@@ -37,6 +41,7 @@ class _ImmediateTripRequestPageState extends State<ImmediateTripRequestPage> {
   @override
   void initState() {
     super.initState();
+    _lang.ensureInitialized();
     _lang.languageNotifier.addListener(_onLanguageChanged);
     _pickupController.text = 'Kigali Heights';
     _dropoffController.text = 'Kimironko Market';
@@ -50,6 +55,7 @@ class _ImmediateTripRequestPageState extends State<ImmediateTripRequestPage> {
     _pickupController.dispose();
     _dropoffController.dispose();
     _fareController.dispose();
+    _seatsController.dispose();
     super.dispose();
   }
 
@@ -88,6 +94,7 @@ class _ImmediateTripRequestPageState extends State<ImmediateTripRequestPage> {
     final pickup = _pickupController.text.trim();
     final dropoff = _dropoffController.text.trim();
     final fare = double.tryParse(_fareController.text.trim());
+    final seats = int.tryParse(_seatsController.text.trim()) ?? 1;
 
     if (driverId == null) {
       _showSnack(_lang.t('request.pickDriverError'));
@@ -99,6 +106,10 @@ class _ImmediateTripRequestPageState extends State<ImmediateTripRequestPage> {
     }
     if (fare == null || fare <= 0) {
       _showSnack(_lang.t('request.fareError'));
+      return;
+    }
+    if (seats < 1 || seats > 8) {
+      _showSnack(_lang.t('request.seatRangeError'));
       return;
     }
 
@@ -118,6 +129,8 @@ class _ImmediateTripRequestPageState extends State<ImmediateTripRequestPage> {
           dropoffLat: -1.9411,
           dropoffLng: 30.1098,
           fare: fare,
+          seats: seats,
+          rideType: _selectedRideType,
         ),
       );
 
@@ -181,13 +194,16 @@ class _ImmediateTripRequestPageState extends State<ImmediateTripRequestPage> {
 
   void _showSnack(String message) {
     if (!mounted) return;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         behavior: SnackBarBehavior.floating,
-        backgroundColor: const Color(0xFF131729),
+        backgroundColor: isDark ? const Color(0xFF131729) : Colors.white,
         content: Text(
           message,
-          style: GoogleFonts.poppins(color: Colors.white70),
+          style: GoogleFonts.poppins(
+            color: isDark ? Colors.white70 : const Color(0xFF334155),
+          ),
         ),
       ),
     );
@@ -195,10 +211,14 @@ class _ImmediateTripRequestPageState extends State<ImmediateTripRequestPage> {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Container(
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         gradient: LinearGradient(
-          colors: <Color>[Color(0xFF0A0E1A), Color(0xFF1A1F3A)],
+          colors:
+              isDark
+                  ? const <Color>[Color(0xFF0A0E1A), Color(0xFF1A1F3A)]
+                  : const <Color>[Color(0xFFEFF4FF), Color(0xFFDCE8FF)],
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
         ),
@@ -226,6 +246,7 @@ class _ImmediateTripRequestPageState extends State<ImmediateTripRequestPage> {
   }
 
   Widget _buildTitle() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Row(
       children: <Widget>[
         Container(
@@ -245,7 +266,7 @@ class _ImmediateTripRequestPageState extends State<ImmediateTripRequestPage> {
           child: Text(
             _lang.t('request.title'),
             style: GoogleFonts.poppins(
-              color: Colors.white,
+              color: isDark ? Colors.white : const Color(0xFF0F172A),
               fontSize: 20,
               fontWeight: FontWeight.w700,
             ),
@@ -256,12 +277,26 @@ class _ImmediateTripRequestPageState extends State<ImmediateTripRequestPage> {
   }
 
   Widget _buildRequestForm() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final cardBg =
+        isDark
+            ? Colors.white.withValues(alpha: 0.05)
+            : Colors.white.withValues(alpha: 0.92);
+    final borderColor =
+        isDark ? Colors.white.withValues(alpha: 0.08) : const Color(0xFFCBD5E1);
+    final fieldBg =
+        isDark ? Colors.white.withValues(alpha: 0.05) : const Color(0xFFF8FAFC);
+    final fieldBorder =
+        isDark ? Colors.white.withValues(alpha: 0.1) : const Color(0xFFCBD5E1);
+    final textPrimary = isDark ? Colors.white : const Color(0xFF0F172A);
+    final textSecondary = isDark ? Colors.white60 : const Color(0xFF64748B);
+
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.05),
+        color: cardBg,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+        border: Border.all(color: borderColor),
       ),
       child: Column(
         children: <Widget>[
@@ -282,6 +317,53 @@ class _ImmediateTripRequestPageState extends State<ImmediateTripRequestPage> {
             icon: Icons.payments_rounded,
             label: _lang.t('request.fare'),
             keyboardType: TextInputType.number,
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: <Widget>[
+              Expanded(
+                child: _field(
+                  controller: _seatsController,
+                  icon: Icons.event_seat_rounded,
+                  label: _lang.t('request.seats'),
+                  keyboardType: TextInputType.number,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: DropdownButtonFormField<String>(
+                  value: _selectedRideType,
+                  dropdownColor:
+                      isDark ? const Color(0xFF1A1F3A) : Colors.white,
+                  style: GoogleFonts.poppins(color: textPrimary, fontSize: 13),
+                  decoration: InputDecoration(
+                    labelText: _lang.t('request.rideType'),
+                    labelStyle: GoogleFonts.poppins(color: textSecondary),
+                    filled: true,
+                    fillColor: fieldBg,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: fieldBorder),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: fieldBorder),
+                    ),
+                  ),
+                  items:
+                      const <String>['Economy', 'Premium', 'Bike'].map((type) {
+                        return DropdownMenuItem<String>(
+                          value: type,
+                          child: Text(_rideTypeLabel(type)),
+                        );
+                      }).toList(),
+                  onChanged: (value) {
+                    if (value == null) return;
+                    setState(() => _selectedRideType = value);
+                  },
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: 14),
           SizedBox(
@@ -328,18 +410,30 @@ class _ImmediateTripRequestPageState extends State<ImmediateTripRequestPage> {
   }
 
   Widget _buildActiveStatusCard() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final active = _activeTrip;
     if (active == null) {
       return Container(
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.04),
+          color:
+              isDark
+                  ? Colors.white.withValues(alpha: 0.04)
+                  : Colors.white.withValues(alpha: 0.88),
           borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+          border: Border.all(
+            color:
+                isDark
+                    ? Colors.white.withValues(alpha: 0.08)
+                    : const Color(0xFFCBD5E1),
+          ),
         ),
         child: Text(
           _lang.t('request.noActive'),
-          style: GoogleFonts.poppins(color: Colors.white54, fontSize: 12),
+          style: GoogleFonts.poppins(
+            color: isDark ? Colors.white54 : const Color(0xFF64748B),
+            fontSize: 12,
+          ),
         ),
       );
     }
@@ -358,18 +452,24 @@ class _ImmediateTripRequestPageState extends State<ImmediateTripRequestPage> {
           Text(
             '${_lang.t('request.currentStatus')}: ${active.status}',
             style: GoogleFonts.poppins(
-              color: Colors.white,
+              color: isDark ? Colors.white : const Color(0xFF0F172A),
               fontWeight: FontWeight.w600,
             ),
           ),
           const SizedBox(height: 6),
           Text(
             '${_lang.t('trips.driver')}: ${active.driverName}',
-            style: GoogleFonts.poppins(color: Colors.white70, fontSize: 12),
+            style: GoogleFonts.poppins(
+              color: isDark ? Colors.white70 : const Color(0xFF334155),
+              fontSize: 12,
+            ),
           ),
           Text(
             '${_lang.t('request.route')}: ${active.pickup} -> ${active.dropoff}',
-            style: GoogleFonts.poppins(color: Colors.white54, fontSize: 11),
+            style: GoogleFonts.poppins(
+              color: isDark ? Colors.white54 : const Color(0xFF64748B),
+              fontSize: 11,
+            ),
           ),
         ],
       ),
@@ -377,6 +477,7 @@ class _ImmediateTripRequestPageState extends State<ImmediateTripRequestPage> {
   }
 
   Widget _buildDriversSection() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     if (_loadingDrivers) {
       return const Center(
         child: Padding(
@@ -390,7 +491,9 @@ class _ImmediateTripRequestPageState extends State<ImmediateTripRequestPage> {
       return Center(
         child: Text(
           _lang.t('request.noDrivers'),
-          style: GoogleFonts.poppins(color: Colors.white54),
+          style: GoogleFonts.poppins(
+            color: isDark ? Colors.white54 : const Color(0xFF64748B),
+          ),
         ),
       );
     }
@@ -401,7 +504,7 @@ class _ImmediateTripRequestPageState extends State<ImmediateTripRequestPage> {
         Text(
           _lang.t('request.onlineDrivers'),
           style: GoogleFonts.poppins(
-            color: Colors.white,
+            color: isDark ? Colors.white : const Color(0xFF0F172A),
             fontWeight: FontWeight.w600,
             fontSize: 14,
           ),
@@ -413,6 +516,7 @@ class _ImmediateTripRequestPageState extends State<ImmediateTripRequestPage> {
   }
 
   Widget _driverCard(OnlineDriver driver) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final selected = driver.id == _selectedDriverId;
     return GestureDetector(
       onTap: () => setState(() => _selectedDriverId = driver.id),
@@ -423,13 +527,17 @@ class _ImmediateTripRequestPageState extends State<ImmediateTripRequestPage> {
           color:
               selected
                   ? const Color(0xFF3B82F6).withValues(alpha: 0.15)
-                  : Colors.white.withValues(alpha: 0.04),
+                  : (isDark
+                      ? Colors.white.withValues(alpha: 0.04)
+                      : Colors.white.withValues(alpha: 0.9)),
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
             color:
                 selected
                     ? const Color(0xFF3B82F6)
-                    : Colors.white.withValues(alpha: 0.08),
+                    : (isDark
+                        ? Colors.white.withValues(alpha: 0.08)
+                        : const Color(0xFFCBD5E1)),
           ),
         ),
         child: Row(
@@ -452,14 +560,14 @@ class _ImmediateTripRequestPageState extends State<ImmediateTripRequestPage> {
                   Text(
                     driver.name,
                     style: GoogleFonts.poppins(
-                      color: Colors.white,
+                      color: isDark ? Colors.white : const Color(0xFF0F172A),
                       fontWeight: FontWeight.w600,
                     ),
                   ),
                   Text(
                     '${driver.vehicle} • ★ ${driver.rating.toStringAsFixed(1)}',
                     style: GoogleFonts.poppins(
-                      color: Colors.white54,
+                      color: isDark ? Colors.white54 : const Color(0xFF64748B),
                       fontSize: 12,
                     ),
                   ),
@@ -480,23 +588,31 @@ class _ImmediateTripRequestPageState extends State<ImmediateTripRequestPage> {
     required String label,
     TextInputType keyboardType = TextInputType.text,
   }) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final textPrimary = isDark ? Colors.white : const Color(0xFF0F172A);
+    final textSecondary = isDark ? Colors.white60 : const Color(0xFF64748B);
+    final fieldBg =
+        isDark ? Colors.white.withValues(alpha: 0.05) : const Color(0xFFF8FAFC);
+    final fieldBorder =
+        isDark ? Colors.white.withValues(alpha: 0.1) : const Color(0xFFCBD5E1);
+
     return TextField(
       controller: controller,
       keyboardType: keyboardType,
-      style: GoogleFonts.poppins(color: Colors.white, fontSize: 13),
+      style: GoogleFonts.poppins(color: textPrimary, fontSize: 13),
       decoration: InputDecoration(
         labelText: label,
-        labelStyle: GoogleFonts.poppins(color: Colors.white60),
+        labelStyle: GoogleFonts.poppins(color: textSecondary),
         prefixIcon: Icon(icon, color: const Color(0xFF6C63FF), size: 18),
         filled: true,
-        fillColor: Colors.white.withValues(alpha: 0.05),
+        fillColor: fieldBg,
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.1)),
+          borderSide: BorderSide(color: fieldBorder),
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.1)),
+          borderSide: BorderSide(color: fieldBorder),
         ),
       ),
     );
@@ -510,5 +626,12 @@ class _ImmediateTripRequestPageState extends State<ImmediateTripRequestPage> {
     }
     if (lower.contains('complete')) return const Color(0xFF6C63FF);
     return const Color(0xFF3B82F6);
+  }
+
+  String _rideTypeLabel(String value) {
+    final lower = value.toLowerCase();
+    if (lower.contains('premium')) return _lang.t('rideType.premium');
+    if (lower.contains('bike')) return _lang.t('rideType.bike');
+    return _lang.t('rideType.economy');
   }
 }

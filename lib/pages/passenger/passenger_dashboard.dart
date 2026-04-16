@@ -7,6 +7,7 @@ import 'trips_page.dart';
 import 'notifications_page.dart';
 import 'profile_page.dart';
 import '../../services/passenger_language_service.dart';
+import '../../features/mobile/data/mobile_flow_api_service.dart';
 
 /// Main Passenger Dashboard — hosts the bottom navigation and all sub-pages.
 class PassengerDashboard extends StatefulWidget {
@@ -38,6 +39,11 @@ class _PassengerDashboardState extends State<PassengerDashboard> {
   void initState() {
     super.initState();
     _lang.languageNotifier.addListener(_onLanguageChanged);
+    _refreshUnreadCount();
+    _notificationTimer = Timer.periodic(
+      const Duration(seconds: 20),
+      (_) => _refreshUnreadCount(),
+    );
   }
 
   @override
@@ -79,6 +85,17 @@ class _PassengerDashboardState extends State<PassengerDashboard> {
 
   Future<void> _openNotifications() async {
     setState(() => _showNotificationsPage = true);
+    await _refreshUnreadCount();
+  }
+
+  Future<void> _refreshUnreadCount() async {
+    try {
+      final count = await mobileFlowApi.getUnreadCount();
+      if (!mounted) return;
+      setState(() => _notifCount = count);
+    } catch (_) {
+      // Ignore short network errors for badge polling.
+    }
   }
 
   @override

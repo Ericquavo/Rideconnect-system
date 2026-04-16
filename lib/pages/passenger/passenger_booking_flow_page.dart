@@ -43,14 +43,23 @@ class _PassengerBookingFlowPageState extends State<PassengerBookingFlowPage>
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final headerBg = isDark ? const Color(0xFF0F1428) : const Color(0xFFEFF4FF);
+    final tabContainerBg =
+        isDark
+            ? Colors.white.withValues(alpha: 0.06)
+            : Colors.white.withValues(alpha: 0.9);
+    final selectedLabel = isDark ? Colors.white : const Color(0xFF0F172A);
+    final unselectedLabel = isDark ? Colors.white54 : const Color(0xFF64748B);
+
     return Column(
       children: <Widget>[
         Container(
-          color: const Color(0xFF0F1428),
+          color: headerBg,
           padding: const EdgeInsets.fromLTRB(20, 10, 20, 8),
           child: Container(
             decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.06),
+              color: tabContainerBg,
               borderRadius: BorderRadius.circular(12),
             ),
             child: TabBar(
@@ -61,8 +70,9 @@ class _PassengerBookingFlowPageState extends State<PassengerBookingFlowPage>
                   colors: <Color>[Color(0xFF6C63FF), Color(0xFF3B82F6)],
                 ),
               ),
-              labelColor: Colors.white,
-              unselectedLabelColor: Colors.white54,
+              unselectedLabelColor: unselectedLabel,
+              dividerColor: Colors.transparent,
+              labelColor: selectedLabel,
               labelStyle: GoogleFonts.poppins(
                 fontWeight: FontWeight.w600,
                 fontSize: 12,

@@ -717,6 +717,7 @@ class _ProfilePageState extends State<ProfilePage> {
     setState(() => _isLoggingOut = true);
 
     final session = await AuthSession.load();
+    await AuthApi.logout(token: session?.token);
     await AuthApi.clearSession(token: session?.token);
     await AuthSession.clear();
 

@@ -48,9 +48,14 @@ class _DriverDashboardState extends State<DriverDashboard> {
     _lang.ensureInitialized();
     _lang.languageNotifier.addListener(_onLanguageChanged);
     _syncDriverPresence();
+    _refreshNotificationBadge();
     _presenceTimer = Timer.periodic(
       const Duration(seconds: 30),
       (_) => _syncDriverPresence(),
+    );
+    _notificationTimer = Timer.periodic(
+      const Duration(seconds: 20),
+      (_) => _refreshNotificationBadge(),
     );
   }
 
@@ -141,6 +146,17 @@ class _DriverDashboardState extends State<DriverDashboard> {
     await Navigator.of(
       context,
     ).push(MaterialPageRoute(builder: (_) => const DriverNotificationsPage()));
+    await _refreshNotificationBadge();
+  }
+
+  Future<void> _refreshNotificationBadge() async {
+    try {
+      final unread = await DriverApi.instance.getUnreadNotificationCount();
+      if (!mounted) return;
+      setState(() => _notificationUnreadCount = unread);
+    } catch (_) {
+      // Keep previous badge state on transient failures.
+    }
   }
 
   @override
@@ -271,6 +287,7 @@ class _DriverDashboardState extends State<DriverDashboard> {
 
   Future<void> _logout(BuildContext context) async {
     final session = await AuthSession.load();
+    await AuthApi.logout(token: session?.token);
     await AuthApi.clearSession(token: session?.token);
     await AuthSession.clear();
 

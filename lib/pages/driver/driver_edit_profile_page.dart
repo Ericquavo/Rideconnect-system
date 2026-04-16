@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../../auth/auth_api.dart';
+import '../../auth/auth_session.dart';
 import '../../services/driver_api.dart';
 import '../../services/driver_language_service.dart';
 import '../../services/driver_sync_service.dart';
@@ -87,24 +89,46 @@ class _DriverEditProfilePageState extends State<DriverEditProfilePage> {
   }
 
   Future<void> _loadProfile() async {
+    final session = await AuthSession.load();
+    final token = session?.token;
+
     try {
-      final api = DriverApi.instance;
-      final response = await api.getProfile();
-      final profile = api.extractDataMap(response);
+      Map<String, dynamic> profile = <String, dynamic>{};
+      if (token != null && token.trim().isNotEmpty) {
+        try {
+          final response = await AuthApi.getProfile(token: token);
+          final data = response['data'];
+          profile =
+              data is Map<String, dynamic>
+                  ? (data['user'] is Map<String, dynamic>
+                      ? data['user'] as Map<String, dynamic>
+                      : data)
+                  : <String, dynamic>{};
+        } catch (_) {
+          // Fallback to driver profile endpoint below.
+        }
+      }
+
+      if (profile.isEmpty) {
+        final api = DriverApi.instance;
+        final response = await api.getProfile();
+        profile = api.extractDataMap(response);
+      }
 
       if (!mounted) return;
       setState(() {
-        _nameController.text = api.readString(profile, const [
-          'name',
-          'full_name',
-        ], fallback: widget.initialName);
-        _phoneController.text = api.readString(profile, const [
-          'phone',
-          'phone_number',
-        ], fallback: _phoneController.text);
-        _emailController.text = api.readString(profile, const [
-          'email',
-        ], fallback: widget.initialEmail);
+        final name =
+            (profile['name'] ?? profile['full_name'] ?? widget.initialName)
+                .toString();
+        final phone =
+            (profile['phone'] ??
+                    profile['phone_number'] ??
+                    _phoneController.text)
+                .toString();
+        final email = (profile['email'] ?? widget.initialEmail).toString();
+        _nameController.text = name;
+        _phoneController.text = phone;
+        _emailController.text = email;
         _loading = false;
       });
     } catch (_) {
@@ -119,12 +143,24 @@ class _DriverEditProfilePageState extends State<DriverEditProfilePage> {
     FocusScope.of(context).unfocus();
     setState(() => _saving = true);
 
+    final session = await AuthSession.load();
+    final token = session?.token;
     try {
-      await DriverApi.instance.updateProfile({
+      final payload = <String, dynamic>{
         'name': _nameController.text.trim(),
         'phone': _phoneController.text.trim(),
         'email': _emailController.text.trim(),
-      });
+      };
+
+      if (token != null && token.trim().isNotEmpty) {
+        try {
+          await AuthApi.updateProfile(token: token, payload: payload);
+        } catch (_) {
+          await DriverApi.instance.updateProfile(payload);
+        }
+      } else {
+        await DriverApi.instance.updateProfile(payload);
+      }
     } catch (e) {
       if (!mounted) return;
       setState(() => _saving = false);

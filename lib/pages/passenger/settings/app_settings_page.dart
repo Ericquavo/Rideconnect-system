@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import '../../../auth/auth_api.dart';
+import '../../../auth/auth_session.dart';
 import '../../../services/app_theme_service.dart';
 import '../../../services/passenger_language_service.dart';
 import 'settings_theme.dart';
@@ -15,6 +17,10 @@ class _AppSettingsPageState extends State<AppSettingsPage> {
   bool _darkMode = AppThemeService.isDarkMode;
   bool _pushNotifications = true;
   bool _locationSharing = true;
+  bool _updatingPassword = false;
+  final TextEditingController _currentPasswordCtrl = TextEditingController();
+  final TextEditingController _newPasswordCtrl = TextEditingController();
+  final TextEditingController _confirmPasswordCtrl = TextEditingController();
   final PassengerLanguageService _lang = PassengerLanguageService.instance;
 
   @override
@@ -26,6 +32,9 @@ class _AppSettingsPageState extends State<AppSettingsPage> {
   @override
   void dispose() {
     _lang.languageNotifier.removeListener(_onLanguageChanged);
+    _currentPasswordCtrl.dispose();
+    _newPasswordCtrl.dispose();
+    _confirmPasswordCtrl.dispose();
     super.dispose();
   }
 
@@ -118,8 +127,156 @@ class _AppSettingsPageState extends State<AppSettingsPage> {
                 ],
               ),
             ),
+            const SizedBox(height: 12),
+            SettingsCard(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    _lang.t('settings.changePassword'),
+                    style: GoogleFonts.poppins(
+                      color: palette.textPrimary,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  _passwordField(
+                    controller: _currentPasswordCtrl,
+                    hint: _lang.t('settings.currentPassword'),
+                    icon: Icons.lock_outline_rounded,
+                  ),
+                  const SizedBox(height: 10),
+                  _passwordField(
+                    controller: _newPasswordCtrl,
+                    hint: _lang.t('settings.newPassword'),
+                    icon: Icons.lock_reset_rounded,
+                  ),
+                  const SizedBox(height: 10),
+                  _passwordField(
+                    controller: _confirmPasswordCtrl,
+                    hint: _lang.t('settings.confirmPassword'),
+                    icon: Icons.verified_user_outlined,
+                  ),
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      onPressed: _updatingPassword ? null : _updatePassword,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF6C63FF),
+                        foregroundColor: Colors.white,
+                      ),
+                      icon:
+                          _updatingPassword
+                              ? const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
+                              )
+                              : const Icon(Icons.save_rounded, size: 18),
+                      label: Text(
+                        _updatingPassword
+                            ? _lang.t('settings.updatingPassword')
+                            : _lang.t('settings.updatePassword'),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _passwordField({
+    required TextEditingController controller,
+    required String hint,
+    required IconData icon,
+  }) {
+    final palette = SettingsPalette.of(context);
+    return TextField(
+      controller: controller,
+      obscureText: true,
+      style: GoogleFonts.poppins(color: palette.textPrimary, fontSize: 14),
+      decoration: InputDecoration(
+        filled: true,
+        fillColor: palette.surface,
+        hintText: hint,
+        hintStyle: GoogleFonts.poppins(color: palette.textMuted),
+        prefixIcon: Icon(icon, color: const Color(0xFF6C63FF), size: 18),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: palette.border),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: palette.border),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _updatePassword() async {
+    final current = _currentPasswordCtrl.text;
+    final next = _newPasswordCtrl.text;
+    final confirm = _confirmPasswordCtrl.text;
+
+    if (current.trim().isEmpty ||
+        next.trim().isEmpty ||
+        confirm.trim().isEmpty) {
+      _showPasswordSnack(_lang.t('settings.passwordRequired'));
+      return;
+    }
+    if (next.length < 6) {
+      _showPasswordSnack(_lang.t('settings.passwordLength'));
+      return;
+    }
+    if (next != confirm) {
+      _showPasswordSnack(_lang.t('settings.passwordMismatch'));
+      return;
+    }
+
+    final session = await AuthSession.load();
+    final token = session?.token;
+    if (token == null || token.trim().isEmpty) {
+      _showPasswordSnack(_lang.t('settings.passwordRelogin'));
+      return;
+    }
+
+    setState(() => _updatingPassword = true);
+    try {
+      await AuthApi.updateUserPassword(
+        token: token,
+        currentPassword: current,
+        newPassword: next,
+      );
+      if (!mounted) return;
+      _currentPasswordCtrl.clear();
+      _newPasswordCtrl.clear();
+      _confirmPasswordCtrl.clear();
+      _showPasswordSnack(_lang.t('settings.passwordUpdated'), success: true);
+    } catch (e) {
+      _showPasswordSnack(e.toString().replaceFirst('Exception: ', ''));
+    } finally {
+      if (mounted) {
+        setState(() => _updatingPassword = false);
+      }
+    }
+  }
+
+  void _showPasswordSnack(String message, {bool success = false}) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        behavior: SnackBarBehavior.floating,
+        backgroundColor: success ? const Color(0xFF10B981) : null,
       ),
     );
   }

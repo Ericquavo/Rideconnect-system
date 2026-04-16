@@ -248,22 +248,28 @@ class CreateBookingRequest {
     required this.seats,
     required this.pickupAddress,
     required this.dropoffAddress,
+    this.rideType,
+    this.scheduledAt,
+    this.notes,
   });
 
   final int rideId;
   final int seats;
   final String pickupAddress;
   final String dropoffAddress;
+  final String? rideType;
+  final DateTime? scheduledAt;
+  final String? notes;
 
   Map<String, dynamic> toJson() => {
     'ride_id': rideId,
-    'trip_id': rideId,
     'seats': seats,
-    'seat_count': seats,
     'pickup_address': pickupAddress,
-    'pickup_location': pickupAddress,
     'dropoff_address': dropoffAddress,
-    'dropoff_location': dropoffAddress,
+    if (rideType != null && rideType!.trim().isNotEmpty)
+      'ride_type': rideType!.trim(),
+    if (scheduledAt != null) 'scheduled_at': scheduledAt!.toIso8601String(),
+    if (notes != null && notes!.trim().isNotEmpty) 'notes': notes!.trim(),
   };
 }
 
@@ -349,21 +355,25 @@ class CreatePaymentRequest {
     required this.amount,
     required this.paymentMethod,
     this.currency = 'RWF',
+    this.reference,
+    this.notes,
   });
 
   final int bookingId;
   final double amount;
   final String paymentMethod;
   final String currency;
+  final String? reference;
+  final String? notes;
 
   Map<String, dynamic> toJson() => {
     'booking_id': bookingId,
-    'ride_id': bookingId,
-    'trip_id': bookingId,
     'amount': amount,
     'payment_method': paymentMethod,
-    'method': paymentMethod,
     'currency': currency,
+    if (reference != null && reference!.trim().isNotEmpty)
+      'reference': reference!.trim(),
+    if (notes != null && notes!.trim().isNotEmpty) 'notes': notes!.trim(),
   };
 }
 

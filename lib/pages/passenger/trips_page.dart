@@ -735,9 +735,9 @@ class _TripsPageState extends State<TripsPage>
     if (end != null) params['end_date'] = end;
 
     final query = Uri(queryParameters: params).query;
-    final bookingsQuery = '/v1/passenger/bookings/my?$query';
-    final tripsQuery = '/v1/passenger/trips';
-    final historyQuery = '/v1/passenger/rides/history?$query';
+    final bookingsQuery = '/api/v1/passenger/bookings/my?$query';
+    final tripsQuery = '/api/v1/passenger/trips';
+    final historyQuery = '/api/v1/passenger/rides/history?$query';
 
     return Container(
       width: double.infinity,

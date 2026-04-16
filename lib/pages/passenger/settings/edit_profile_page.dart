@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import '../../../auth/auth_api.dart';
+import '../../../auth/auth_session.dart';
 import '../../../services/passenger_language_service.dart';
 import 'settings_theme.dart';
 
@@ -24,12 +26,14 @@ class _EditProfilePageState extends State<EditProfilePage> {
     text: '+250 788 000 000',
   );
   bool _saving = false;
+  bool _loading = true;
 
   @override
   void initState() {
     super.initState();
     _nameCtrl = TextEditingController(text: widget.initialName);
     _emailCtrl = TextEditingController(text: widget.initialEmail);
+    _loadProfile();
   }
 
   @override
@@ -41,14 +45,83 @@ class _EditProfilePageState extends State<EditProfilePage> {
   }
 
   Future<void> _save() async {
+    final session = await AuthSession.load();
+    final token = session?.token;
+    if (token == null || token.trim().isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please login again to update profile.')),
+      );
+      return;
+    }
+
     setState(() => _saving = true);
-    await Future.delayed(const Duration(milliseconds: 700));
+    try {
+      await AuthApi.updateProfile(
+        token: token,
+        payload: <String, dynamic>{
+          'name': _nameCtrl.text.trim(),
+          'email': _emailCtrl.text.trim(),
+          'phone': _phoneCtrl.text.trim(),
+        },
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _saving = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(e.toString().replaceFirst('Exception: ', '')),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+
     if (!mounted) return;
     setState(() => _saving = false);
     Navigator.pop(context, {
       'name': _nameCtrl.text.trim(),
       'email': _emailCtrl.text.trim(),
     });
+  }
+
+  Future<void> _loadProfile() async {
+    final session = await AuthSession.load();
+    final token = session?.token;
+    if (token == null || token.trim().isEmpty) {
+      if (mounted) {
+        setState(() => _loading = false);
+      }
+      return;
+    }
+
+    try {
+      final response = await AuthApi.getProfile(token: token);
+      final data = response['data'];
+      final profile =
+          data is Map<String, dynamic>
+              ? (data['user'] is Map<String, dynamic>
+                  ? data['user'] as Map<String, dynamic>
+                  : data)
+              : <String, dynamic>{};
+
+      if (!mounted) return;
+      setState(() {
+        final name = (profile['name'] ?? '').toString().trim();
+        final email = (profile['email'] ?? '').toString().trim();
+        final phone =
+            (profile['phone'] ?? profile['phone_number'] ?? '')
+                .toString()
+                .trim();
+        if (name.isNotEmpty) _nameCtrl.text = name;
+        if (email.isNotEmpty) _emailCtrl.text = email;
+        if (phone.isNotEmpty) _phoneCtrl.text = phone;
+        _loading = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _loading = false);
+    }
   }
 
   @override
@@ -58,105 +131,116 @@ class _EditProfilePageState extends State<EditProfilePage> {
     return SettingsPageLayout(
       title: lang.t('settings.editProfile'),
       icon: Icons.edit_rounded,
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
-        child: Column(
-          children: [
-            SettingsCard(
-              child: Column(
-                children: [
-                  Stack(
-                    children: [
-                      Container(
-                        width: 96,
-                        height: 96,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          gradient: palette.brandGradient,
-                        ),
-                        child: Center(
-                          child: Text(
-                            _nameCtrl.text.isNotEmpty
-                                ? _nameCtrl.text[0].toUpperCase()
-                                : 'P',
+      child:
+          _loading
+              ? const Center(
+                child: CircularProgressIndicator(color: Color(0xFF6C63FF)),
+              )
+              : SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
+                child: Column(
+                  children: [
+                    SettingsCard(
+                      child: Column(
+                        children: [
+                          Stack(
+                            children: [
+                              Container(
+                                width: 96,
+                                height: 96,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  gradient: palette.brandGradient,
+                                ),
+                                child: Center(
+                                  child: Text(
+                                    _nameCtrl.text.isNotEmpty
+                                        ? _nameCtrl.text[0].toUpperCase()
+                                        : 'P',
+                                    style: GoogleFonts.poppins(
+                                      color: Colors.white,
+                                      fontSize: 34,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              Positioned(
+                                right: 0,
+                                bottom: 0,
+                                child: Container(
+                                  width: 34,
+                                  height: 34,
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFF6C63FF),
+                                    shape: BoxShape.circle,
+                                    border: Border.all(
+                                      color: Colors.white,
+                                      width: 2,
+                                    ),
+                                  ),
+                                  child: const Icon(
+                                    Icons.camera_alt_rounded,
+                                    color: Colors.white,
+                                    size: 17,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+                          Text(
+                            lang.t('edit.tapCamera'),
                             style: GoogleFonts.poppins(
-                              color: Colors.white,
-                              fontSize: 34,
-                              fontWeight: FontWeight.w700,
+                              color: palette.textMuted,
+                              fontSize: 12,
                             ),
                           ),
-                        ),
+                        ],
                       ),
-                      Positioned(
-                        right: 0,
-                        bottom: 0,
-                        child: Container(
-                          width: 34,
-                          height: 34,
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF6C63FF),
-                            shape: BoxShape.circle,
-                            border: Border.all(color: Colors.white, width: 2),
-                          ),
-                          child: const Icon(
-                            Icons.camera_alt_rounded,
-                            color: Colors.white,
-                            size: 17,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    lang.t('edit.tapCamera'),
-                    style: GoogleFonts.poppins(
-                      color: palette.textMuted,
-                      fontSize: 12,
                     ),
-                  ),
-                ],
+                    const SizedBox(height: 14),
+                    SettingsCard(
+                      child: Column(
+                        children: [
+                          _field(
+                            context,
+                            _nameCtrl,
+                            lang.t('edit.fullName'),
+                            Icons.person_rounded,
+                            TextInputType.name,
+                          ),
+                          const SizedBox(height: 10),
+                          _field(
+                            context,
+                            _emailCtrl,
+                            lang.t('edit.email'),
+                            Icons.email_rounded,
+                            TextInputType.emailAddress,
+                          ),
+                          const SizedBox(height: 10),
+                          _field(
+                            context,
+                            _phoneCtrl,
+                            lang.t('edit.phone'),
+                            Icons.phone_rounded,
+                            TextInputType.phone,
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 18),
+                    BrandButton(
+                      text:
+                          _saving
+                              ? lang.t('edit.updating')
+                              : lang.t('edit.update'),
+                      icon: Icons.check_circle_rounded,
+                      onPressed: _saving ? null : _save,
+                    ),
+                  ],
+                ),
               ),
-            ),
-            const SizedBox(height: 14),
-            SettingsCard(
-              child: Column(
-                children: [
-                  _field(
-                    context,
-                    _nameCtrl,
-                    lang.t('edit.fullName'),
-                    Icons.person_rounded,
-                    TextInputType.name,
-                  ),
-                  const SizedBox(height: 10),
-                  _field(
-                    context,
-                    _emailCtrl,
-                    lang.t('edit.email'),
-                    Icons.email_rounded,
-                    TextInputType.emailAddress,
-                  ),
-                  const SizedBox(height: 10),
-                  _field(
-                    context,
-                    _phoneCtrl,
-                    lang.t('edit.phone'),
-                    Icons.phone_rounded,
-                    TextInputType.phone,
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 18),
-            BrandButton(
-              text: _saving ? lang.t('edit.updating') : lang.t('edit.update'),
-              icon: Icons.check_circle_rounded,
-              onPressed: _saving ? null : _save,
-            ),
-          ],
-        ),
-      ),
     );
   }
 

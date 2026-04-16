@@ -152,6 +152,96 @@ class PassengerLanguageService {
       PassengerLanguage.swahili: 'Mipangilio',
       PassengerLanguage.spanish: 'Configuracion',
     },
+    'settings.changePassword': {
+      PassengerLanguage.english: 'Change password',
+      PassengerLanguage.french: 'Changer le mot de passe',
+      PassengerLanguage.kinyarwanda: 'Hindura ijambo banga',
+      PassengerLanguage.swahili: 'Badilisha nenosiri',
+      PassengerLanguage.spanish: 'Cambiar contrasena',
+    },
+    'settings.currentPassword': {
+      PassengerLanguage.english: 'Current password',
+      PassengerLanguage.french: 'Mot de passe actuel',
+      PassengerLanguage.kinyarwanda: 'Ijambo banga rya none',
+      PassengerLanguage.swahili: 'Nenosiri la sasa',
+      PassengerLanguage.spanish: 'Contrasena actual',
+    },
+    'settings.newPassword': {
+      PassengerLanguage.english: 'New password',
+      PassengerLanguage.french: 'Nouveau mot de passe',
+      PassengerLanguage.kinyarwanda: 'Ijambo banga rishya',
+      PassengerLanguage.swahili: 'Nenosiri jipya',
+      PassengerLanguage.spanish: 'Nueva contrasena',
+    },
+    'settings.confirmPassword': {
+      PassengerLanguage.english: 'Confirm new password',
+      PassengerLanguage.french: 'Confirmer le nouveau mot de passe',
+      PassengerLanguage.kinyarwanda: 'Emeza ijambo banga rishya',
+      PassengerLanguage.swahili: 'Thibitisha nenosiri jipya',
+      PassengerLanguage.spanish: 'Confirmar nueva contrasena',
+    },
+    'settings.updatePassword': {
+      PassengerLanguage.english: 'Update password',
+      PassengerLanguage.french: 'Mettre a jour le mot de passe',
+      PassengerLanguage.kinyarwanda: 'Vugurura ijambo banga',
+      PassengerLanguage.swahili: 'Sasisha nenosiri',
+      PassengerLanguage.spanish: 'Actualizar contrasena',
+    },
+    'settings.updatingPassword': {
+      PassengerLanguage.english: 'Updating password...',
+      PassengerLanguage.french: 'Mise a jour du mot de passe...',
+      PassengerLanguage.kinyarwanda: 'Birimo kuvugurura ijambo banga...',
+      PassengerLanguage.swahili: 'Inasasisha nenosiri...',
+      PassengerLanguage.spanish: 'Actualizando contrasena...',
+    },
+    'settings.passwordRequired': {
+      PassengerLanguage.english: 'All password fields are required.',
+      PassengerLanguage.french:
+          'Tous les champs de mot de passe sont obligatoires.',
+      PassengerLanguage.kinyarwanda: 'Ibice byose by ijambo banga birasabwa.',
+      PassengerLanguage.swahili: 'Sehemu zote za nenosiri zinahitajika.',
+      PassengerLanguage.spanish:
+          'Todos los campos de contrasena son obligatorios.',
+    },
+    'settings.passwordLength': {
+      PassengerLanguage.english: 'New password must be at least 6 characters.',
+      PassengerLanguage.french:
+          'Le nouveau mot de passe doit contenir au moins 6 caracteres.',
+      PassengerLanguage.kinyarwanda:
+          'Ijambo banga rishya rigomba kuba rifite nibura inyuguti 6.',
+      PassengerLanguage.swahili:
+          'Nenosiri jipya lazima liwe na angalau herufi 6.',
+      PassengerLanguage.spanish:
+          'La nueva contrasena debe tener al menos 6 caracteres.',
+    },
+    'settings.passwordMismatch': {
+      PassengerLanguage.english: 'New password and confirmation do not match.',
+      PassengerLanguage.french:
+          'Le nouveau mot de passe et sa confirmation ne correspondent pas.',
+      PassengerLanguage.kinyarwanda:
+          'Ijambo banga rishya n iryemeza ntibihura.',
+      PassengerLanguage.swahili:
+          'Nenosiri jipya na uthibitisho wake havilingani.',
+      PassengerLanguage.spanish:
+          'La nueva contrasena y su confirmacion no coinciden.',
+    },
+    'settings.passwordRelogin': {
+      PassengerLanguage.english: 'Please login again to update password.',
+      PassengerLanguage.french:
+          'Veuillez vous reconnecter pour mettre a jour le mot de passe.',
+      PassengerLanguage.kinyarwanda:
+          'Injira bundi bushya kugira ngo uvugurure ijambo banga.',
+      PassengerLanguage.swahili: 'Tafadhali ingia tena ili kusasisha nenosiri.',
+      PassengerLanguage.spanish:
+          'Inicia sesion de nuevo para actualizar la contrasena.',
+    },
+    'settings.passwordUpdated': {
+      PassengerLanguage.english: 'Password updated successfully.',
+      PassengerLanguage.french: 'Mot de passe mis a jour avec succes.',
+      PassengerLanguage.kinyarwanda: 'Ijambo banga ryavuguruwe neza.',
+      PassengerLanguage.swahili: 'Nenosiri limesasishwa kikamilifu.',
+      PassengerLanguage.spanish: 'Contrasena actualizada correctamente.',
+    },
     'settings.language': {
       PassengerLanguage.english: 'Language',
       PassengerLanguage.french: 'Langue',
@@ -456,6 +546,99 @@ class PassengerLanguageService {
       PassengerLanguage.swahili: 'Omba safari',
       PassengerLanguage.spanish: 'Solicitar viaje',
     },
+    'book.currentLocation': {
+      PassengerLanguage.english: 'Current Location',
+      PassengerLanguage.french: 'Position actuelle',
+      PassengerLanguage.kinyarwanda: 'Aho uri ubu',
+      PassengerLanguage.swahili: 'Eneo la sasa',
+      PassengerLanguage.spanish: 'Ubicacion actual',
+    },
+    'book.locatingAddress': {
+      PassengerLanguage.english: 'Locating address...',
+      PassengerLanguage.french: 'Localisation de l adresse...',
+      PassengerLanguage.kinyarwanda: 'Birimo gushaka aderesi...',
+      PassengerLanguage.swahili: 'Inatafuta anwani...',
+      PassengerLanguage.spanish: 'Buscando direccion...',
+    },
+    'book.availableSeatsOnly': {
+      PassengerLanguage.english:
+          'Only {count} seat(s) are currently available for this ride.',
+      PassengerLanguage.french:
+          'Seulement {count} place(s) sont actuellement disponibles pour ce trajet.',
+      PassengerLanguage.kinyarwanda:
+          'Intebe {count} gusa ni zo zihari kuri uru rugendo ubu.',
+      PassengerLanguage.swahili:
+          'Ni kiti {count} tu vinapatikana kwa safari hii kwa sasa.',
+      PassengerLanguage.spanish:
+          'Solo hay {count} asiento(s) disponibles para este viaje ahora.',
+    },
+    'book.noBookingToPay': {
+      PassengerLanguage.english: 'No booking found to pay for yet.',
+      PassengerLanguage.french: 'Aucune reservation a payer pour le moment.',
+      PassengerLanguage.kinyarwanda: 'Nta booking iraboneka yo kwishyura ubu.',
+      PassengerLanguage.swahili: 'Hakuna booking ya kulipia kwa sasa.',
+      PassengerLanguage.spanish: 'Aun no hay reserva para pagar.',
+    },
+    'book.invalidBookingAmount': {
+      PassengerLanguage.english: 'The booking amount is invalid for payment.',
+      PassengerLanguage.french:
+          'Le montant de la reservation est invalide pour le paiement.',
+      PassengerLanguage.kinyarwanda:
+          'Amafaranga ya booking si yo kugira ngo hishyurwe.',
+      PassengerLanguage.swahili: 'Kiasi cha booking si sahihi kwa malipo.',
+      PassengerLanguage.spanish:
+          'El monto de la reserva no es valido para el pago.',
+    },
+    'book.paymentMethod': {
+      PassengerLanguage.english: 'Payment method',
+      PassengerLanguage.french: 'Methode de paiement',
+      PassengerLanguage.kinyarwanda: 'Uburyo bwo kwishyura',
+      PassengerLanguage.swahili: 'Njia ya malipo',
+      PassengerLanguage.spanish: 'Metodo de pago',
+    },
+    'book.processingPayment': {
+      PassengerLanguage.english: 'Processing {method} payment...',
+      PassengerLanguage.french: 'Traitement du paiement {method}...',
+      PassengerLanguage.kinyarwanda:
+          'Birimo gutunganya kwishyura kwa {method}...',
+      PassengerLanguage.swahili: 'Inachakata malipo ya {method}...',
+      PassengerLanguage.spanish: 'Procesando pago de {method}...',
+    },
+    'book.payNowWithMethod': {
+      PassengerLanguage.english: 'Pay now ({method})',
+      PassengerLanguage.french: 'Payer maintenant ({method})',
+      PassengerLanguage.kinyarwanda: 'Ishyure nonaha ({method})',
+      PassengerLanguage.swahili: 'Lipa sasa ({method})',
+      PassengerLanguage.spanish: 'Pagar ahora ({method})',
+    },
+    'book.paymentStatus': {
+      PassengerLanguage.english: 'Payment {status}.',
+      PassengerLanguage.french: 'Paiement {status}.',
+      PassengerLanguage.kinyarwanda: 'Kwishyura {status}.',
+      PassengerLanguage.swahili: 'Malipo {status}.',
+      PassengerLanguage.spanish: 'Pago {status}.',
+    },
+    'payment.cash': {
+      PassengerLanguage.english: 'cash',
+      PassengerLanguage.french: 'especes',
+      PassengerLanguage.kinyarwanda: 'cash',
+      PassengerLanguage.swahili: 'fedha taslimu',
+      PassengerLanguage.spanish: 'efectivo',
+    },
+    'payment.mobileMoney': {
+      PassengerLanguage.english: 'mobile money',
+      PassengerLanguage.french: 'mobile money',
+      PassengerLanguage.kinyarwanda: 'mobile money',
+      PassengerLanguage.swahili: 'pesa ya simu',
+      PassengerLanguage.spanish: 'dinero movil',
+    },
+    'payment.card': {
+      PassengerLanguage.english: 'card',
+      PassengerLanguage.french: 'carte',
+      PassengerLanguage.kinyarwanda: 'ikarita',
+      PassengerLanguage.swahili: 'kadi',
+      PassengerLanguage.spanish: 'tarjeta',
+    },
     'trips.title': {
       PassengerLanguage.english: 'Trips',
       PassengerLanguage.french: 'Trajets',
@@ -753,6 +936,41 @@ class PassengerLanguageService {
       PassengerLanguage.swahili: 'Weka vyote vimesomwa',
       PassengerLanguage.spanish: 'Marcar todo leido',
     },
+    'notifications.filterUnread': {
+      PassengerLanguage.english: 'Unread',
+      PassengerLanguage.french: 'Non lus',
+      PassengerLanguage.kinyarwanda: 'Bitasomwe',
+      PassengerLanguage.swahili: 'Hazijasomwa',
+      PassengerLanguage.spanish: 'Sin leer',
+    },
+    'notifications.clearActioned': {
+      PassengerLanguage.english: 'Clear actioned',
+      PassengerLanguage.french: 'Effacer les traitees',
+      PassengerLanguage.kinyarwanda: 'Siba ibyakozweho',
+      PassengerLanguage.swahili: 'Futa vilivyoshughulikiwa',
+      PassengerLanguage.spanish: 'Limpiar las gestionadas',
+    },
+    'notifications.markRead': {
+      PassengerLanguage.english: 'Mark read',
+      PassengerLanguage.french: 'Marquer comme lu',
+      PassengerLanguage.kinyarwanda: 'Shyira ku byasomwe',
+      PassengerLanguage.swahili: 'Weka imesomwa',
+      PassengerLanguage.spanish: 'Marcar leido',
+    },
+    'notifications.delete': {
+      PassengerLanguage.english: 'Delete',
+      PassengerLanguage.french: 'Supprimer',
+      PassengerLanguage.kinyarwanda: 'Siba',
+      PassengerLanguage.swahili: 'Futa',
+      PassengerLanguage.spanish: 'Eliminar',
+    },
+    'notifications.emptyTitle': {
+      PassengerLanguage.english: 'No notifications found.',
+      PassengerLanguage.french: 'Aucune notification trouvee.',
+      PassengerLanguage.kinyarwanda: 'Nta menyesha ryabonetse.',
+      PassengerLanguage.swahili: 'Hakuna arifa zilizopatikana.',
+      PassengerLanguage.spanish: 'No se encontraron notificaciones.',
+    },
     'notifications.justNow': {
       PassengerLanguage.english: 'Just now',
       PassengerLanguage.french: 'A l instant',
@@ -888,6 +1106,48 @@ class PassengerLanguageService {
       PassengerLanguage.kinyarwanda: 'Andika igiciro cyemewe.',
       PassengerLanguage.swahili: 'Tafadhali weka nauli halali.',
       PassengerLanguage.spanish: 'Ingresa una tarifa valida.',
+    },
+    'request.seats': {
+      PassengerLanguage.english: 'Seats',
+      PassengerLanguage.french: 'Places',
+      PassengerLanguage.kinyarwanda: 'Intebe',
+      PassengerLanguage.swahili: 'Viti',
+      PassengerLanguage.spanish: 'Asientos',
+    },
+    'request.rideType': {
+      PassengerLanguage.english: 'Ride type',
+      PassengerLanguage.french: 'Type de trajet',
+      PassengerLanguage.kinyarwanda: 'Ubwoko bw urugendo',
+      PassengerLanguage.swahili: 'Aina ya safari',
+      PassengerLanguage.spanish: 'Tipo de viaje',
+    },
+    'rideType.economy': {
+      PassengerLanguage.english: 'Economy',
+      PassengerLanguage.french: 'Economique',
+      PassengerLanguage.kinyarwanda: 'Bisanzwe',
+      PassengerLanguage.swahili: 'Kawaida',
+      PassengerLanguage.spanish: 'Economico',
+    },
+    'rideType.premium': {
+      PassengerLanguage.english: 'Premium',
+      PassengerLanguage.french: 'Premium',
+      PassengerLanguage.kinyarwanda: 'Premium',
+      PassengerLanguage.swahili: 'Premium',
+      PassengerLanguage.spanish: 'Premium',
+    },
+    'rideType.bike': {
+      PassengerLanguage.english: 'Bike',
+      PassengerLanguage.french: 'Moto',
+      PassengerLanguage.kinyarwanda: 'Moto',
+      PassengerLanguage.swahili: 'Pikipiki',
+      PassengerLanguage.spanish: 'Moto',
+    },
+    'request.seatRangeError': {
+      PassengerLanguage.english: 'Seats must be between 1 and 8.',
+      PassengerLanguage.french: 'Le nombre de places doit etre entre 1 et 8.',
+      PassengerLanguage.kinyarwanda: 'Intebe zigomba kuba hagati ya 1 na 8.',
+      PassengerLanguage.swahili: 'Viti lazima viwe kati ya 1 na 8.',
+      PassengerLanguage.spanish: 'Los asientos deben estar entre 1 y 8.',
     },
     'request.tripIdMissing': {
       PassengerLanguage.english:

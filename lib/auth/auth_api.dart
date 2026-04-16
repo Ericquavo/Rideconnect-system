@@ -42,9 +42,12 @@ class AuthApi {
   AuthApi._();
 
   static const String _hostUrl = 'https://rideconnect-emp0.onrender.com';
-  static const String _baseUrl = '$_hostUrl/v1';
+  static const String _baseUrl = '$_hostUrl/api/v1';
   static const String _loginUrl = '$_baseUrl/auth/mobile/login';
+  static const String _fallbackLoginUrl = '$_baseUrl/auth/login';
   static const String _clearSessionUrl = '$_baseUrl/auth/session/clear';
+  static const String _logoutUrl = '$_baseUrl/auth/logout';
+  static const Duration _timeout = Duration(seconds: 20);
   static const String _validateTokenUrl = '$_baseUrl/auth/token/validate';
 
   static Future<AuthApiRegisterResult> register({
@@ -64,17 +67,22 @@ class AuthApi {
       if (phone != null && phone.trim().isNotEmpty) 'phone': phone.trim(),
     };
 
-    final path = '/v1/auth/register/$normalizedRole';
+    final roleSpecificPath = '/api/v1/auth/register/$normalizedRole';
+    const genericPath = '/api/v1/auth/register';
 
     try {
-      final response = await http.post(
-        Uri.parse('$_hostUrl$path'),
-        headers: const {
-          'Accept': 'application/json',
-          'Content-Type': 'application/json',
-        },
-        body: jsonEncode(payload),
-      );
+      http.Response response;
+      try {
+        response = await _postJson(
+          Uri.parse('$_hostUrl$roleSpecificPath'),
+          body: payload,
+        );
+      } catch (_) {
+        response = await _postJson(
+          Uri.parse('$_hostUrl$genericPath'),
+          body: payload,
+        );
+      }
 
       final Map<String, dynamic> data = _decodeObject(response.body);
       final bool isSuccess =
@@ -126,14 +134,18 @@ class AuthApi {
     required String password,
   }) async {
     try {
-      final response = await http.post(
-        Uri.parse(_loginUrl),
-        headers: const {
-          'Accept': 'application/json',
-          'Content-Type': 'application/json',
-        },
-        body: jsonEncode({'email': email.trim(), 'password': password}),
-      );
+      http.Response response;
+      try {
+        response = await _postJson(
+          Uri.parse(_loginUrl),
+          body: {'email': email.trim(), 'password': password},
+        );
+      } catch (_) {
+        response = await _postJson(
+          Uri.parse(_fallbackLoginUrl),
+          body: {'email': email.trim(), 'password': password},
+        );
+      }
 
       final Map<String, dynamic> data = _decodeObject(response.body);
       final bool isSuccess =
@@ -360,13 +372,15 @@ class AuthApi {
     if (token.trim().isEmpty) return false;
 
     try {
-      final response = await http.get(
-        Uri.parse(_validateTokenUrl),
-        headers: {
-          'Accept': 'application/json',
-          'Authorization': 'Bearer $token',
-        },
-      );
+      final response = await http
+          .get(
+            Uri.parse(_validateTokenUrl),
+            headers: {
+              'Accept': 'application/json',
+              'Authorization': 'Bearer $token',
+            },
+          )
+          .timeout(_timeout);
 
       final body = _decodeObject(response.body);
       final successField = _asBool(body['success']);
@@ -395,9 +409,108 @@ class AuthApi {
     }
 
     try {
-      await http.post(Uri.parse(_clearSessionUrl), headers: headers);
+      await http
+          .post(Uri.parse(_clearSessionUrl), headers: headers)
+          .timeout(_timeout);
     } catch (_) {
       // Best-effort remote logout; local session cleanup still happens.
+    }
+  }
+
+  static Future<void> logout({String? token}) async {
+    final headers = <String, String>{'Accept': 'application/json'};
+    if (token != null && token.trim().isNotEmpty) {
+      headers['Authorization'] = 'Bearer ${token.trim()}';
+    }
+
+    try {
+      await http
+          .post(Uri.parse(_logoutUrl), headers: headers)
+          .timeout(_timeout);
+    } catch (_) {
+      // Logout is best-effort; local cleanup still proceeds in callers.
+    }
+  }
+
+  static Future<Map<String, dynamic>> getProfile({
+    required String token,
+  }) async {
+    final headers = <String, String>{
+      'Accept': 'application/json',
+      'Authorization': 'Bearer ${token.trim()}',
+    };
+
+    final response = await _getWithAlias(
+      paths: const ['/auth/profile', '/user/profile'],
+      headers: headers,
+    );
+    final body = _decodeObject(response.body);
+    final ok = response.statusCode >= 200 && response.statusCode < 300;
+    final success = _asBool(body['success']);
+    if (!(success ?? ok)) {
+      throw Exception(_asString(body['message']) ?? 'Failed to load profile.');
+    }
+    return body;
+  }
+
+  static Future<Map<String, dynamic>> updateProfile({
+    required String token,
+    required Map<String, dynamic> payload,
+  }) async {
+    final headers = <String, String>{
+      'Accept': 'application/json',
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer ${token.trim()}',
+    };
+
+    final response = await _putWithAlias(
+      paths: const ['/auth/profile', '/user/profile'],
+      headers: headers,
+      payload: payload,
+    );
+
+    final body = _decodeObject(response.body);
+    final ok = response.statusCode >= 200 && response.statusCode < 300;
+    final success = _asBool(body['success']);
+    if (!(success ?? ok)) {
+      throw Exception(
+        _asString(body['message']) ?? 'Failed to update profile.',
+      );
+    }
+    return body;
+  }
+
+  static Future<void> updateUserPassword({
+    required String token,
+    required String currentPassword,
+    required String newPassword,
+  }) async {
+    final headers = <String, String>{
+      'Accept': 'application/json',
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer ${token.trim()}',
+    };
+
+    final payload = <String, dynamic>{
+      'current_password': currentPassword,
+      'new_password': newPassword,
+    };
+
+    final response = await http
+        .put(
+          Uri.parse('$_baseUrl/user/password'),
+          headers: headers,
+          body: jsonEncode(payload),
+        )
+        .timeout(_timeout);
+
+    final body = _decodeObject(response.body);
+    final ok = response.statusCode >= 200 && response.statusCode < 300;
+    final success = _asBool(body['success']);
+    if (!(success ?? ok)) {
+      throw Exception(
+        _asString(body['message']) ?? 'Failed to update password.',
+      );
     }
   }
 
@@ -465,5 +578,66 @@ class AuthApi {
     } catch (_) {}
 
     return null;
+  }
+
+  static Future<http.Response> _postJson(
+    Uri uri, {
+    required Map<String, dynamic> body,
+  }) {
+    return http
+        .post(
+          uri,
+          headers: const {
+            'Accept': 'application/json',
+            'Content-Type': 'application/json',
+          },
+          body: jsonEncode(body),
+        )
+        .timeout(_timeout);
+  }
+
+  static Future<http.Response> _getWithAlias({
+    required List<String> paths,
+    required Map<String, String> headers,
+  }) async {
+    Object? lastError;
+    for (final path in paths) {
+      try {
+        final res = await http
+            .get(Uri.parse('$_baseUrl$path'), headers: headers)
+            .timeout(_timeout);
+        if (res.statusCode != 404) return res;
+      } catch (e) {
+        lastError = e;
+      }
+    }
+
+    if (lastError != null) throw lastError;
+    return http.Response('{}', 404);
+  }
+
+  static Future<http.Response> _putWithAlias({
+    required List<String> paths,
+    required Map<String, String> headers,
+    required Map<String, dynamic> payload,
+  }) async {
+    Object? lastError;
+    for (final path in paths) {
+      try {
+        final res = await http
+            .put(
+              Uri.parse('$_baseUrl$path'),
+              headers: headers,
+              body: jsonEncode(payload),
+            )
+            .timeout(_timeout);
+        if (res.statusCode != 404) return res;
+      } catch (e) {
+        lastError = e;
+      }
+    }
+
+    if (lastError != null) throw lastError;
+    return http.Response('{}', 404);
   }
 }

@@ -9,9 +9,11 @@ class DriverApi {
 
   static final DriverApi instance = DriverApi._();
 
-  static const String _rootBaseUrl = 'https://rideconnect-emp0.onrender.com/v1';
+  static const String _rootBaseUrl =
+      'https://rideconnect-emp0.onrender.com/api/v1';
+  static const String _hostBaseUrl = 'https://rideconnect-emp0.onrender.com';
   static const String _baseUrl =
-      'https://rideconnect-emp0.onrender.com/v1/driver';
+      'https://rideconnect-emp0.onrender.com/api/v1/driver';
   static const Duration _timeout = Duration(seconds: 20);
 
   Future<Map<String, dynamic>> getProfile() => _get('/profile');
@@ -90,7 +92,12 @@ class DriverApi {
   );
 
   Future<List<Map<String, dynamic>>> getRequests() async {
-    final response = await _get('/requests');
+    Map<String, dynamic> response;
+    try {
+      response = await _get('/requests');
+    } catch (_) {
+      response = await _get('/trip-requests');
+    }
     return extractList(
       response,
       preferredKeys: const ['requests', 'items', 'rides'],
@@ -98,7 +105,12 @@ class DriverApi {
   }
 
   Future<List<Map<String, dynamic>>> getTripRequests() async {
-    final response = await _get('/trip-requests');
+    Map<String, dynamic> response;
+    try {
+      response = await _get('/trip-requests');
+    } catch (_) {
+      response = await _get('/requests');
+    }
     return extractList(
       response,
       preferredKeys: const ['trip_requests', 'requests', 'items'],
@@ -143,15 +155,21 @@ class DriverApi {
     required double longitude,
     double? heading,
     double? speed,
-  }) {
-    return _post('/location', <String, dynamic>{
+  }) async {
+    final payload = <String, dynamic>{
       'latitude': latitude,
       'longitude': longitude,
       if (heading != null) 'heading': heading,
       if (speed != null) 'speed': speed,
       'lat': latitude,
       'lng': longitude,
-    });
+    };
+
+    try {
+      return await _post('/location', payload);
+    } catch (_) {
+      return _requestHost('POST', '/api/driver/location', body: payload);
+    }
   }
 
   Future<Map<String, dynamic>> startTrip(dynamic id) =>
@@ -262,11 +280,18 @@ class DriverApi {
     Map<String, dynamic>? body,
   }) => _request(method, path, body: body, useRootBaseUrl: true);
 
+  Future<Map<String, dynamic>> _requestHost(
+    String method,
+    String path, {
+    Map<String, dynamic>? body,
+  }) => _request(method, path, body: body, customBaseUrl: _hostBaseUrl);
+
   Future<Map<String, dynamic>> _request(
     String method,
     String path, {
     Map<String, dynamic>? body,
     bool useRootBaseUrl = false,
+    String? customBaseUrl,
   }) async {
     final session = await AuthSession.load();
     final token = session?.token;
@@ -275,7 +300,8 @@ class DriverApi {
       throw Exception('No auth token found. Please login again.');
     }
 
-    final uri = Uri.parse('${useRootBaseUrl ? _rootBaseUrl : _baseUrl}$path');
+    final root = customBaseUrl ?? (useRootBaseUrl ? _rootBaseUrl : _baseUrl);
+    final uri = Uri.parse('$root$path');
     final headers = <String, String>{
       'Accept': 'application/json',
       'Authorization': 'Bearer ${token.trim()}',
