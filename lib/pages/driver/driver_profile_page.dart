@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../services/driver_api.dart';
 import '../../services/driver_language_service.dart';
 import '../../services/driver_sync_service.dart';
+import '../../services/app_theme_service.dart';
 
 /// Driver profile/settings tab with account and vehicle details.
 class DriverProfilePage extends StatefulWidget {
@@ -46,26 +47,27 @@ class _DriverProfilePageState extends State<DriverProfilePage> {
   late Future<_DriverProfileData> _profileFuture;
   final DriverLanguageService _lang = DriverLanguageService.instance;
   final DriverSyncService _sync = DriverSyncService.instance;
+  bool _darkMode = AppThemeService.isDarkMode;
 
   bool get _isDarkMode => Theme.of(context).brightness == Brightness.dark;
   Color get _bgTop =>
-      _isDarkMode ? const Color(0xFF0A0E1A) : const Color(0xFFEFF4FF);
+      _isDarkMode ? const Color(0xFF0A0E1A) : const Color(0xFFF8FAFF);
   Color get _bgBottom =>
-      _isDarkMode ? const Color(0xFF1A1F3A) : const Color(0xFFDCE8FF);
+      _isDarkMode ? const Color(0xFF1A1F3A) : const Color(0xFFEFF4FF);
   Color get _cardBg =>
       _isDarkMode
           ? Colors.white.withValues(alpha: 0.05)
-          : Colors.white.withValues(alpha: 0.92);
+          : Colors.white.withValues(alpha: 0.98);
   Color get _cardBorder =>
       _isDarkMode
           ? Colors.white.withValues(alpha: 0.08)
-          : const Color(0xFFC9D6F2);
+          : const Color(0xFFD1D5E0);
   Color get _textPrimary =>
       _isDarkMode ? Colors.white : const Color(0xFF0F172A);
   Color get _textSecondary =>
-      _isDarkMode ? Colors.white54 : const Color(0xFF475569);
+      _isDarkMode ? Colors.white54 : const Color(0xFF334155);
   Color get _textMuted =>
-      _isDarkMode ? Colors.white70 : const Color(0xFF334155);
+      _isDarkMode ? Colors.white70 : const Color(0xFF475569);
 
   @override
   void initState() {
@@ -74,13 +76,20 @@ class _DriverProfilePageState extends State<DriverProfilePage> {
     _lang.languageNotifier.addListener(_onLanguageChanged);
     _profileFuture = _loadData();
     _sync.dataVersionNotifier.addListener(_onSyncDataChanged);
+    AppThemeService.themeModeNotifier.addListener(_syncDarkModeFromAppTheme);
   }
 
   @override
   void dispose() {
     _lang.languageNotifier.removeListener(_onLanguageChanged);
     _sync.dataVersionNotifier.removeListener(_onSyncDataChanged);
+    AppThemeService.themeModeNotifier.removeListener(_syncDarkModeFromAppTheme);
     super.dispose();
+  }
+
+  void _syncDarkModeFromAppTheme() {
+    if (!mounted) return;
+    setState(() => _darkMode = AppThemeService.isDarkMode);
   }
 
   void _onLanguageChanged() {
@@ -489,69 +498,91 @@ class _DriverProfilePageState extends State<DriverProfilePage> {
         border: Border.all(color: _cardBorder),
       ),
       child: Column(
-        children: List.generate(items.length, (i) {
-          final item = items[i];
-          final last = i == items.length - 1;
-          return Column(
-            children: [
-              ListTile(
-                onTap: item.$3,
-                leading: Icon(
-                  item.$1,
-                  color: const Color(0xFF6C63FF),
-                  size: 20,
-                ),
-                title: Text(
-                  item.$2,
-                  style: GoogleFonts.poppins(color: _textMuted, fontSize: 13),
-                ),
-                trailing: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    if (item.$4 > 0)
-                      Container(
-                        constraints: const BoxConstraints(
-                          minWidth: 18,
-                          minHeight: 18,
-                        ),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 5,
-                          vertical: 2,
-                        ),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFFF5E5B),
-                          borderRadius: BorderRadius.circular(999),
-                        ),
-                        child: Center(
-                          child: Text(
-                            item.$4 > 99 ? '99+' : '${item.$4}',
-                            style: GoogleFonts.poppins(
-                              color: Colors.white,
-                              fontSize: 9,
-                              fontWeight: FontWeight.w700,
-                              height: 1.0,
+        children: [
+          ListTile(
+            leading: Icon(
+              _darkMode ? Icons.dark_mode_rounded : Icons.light_mode_rounded,
+              color: const Color(0xFF6C63FF),
+              size: 20,
+            ),
+            title: Text(
+              _lang.t('profile.darkMode'),
+              style: GoogleFonts.poppins(color: _textMuted, fontSize: 13),
+            ),
+            trailing: Switch(
+              value: _darkMode,
+              onChanged: (value) async {
+                await AppThemeService.setDarkMode(value);
+              },
+              activeColor: const Color(0xFF6C63FF),
+              activeTrackColor: const Color(0xFF6C63FF).withValues(alpha: 0.25),
+            ),
+          ),
+          Divider(color: _cardBorder, height: 1, indent: 16, endIndent: 16),
+          ...List.generate(items.length, (i) {
+            final item = items[i];
+            final last = i == items.length - 1;
+            return Column(
+              children: [
+                ListTile(
+                  onTap: item.$3,
+                  leading: Icon(
+                    item.$1,
+                    color: const Color(0xFF6C63FF),
+                    size: 20,
+                  ),
+                  title: Text(
+                    item.$2,
+                    style: GoogleFonts.poppins(color: _textMuted, fontSize: 13),
+                  ),
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (item.$4 > 0)
+                        Container(
+                          constraints: const BoxConstraints(
+                            minWidth: 18,
+                            minHeight: 18,
+                          ),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 5,
+                            vertical: 2,
+                          ),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFF5E5B),
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                          child: Center(
+                            child: Text(
+                              item.$4 > 99 ? '99+' : '${item.$4}',
+                              style: GoogleFonts.poppins(
+                                color: Colors.white,
+                                fontSize: 9,
+                                fontWeight: FontWeight.w700,
+                                height: 1.0,
+                              ),
                             ),
                           ),
                         ),
+                      if (item.$4 > 0) const SizedBox(width: 8),
+                      const Icon(
+                        Icons.chevron_right_rounded,
+                        color: Color(0xFF94A3B8),
                       ),
-                    if (item.$4 > 0) const SizedBox(width: 8),
-                    const Icon(
-                      Icons.chevron_right_rounded,
-                      color: Color(0xFF94A3B8),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
-              ),
-              if (!last)
-                Divider(
-                  color: _cardBorder,
-                  height: 1,
-                  indent: 16,
-                  endIndent: 16,
-                ),
-            ],
-          );
-        }),
+                if (!last)
+                  Divider(
+                    color: _cardBorder,
+                    height: 1,
+                    indent: 16,
+                    endIndent: 16,
+                  ),
+              ],
+            );
+          }),
+        ],
       ),
     );
   }

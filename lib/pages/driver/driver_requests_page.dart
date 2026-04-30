@@ -26,13 +26,13 @@ class _DriverRequestsPageState extends State<DriverRequestsPage> {
 
   bool get _isDarkMode => Theme.of(context).brightness == Brightness.dark;
   Color get _bgTop =>
-      _isDarkMode ? const Color(0xFF0A0E1A) : const Color(0xFFEFF4FF);
+      _isDarkMode ? const Color(0xFF0A0E1A) : const Color(0xFFF8FAFF);
   Color get _bgBottom =>
-      _isDarkMode ? const Color(0xFF1A1F3A) : const Color(0xFFDCE8FF);
+      _isDarkMode ? const Color(0xFF1A1F3A) : const Color(0xFFEFF4FF);
   Color get _textPrimary =>
       _isDarkMode ? Colors.white : const Color(0xFF0F172A);
   Color get _textSecondary =>
-      _isDarkMode ? Colors.white54 : const Color(0xFF475569);
+      _isDarkMode ? Colors.white54 : const Color(0xFF334155);
 
   @override
   void initState() {

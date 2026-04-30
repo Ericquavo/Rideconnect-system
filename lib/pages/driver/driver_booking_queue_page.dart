@@ -20,24 +20,36 @@ class _DriverBookingQueuePageState extends State<DriverBookingQueuePage> {
   String? _error;
   List<Map<String, dynamic>> _bookings = <Map<String, dynamic>>[];
 
-  bool get _isDark => Theme.of(context).brightness == Brightness.dark;
-  Color get _bgTop =>
-      _isDark ? const Color(0xFF0A0E1A) : const Color(0xFFEFF4FF);
-  Color get _bgBottom =>
-      _isDark ? const Color(0xFF1A1F3A) : const Color(0xFFDCE8FF);
-  Color get _cardBg =>
-      _isDark
-          ? Colors.white.withValues(alpha: 0.05)
-          : Colors.white.withValues(alpha: 0.92);
-  Color get _cardBorder =>
-      _isDark ? Colors.white.withValues(alpha: 0.08) : const Color(0xFFC9D6F2);
-  Color get _textPrimary => _isDark ? Colors.white : const Color(0xFF0F172A);
-  Color get _textSecondary =>
-      _isDark ? Colors.white54 : const Color(0xFF475569);
+  late bool _isDark;
+  late Color _bgTop;
+  late Color _bgBottom;
+  late Color _cardBg;
+  late Color _cardBorder;
+  late Color _textPrimary;
+  late Color _textSecondary;
+
+  void _updateThemeColors() {
+    if (!mounted) return;
+    final brightness = Theme.of(context).brightness;
+    _isDark = brightness == Brightness.dark;
+    _bgTop = _isDark ? const Color(0xFF0A0E1A) : const Color(0xFFF8FAFF);
+    _bgBottom = _isDark ? const Color(0xFF1A1F3A) : const Color(0xFFEFF4FF);
+    _cardBg =
+        _isDark
+            ? Colors.white.withValues(alpha: 0.05)
+            : Colors.white.withValues(alpha: 0.92);
+    _cardBorder =
+        _isDark
+            ? Colors.white.withValues(alpha: 0.08)
+            : const Color(0xFFC9D6F2);
+    _textPrimary = _isDark ? Colors.white : const Color(0xFF0F172A);
+    _textSecondary = _isDark ? Colors.white54 : const Color(0xFF475569);
+  }
 
   @override
   void initState() {
     super.initState();
+    _updateThemeColors();
     _lang.ensureInitialized();
     _lang.languageNotifier.addListener(_onLanguageChanged);
     _loadBookings();
@@ -51,7 +63,9 @@ class _DriverBookingQueuePageState extends State<DriverBookingQueuePage> {
 
   void _onLanguageChanged() {
     if (!mounted) return;
-    setState(() {});
+    setState(() {
+      _updateThemeColors();
+    });
   }
 
   Future<void> _loadBookings() async {
@@ -84,9 +98,11 @@ class _DriverBookingQueuePageState extends State<DriverBookingQueuePage> {
     required String dropoff,
   }) async {
     if (_actionBusy) return;
+    if (!mounted) return;
     setState(() => _actionBusy = true);
     try {
       await _api.confirmBooking(bookingId);
+      if (!mounted) return;
       await _api.notifyPassengerDecision(
         passengerId: passengerId,
         accepted: true,
@@ -97,9 +113,11 @@ class _DriverBookingQueuePageState extends State<DriverBookingQueuePage> {
         dropoff: dropoff,
       );
       if (!mounted) return;
-      await _loadBookings();
       _showSnack(_lang.t('bookings.confirmed'));
+      if (!mounted) return;
+      await _loadBookings();
     } catch (e) {
+      if (!mounted) return;
       _showSnack(e.toString().replaceFirst('Exception: ', ''));
     } finally {
       if (mounted) setState(() => _actionBusy = false);
@@ -114,9 +132,11 @@ class _DriverBookingQueuePageState extends State<DriverBookingQueuePage> {
     required String dropoff,
   }) async {
     if (_actionBusy) return;
+    if (!mounted) return;
     setState(() => _actionBusy = true);
     try {
       await _api.cancelBooking(bookingId);
+      if (!mounted) return;
       await _api.notifyPassengerDecision(
         passengerId: passengerId,
         accepted: false,
@@ -127,9 +147,11 @@ class _DriverBookingQueuePageState extends State<DriverBookingQueuePage> {
         dropoff: dropoff,
       );
       if (!mounted) return;
-      await _loadBookings();
       _showSnack(_lang.t('bookings.cancelled'));
+      if (!mounted) return;
+      await _loadBookings();
     } catch (e) {
+      if (!mounted) return;
       _showSnack(e.toString().replaceFirst('Exception: ', ''));
     } finally {
       if (mounted) setState(() => _actionBusy = false);
@@ -155,6 +177,7 @@ class _DriverBookingQueuePageState extends State<DriverBookingQueuePage> {
 
   @override
   Widget build(BuildContext context) {
+    _updateThemeColors();
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: Container(
@@ -267,14 +290,28 @@ class _DriverBookingQueuePageState extends State<DriverBookingQueuePage> {
   }
 
   Widget _bookingCard(Map<String, dynamic> item) {
-    final id = _api.readString(item, const ['id', 'booking_id']);
+    final id = _api.readString(item, const [
+      'id',
+      'booking_id',
+      'request_id',
+      'reference_id',
+    ]);
     final idLabel = id.isEmpty ? '--' : id;
-    final passengerId = _api.readString(item, const [
+    final passengerObj = item['passenger'];
+    final passengerMap =
+        passengerObj is Map<String, dynamic>
+            ? passengerObj
+            : const <String, dynamic>{};
+    final passengerIdDirect = _api.readString(item, const [
       'passenger_id',
       'user_id',
       'rider_id',
       'passengerId',
     ]);
+    final passengerId =
+        passengerIdDirect.isNotEmpty
+            ? passengerIdDirect
+            : _api.readString(passengerMap, const ['id', '_id', 'user_id']);
     final passenger = _api.readString(item, const [
       'passenger_name',
       'passenger',
@@ -367,46 +404,54 @@ class _DriverBookingQueuePageState extends State<DriverBookingQueuePage> {
           Row(
             children: <Widget>[
               Expanded(
-                child: OutlinedButton(
-                  onPressed:
-                      actionAllowed && !_actionBusy
-                          ? () => _cancel(
-                            id,
-                            passengerId: passengerId,
-                            passengerName: passenger,
-                            pickup: pickup,
-                            dropoff: dropoff,
-                          )
-                          : null,
-                  style: OutlinedButton.styleFrom(
-                    side: const BorderSide(color: Color(0xFFFF5E5B)),
-                  ),
-                  child: Text(
-                    _lang.t('bookings.cancel'),
-                    style: GoogleFonts.poppins(color: const Color(0xFFFF5E5B)),
+                child: SizedBox(
+                  height: 40,
+                  child: OutlinedButton(
+                    onPressed:
+                        actionAllowed && !_actionBusy
+                            ? () => _cancel(
+                              id,
+                              passengerId: passengerId,
+                              passengerName: passenger,
+                              pickup: pickup,
+                              dropoff: dropoff,
+                            )
+                            : null,
+                    style: OutlinedButton.styleFrom(
+                      side: const BorderSide(color: Color(0xFFFF5E5B)),
+                    ),
+                    child: Text(
+                      _lang.t('bookings.cancel'),
+                      style: GoogleFonts.poppins(
+                        color: const Color(0xFFFF5E5B),
+                      ),
+                    ),
                   ),
                 ),
               ),
               const SizedBox(width: 10),
               Expanded(
-                child: ElevatedButton(
-                  onPressed:
-                      actionAllowed && !_actionBusy
-                          ? () => _confirm(
-                            id,
-                            passengerId: passengerId,
-                            passengerName: passenger,
-                            pickup: pickup,
-                            dropoff: dropoff,
-                          )
-                          : null,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF10B981),
-                    foregroundColor: Colors.white,
-                  ),
-                  child: Text(
-                    _lang.t('bookings.confirm'),
-                    style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
+                child: SizedBox(
+                  height: 40,
+                  child: ElevatedButton(
+                    onPressed:
+                        actionAllowed && !_actionBusy
+                            ? () => _confirm(
+                              id,
+                              passengerId: passengerId,
+                              passengerName: passenger,
+                              pickup: pickup,
+                              dropoff: dropoff,
+                            )
+                            : null,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF10B981),
+                      foregroundColor: Colors.white,
+                    ),
+                    child: Text(
+                      _lang.t('bookings.confirm'),
+                      style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
+                    ),
                   ),
                 ),
               ),

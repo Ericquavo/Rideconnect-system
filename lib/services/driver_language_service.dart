@@ -282,6 +282,8 @@ class DriverLanguageService {
           'Request id is missing for this notification.',
       'notifications.bookingIdMissing':
           'Booking id is missing for this notification.',
+      'notifications.passengerIdMissing':
+          'Passenger id is missing for this notification.',
       'book.seats': 'Seats',
       'trips.pickup': 'Pickup',
       'trips.dropoff': 'Dropoff',
@@ -499,6 +501,8 @@ class DriverLanguageService {
           'Identifiant de demande manquant pour cette notification.',
       'notifications.bookingIdMissing':
           'Identifiant de reservation manquant pour cette notification.',
+      'notifications.passengerIdMissing':
+          'Identifiant passager manquant pour cette notification.',
       'book.seats': 'Places',
       'trips.pickup': 'Depart',
       'trips.dropoff': 'Destination',
@@ -714,6 +718,8 @@ class DriverLanguageService {
           'Nta nimero y\'ubusabe iri kuri iri menyesha.',
       'notifications.bookingIdMissing':
           'Nta nimero ya booking iri kuri iri menyesha.',
+      'notifications.passengerIdMissing':
+          'Nta nimero y\'umugenzi iri kuri iri menyesha.',
       'book.seats': 'Intebe',
       'trips.pickup': 'Aho gufatira',
       'trips.dropoff': 'Aho ujya',

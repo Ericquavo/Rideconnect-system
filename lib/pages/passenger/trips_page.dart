@@ -5,6 +5,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'book_ride_page.dart';
 import '../../features/trips/data/passenger_trips_api_service.dart';
 import '../../services/passenger_language_service.dart';
+import '../../services/currency_formatter.dart';
 
 class TripsPage extends StatefulWidget {
   final int bookingSuccessNonce;
@@ -194,7 +195,7 @@ class _TripsPageState extends State<TripsPage>
       'from': r.origin.isNotEmpty ? r.origin : '--',
       'to': r.destination.isNotEmpty ? r.destination : '--',
       'date': dateStr,
-      'price': '\$${r.totalPrice.toStringAsFixed(2)}',
+      'price': CurrencyFormatter.formatPrice(r.totalPrice),
       'driver': 'Driver',
       'status': _normalizeStatus(r.status),
       'rawStatus': r.status, // preserved for the filter dropdown
@@ -226,7 +227,7 @@ class _TripsPageState extends State<TripsPage>
             : (fallback['to'] ?? '--').toString();
     final price =
         d.pricePerSeat > 0
-            ? '\$${d.pricePerSeat.toStringAsFixed(2)}'
+            ? CurrencyFormatter.formatPrice(d.pricePerSeat)
             : (fallback['price'] ?? '--').toString();
     final date =
         d.requestedAt != null

@@ -6,11 +6,13 @@ import 'pages/driver/driver_dashboard.dart';
 import 'pages/login_page.dart';
 import 'pages/passenger/passenger_dashboard.dart';
 import 'services/app_theme_service.dart';
+import 'services/passenger_preferences_service.dart';
 import 'services/passenger_language_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await AppThemeService.init();
+  await PassengerPreferencesService.init();
   await PassengerLanguageService.instance.init();
   assert(() {
     // Ensure debug baseline overlays are off in dev mode.

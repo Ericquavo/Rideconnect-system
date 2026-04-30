@@ -1,8 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:image_picker/image_picker.dart';
+import 'dart:convert';
+import 'dart:typed_data';
 import '../../../auth/auth_api.dart';
 import '../../../auth/auth_session.dart';
 import '../../../services/passenger_language_service.dart';
+import '../../../services/passenger_preferences_service.dart';
 import 'settings_theme.dart';
 
 class EditProfilePage extends StatefulWidget {
@@ -27,12 +31,15 @@ class _EditProfilePageState extends State<EditProfilePage> {
   );
   bool _saving = false;
   bool _loading = true;
+  Uint8List? _photoBytes;
+  final ImagePicker _picker = ImagePicker();
 
   @override
   void initState() {
     super.initState();
     _nameCtrl = TextEditingController(text: widget.initialName);
     _emailCtrl = TextEditingController(text: widget.initialEmail);
+    _photoBytes = PassengerPreferencesService.profilePhoto;
     _loadProfile();
   }
 
@@ -63,8 +70,10 @@ class _EditProfilePageState extends State<EditProfilePage> {
           'name': _nameCtrl.text.trim(),
           'email': _emailCtrl.text.trim(),
           'phone': _phoneCtrl.text.trim(),
+          if (_photoBytes != null) 'avatar_base64': base64Encode(_photoBytes!),
         },
       );
+      await PassengerPreferencesService.setProfilePhotoBytes(_photoBytes);
     } catch (e) {
       if (!mounted) return;
       setState(() => _saving = false);
@@ -82,7 +91,20 @@ class _EditProfilePageState extends State<EditProfilePage> {
     Navigator.pop(context, {
       'name': _nameCtrl.text.trim(),
       'email': _emailCtrl.text.trim(),
+      'phone': _phoneCtrl.text.trim(),
     });
+  }
+
+  Future<void> _pickPhoto() async {
+    final file = await _picker.pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 75,
+      maxWidth: 1080,
+    );
+    if (file == null) return;
+    final bytes = await file.readAsBytes();
+    if (!mounted) return;
+    setState(() => _photoBytes = bytes);
   }
 
   Future<void> _loadProfile() async {
@@ -145,44 +167,60 @@ class _EditProfilePageState extends State<EditProfilePage> {
                         children: [
                           Stack(
                             children: [
-                              Container(
-                                width: 96,
-                                height: 96,
-                                decoration: BoxDecoration(
-                                  shape: BoxShape.circle,
-                                  gradient: palette.brandGradient,
-                                ),
-                                child: Center(
-                                  child: Text(
-                                    _nameCtrl.text.isNotEmpty
-                                        ? _nameCtrl.text[0].toUpperCase()
-                                        : 'P',
-                                    style: GoogleFonts.poppins(
-                                      color: Colors.white,
-                                      fontSize: 34,
-                                      fontWeight: FontWeight.w700,
-                                    ),
+                              GestureDetector(
+                                onTap: _pickPhoto,
+                                child: Container(
+                                  width: 96,
+                                  height: 96,
+                                  decoration: BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    gradient: palette.brandGradient,
+                                  ),
+                                  child: ClipOval(
+                                    child:
+                                        _photoBytes != null &&
+                                                _photoBytes!.isNotEmpty
+                                            ? Image.memory(
+                                              _photoBytes!,
+                                              fit: BoxFit.cover,
+                                            )
+                                            : Center(
+                                              child: Text(
+                                                _nameCtrl.text.isNotEmpty
+                                                    ? _nameCtrl.text[0]
+                                                        .toUpperCase()
+                                                    : 'P',
+                                                style: GoogleFonts.poppins(
+                                                  color: Colors.white,
+                                                  fontSize: 34,
+                                                  fontWeight: FontWeight.w700,
+                                                ),
+                                              ),
+                                            ),
                                   ),
                                 ),
                               ),
                               Positioned(
                                 right: 0,
                                 bottom: 0,
-                                child: Container(
-                                  width: 34,
-                                  height: 34,
-                                  decoration: BoxDecoration(
-                                    color: const Color(0xFF6C63FF),
-                                    shape: BoxShape.circle,
-                                    border: Border.all(
-                                      color: Colors.white,
-                                      width: 2,
+                                child: GestureDetector(
+                                  onTap: _pickPhoto,
+                                  child: Container(
+                                    width: 34,
+                                    height: 34,
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFF6C63FF),
+                                      shape: BoxShape.circle,
+                                      border: Border.all(
+                                        color: Colors.white,
+                                        width: 2,
+                                      ),
                                     ),
-                                  ),
-                                  child: const Icon(
-                                    Icons.camera_alt_rounded,
-                                    color: Colors.white,
-                                    size: 17,
+                                    child: const Icon(
+                                      Icons.camera_alt_rounded,
+                                      color: Colors.white,
+                                      size: 17,
+                                    ),
                                   ),
                                 ),
                               ),

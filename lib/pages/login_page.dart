@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'signup_page.dart';
 import 'passenger/passenger_dashboard.dart';
 import 'driver/driver_dashboard.dart';
 import '../auth/auth_api.dart';
 import '../auth/auth_session.dart';
+import '../auth/google_oauth_service.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -59,32 +61,7 @@ class _LoginPageState extends State<LoginPage>
       setState(() => _isLoading = false);
 
       if (!result.success) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            backgroundColor: const Color(0xFF131729),
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
-            content: Row(
-              children: [
-                const Icon(
-                  Icons.error_outline_rounded,
-                  color: Color(0xFFFF5E5B),
-                  size: 20,
-                ),
-                const SizedBox(width: 10),
-                Text(
-                  result.message,
-                  style: GoogleFonts.poppins(
-                    color: Colors.white70,
-                    fontSize: 13,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
+        _showSnack(result.message, isError: true);
         return;
       }
 
@@ -141,35 +118,60 @@ class _LoginPageState extends State<LoginPage>
         return;
       }
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          backgroundColor: const Color(0xFF131729),
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
-          content: Row(
-            children: [
-              const Icon(
-                Icons.error_outline_rounded,
-                color: Color(0xFFFF5E5B),
-                size: 20,
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  'Login succeeded, but role/type "$normalizedRole" is not supported yet.',
-                  style: GoogleFonts.poppins(
-                    color: Colors.white70,
-                    fontSize: 13,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
+      _showSnack(
+        'Login succeeded, but role "$normalizedRole" is not supported yet.',
+        isError: true,
       );
     }
+  }
+
+  void _handleGoogleLogin() async {
+    setState(() => _isLoading = true);
+    try {
+      final authUrlString = GoogleOAuthService.getAuthorizationUrl();
+      final authUrl = Uri.parse(authUrlString);
+
+      if (await canLaunchUrl(authUrl)) {
+        await launchUrl(authUrl, mode: LaunchMode.externalApplication);
+        // Note: In a real implementation, you'd handle the OAuth callback
+        // using deep linking or WebView to capture the authorization code
+      } else {
+        _showSnack('Could not launch Google Sign In', isError: true);
+      }
+    } catch (e) {
+      _showSnack('Error: ${e.toString()}', isError: true);
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  void _showSnack(String message, {required bool isError}) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        backgroundColor: const Color(0xFF131729),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        content: Row(
+          children: [
+            Icon(
+              isError
+                  ? Icons.error_outline_rounded
+                  : Icons.check_circle_outline,
+              color:
+                  isError ? const Color(0xFFFF5E5B) : const Color(0xFF10B981),
+              size: 20,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                message,
+                style: GoogleFonts.poppins(color: Colors.white70, fontSize: 13),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   @override
@@ -210,7 +212,7 @@ class _LoginPageState extends State<LoginPage>
                       const SizedBox(height: 28),
                       _buildDivider(),
                       const SizedBox(height: 24),
-                      _buildSocialButtons(),
+                      _buildGoogleSignInButton(),
                       const SizedBox(height: 36),
                       _buildSignupRedirect(),
                     ],
@@ -411,7 +413,10 @@ class _LoginPageState extends State<LoginPage>
     return Row(
       children: [
         Expanded(
-          child: Divider(color: Colors.white.withValues(alpha: 0.15), thickness: 1),
+          child: Divider(
+            color: Colors.white.withValues(alpha: 0.15),
+            thickness: 1,
+          ),
         ),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 14),
@@ -421,13 +426,16 @@ class _LoginPageState extends State<LoginPage>
           ),
         ),
         Expanded(
-          child: Divider(color: Colors.white.withValues(alpha: 0.15), thickness: 1),
+          child: Divider(
+            color: Colors.white.withValues(alpha: 0.15),
+            thickness: 1,
+          ),
         ),
       ],
     );
   }
 
-  Widget _buildSocialButtons() {
+  Widget _buildGoogleSignInButton() {
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
@@ -435,7 +443,7 @@ class _LoginPageState extends State<LoginPage>
           icon: FontAwesomeIcons.google,
           label: 'Google',
           color: const Color(0xFFEA4335),
-          onTap: () {},
+          onTap: _isLoading ? () {} : _handleGoogleLogin,
         ),
         const SizedBox(width: 16),
         _SocialButton(

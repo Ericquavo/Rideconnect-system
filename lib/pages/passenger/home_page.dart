@@ -5,6 +5,8 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 import '../../services/passenger_api.dart';
 import '../../services/passenger_language_service.dart';
+import '../../services/passenger_preferences_service.dart';
+import '../../services/currency_formatter.dart';
 import '../../features/trips/data/passenger_trips_api_service.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -23,12 +25,16 @@ class HomePage extends StatefulWidget {
   /// Opens notifications content previously shown in the Alerts tab.
   final VoidCallback? onOpenNotifications;
 
+  /// Opens profile from avatar tap.
+  final VoidCallback? onOpenProfile;
+
   const HomePage({
     super.key,
     required this.passengerName,
     this.onGoToBookRide,
     this.notifCount = 0,
     this.onOpenNotifications,
+    this.onOpenProfile,
   });
 
   @override
@@ -67,7 +73,7 @@ class _HomePageState extends State<HomePage> {
   bool _isLoading = true;
   String? _error;
   Map<String, dynamic> _stats = <String, dynamic>{};
-  List<RideSummary> _availableRides = <RideSummary>[];
+  // List<RideSummary> _availableRides = <RideSummary>[]; // Legacy code, not used after removing quick ride options
 
   // ── Static fallback driver data ────────────────────────────────────────────
   static const _nearbyDrivers = [
@@ -94,37 +100,37 @@ class _HomePageState extends State<HomePage> {
     },
   ];
 
-  // ── Static ride options ────────────────────────────────────────────────────
-  static const _staticRideOpts = [
-    {
-      'label': 'Economy',
-      'desc': 'Affordable everyday',
-      'price': r'From $3.50',
-      'eta': '3 min',
-      'colorVal': 0xFF3B82F6,
-    },
-    {
-      'label': 'Premium',
-      'desc': 'Luxury & comfort',
-      'price': r'From $8.00',
-      'eta': '5 min',
-      'colorVal': 0xFF6C63FF,
-    },
-    {
-      'label': 'Bike',
-      'desc': 'Quick short trips',
-      'price': r'From $1.20',
-      'eta': '2 min',
-      'colorVal': 0xFF10B981,
-    },
-    {
-      'label': 'Shared',
-      'desc': 'Share & save more',
-      'price': r'From $2.00',
-      'eta': '7 min',
-      'colorVal': 0xFFF59E0B,
-    },
-  ];
+  // ── Static ride options (Legacy - not used after removing quick ride options) ─
+  // static const _staticRideOpts = [
+  //   {
+  //     'label': 'Economy',
+  //     'desc': 'Affordable everyday',
+  //     'price': r'From $3.50',
+  //     'eta': '3 min',
+  //     'colorVal': 0xFF3B82F6,
+  //   },
+  //   {
+  //     'label': 'Premium',
+  //     'desc': 'Luxury & comfort',
+  //     'price': r'From $8.00',
+  //     'eta': '5 min',
+  //     'colorVal': 0xFF6C63FF,
+  //   },
+  //   {
+  //     'label': 'Bike',
+  //     'desc': 'Quick short trips',
+  //     'price': r'From $1.20',
+  //     'eta': '2 min',
+  //     'colorVal': 0xFF10B981,
+  //   },
+  //   {
+  //     'label': 'Shared',
+  //     'desc': 'Share & save more',
+  //     'price': r'From $2.00',
+  //     'eta': '7 min',
+  //     'colorVal': 0xFFF59E0B,
+  //   },
+  // ];
 
   // ── Static saved places ────────────────────────────────────────────────────
   static const _savedPlacesData = [
@@ -187,6 +193,16 @@ class _HomePageState extends State<HomePage> {
 
   Future<void> _initCurrentLocation() async {
     if (_isLocating) return;
+
+    if (!PassengerPreferencesService.locationSharing) {
+      if (!mounted) return;
+      setState(() {
+        _hasLocationPermission = false;
+        _isLocating = false;
+      });
+      return;
+    }
+
     setState(() => _isLocating = true);
     try {
       final serviceEnabled = await Geolocator.isLocationServiceEnabled();
@@ -251,11 +267,13 @@ class _HomePageState extends State<HomePage> {
     });
     try {
       final stats = await PassengerApi.instance.getStats();
-      final rides = await passengerTripsApi.fetchAvailableRides();
+      // final rides = await passengerTripsApi.fetchAvailableRides(); // Legacy code, not used after removing quick ride options
+      await passengerTripsApi
+          .fetchAvailableRides(); // Trigger API call for consistency
       if (!mounted) return;
       setState(() {
         _stats = _extractDataMap(stats);
-        _availableRides = rides;
+        // _availableRides = rides; // Legacy code, not used after removing quick ride options
         _isLoading = false;
       });
     } catch (e) {
@@ -374,16 +392,13 @@ class _HomePageState extends State<HomePage> {
 
                 const SizedBox(height: 24),
 
-                // 5 – Ride options
+                // 5 – Ride type options (Private/Public)
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 20),
-                  child: _buildSectionHeader(
-                    _lang.t('home.quickRideOptions'),
-                    null,
-                  ),
+                  child: _buildSectionHeader(_lang.t('home.rideType'), null),
                 ),
                 const SizedBox(height: 14),
-                _buildRideOptions(),
+                _buildRideTypeOptions(),
 
                 const SizedBox(height: 24),
 
@@ -523,31 +538,44 @@ class _HomePageState extends State<HomePage> {
   }
 
   Widget _buildAvatar() {
-    return Container(
-      width: 44,
-      height: 44,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        gradient: const LinearGradient(
-          colors: [Color(0xFF6C63FF), Color(0xFF3B82F6)],
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: const Color(0xFF6C63FF).withValues(alpha: 0.5),
-            blurRadius: 14,
-            spreadRadius: 1,
+    return GestureDetector(
+      onTap: widget.onOpenProfile,
+      child: Container(
+        width: 44,
+        height: 44,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          gradient: const LinearGradient(
+            colors: [Color(0xFF6C63FF), Color(0xFF3B82F6)],
           ),
-        ],
-      ),
-      child: Center(
-        child: Text(
-          widget.passengerName.isNotEmpty
-              ? widget.passengerName[0].toUpperCase()
-              : 'P',
-          style: GoogleFonts.poppins(
-            fontSize: 18,
-            fontWeight: FontWeight.w700,
-            color: Colors.white,
+          boxShadow: [
+            BoxShadow(
+              color: const Color(0xFF6C63FF).withValues(alpha: 0.5),
+              blurRadius: 14,
+              spreadRadius: 1,
+            ),
+          ],
+        ),
+        child: ClipOval(
+          child: ValueListenableBuilder(
+            valueListenable: PassengerPreferencesService.profilePhotoNotifier,
+            builder: (context, photoBytes, _) {
+              if (photoBytes != null && photoBytes.isNotEmpty) {
+                return Image.memory(photoBytes, fit: BoxFit.cover);
+              }
+              return Center(
+                child: Text(
+                  widget.passengerName.isNotEmpty
+                      ? widget.passengerName[0].toUpperCase()
+                      : 'P',
+                  style: GoogleFonts.poppins(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.white,
+                  ),
+                ),
+              );
+            },
           ),
         ),
       ),
@@ -1027,7 +1055,7 @@ class _HomePageState extends State<HomePage> {
         _StatCard(
           icon: Icons.wallet_rounded,
           label: 'Spent',
-          value: '\$$spent',
+          value: CurrencyFormatter.formatPrice(spent),
           color: const Color(0xFF10B981),
         ),
       ],
@@ -1059,142 +1087,89 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  // ── 6. Ride options (horizontal scroll) ───────────────────────────────────
-  Widget _buildRideOptions() {
-    final List<Map<String, dynamic>> opts =
-        _availableRides.isNotEmpty
-            ? _availableRides.map((RideSummary r) {
-              final type = r.rideType.isNotEmpty ? r.rideType : 'Economy';
-              String eta = '--';
-              if (r.departureTime != null) {
-                final h = r.departureTime!.hour.toString().padLeft(2, '0');
-                final m = r.departureTime!.minute.toString().padLeft(2, '0');
-                eta = '$h:$m';
-              }
-              return <String, dynamic>{
-                'label': type,
-                'desc': '${r.availableSeats} seat(s) \u2022 ${r.status}',
-                'price': 'From \$${r.pricePerSeat.toStringAsFixed(2)}',
-                'eta': eta,
-                'icon': _typeIcon(type),
-                'color': Color(_typeColorVal(type)),
-              };
-            }).toList()
-            : _staticRideOpts
-                .map(
-                  (o) => <String, dynamic>{
-                    'label': o['label']!,
-                    'desc': o['desc']!,
-                    'price': o['price']!,
-                    'eta': o['eta']!,
-                    'icon': _iconForLabel(o['label'] as String),
-                    'color': Color(o['colorVal'] as int),
-                  },
-                )
-                .toList();
+  // ── 6. Ride type options (Private/Public) ──────────────────────────────────
+  Widget _buildRideTypeOptions() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 0),
+      child: Row(
+        children: [
+          Expanded(
+            child: _buildRideTypeCard(
+              label: _lang.t('home.private'),
+              description: _lang.t('home.privateDesc'),
+              icon: Icons.person_rounded,
+              color: const Color(0xFF6C63FF),
+              onTap: widget.onGoToBookRide ?? () {},
+            ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: _buildRideTypeCard(
+              label: _lang.t('home.public'),
+              description: _lang.t('home.publicDesc'),
+              icon: Icons.people_rounded,
+              color: const Color(0xFF3B82F6),
+              onTap: widget.onGoToBookRide ?? () {},
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
-    return SizedBox(
-      height: 172,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 20),
-        itemCount: opts.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 14),
-        itemBuilder: (_, i) {
-          final opt = opts[i];
-          final Color col = opt['color'] as Color;
-          return GestureDetector(
-            onTap: widget.onGoToBookRide,
-            child: Container(
-              width: 152,
-              padding: const EdgeInsets.all(16),
+  Widget _buildRideTypeCard({
+    required String label,
+    required String description,
+    required IconData icon,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: _cardBg,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: _cardBorder),
+          boxShadow: [
+            BoxShadow(
+              color:
+                  _isDarkMode
+                      ? color.withValues(alpha: 0.12)
+                      : const Color(0xFF334155).withValues(alpha: 0.08),
+              blurRadius: 18,
+              offset: const Offset(0, 6),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: _cardBg,
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(
-                  color:
-                      _isDarkMode ? col.withValues(alpha: 0.35) : _cardBorder,
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color:
-                        _isDarkMode
-                            ? col.withValues(alpha: 0.12)
-                            : const Color(0xFF334155).withValues(alpha: 0.08),
-                    blurRadius: 18,
-                    offset: const Offset(0, 6),
-                  ),
-                ],
+                color: color.withValues(alpha: 0.18),
+                borderRadius: BorderRadius.circular(14),
               ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(9),
-                        decoration: BoxDecoration(
-                          color: col.withValues(alpha: 0.18),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Icon(
-                          opt['icon'] as IconData,
-                          color: col,
-                          size: 20,
-                        ),
-                      ),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 4,
-                        ),
-                        decoration: BoxDecoration(
-                          color: const Color(
-                            0xFF10B981,
-                          ).withValues(alpha: 0.15),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Text(
-                          opt['eta'] as String,
-                          style: GoogleFonts.poppins(
-                            color: const Color(0xFF10B981),
-                            fontSize: 10,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    opt['label'] as String,
-                    style: GoogleFonts.poppins(
-                      color: _textPrimary,
-                      fontWeight: FontWeight.w700,
-                      fontSize: 15,
-                    ),
-                  ),
-                  Text(
-                    opt['desc'] as String,
-                    style: GoogleFonts.poppins(color: _textMuted, fontSize: 11),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  const Spacer(),
-                  Text(
-                    opt['price'] as String,
-                    style: GoogleFonts.poppins(
-                      color: col,
-                      fontWeight: FontWeight.w700,
-                      fontSize: 13,
-                    ),
-                  ),
-                ],
+              child: Icon(icon, color: color, size: 24),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              label,
+              style: GoogleFonts.poppins(
+                color: _textPrimary,
+                fontWeight: FontWeight.w700,
+                fontSize: 16,
               ),
             ),
-          );
-        },
+            const SizedBox(height: 4),
+            Text(
+              description,
+              style: GoogleFonts.poppins(color: _textMuted, fontSize: 12),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1562,35 +1537,35 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  // ── Helpers ────────────────────────────────────────────────────────────────
-  int _typeColorVal(String type) {
-    final t = type.toLowerCase();
-    if (t.contains('premium')) return 0xFF6C63FF;
-    if (t.contains('bike')) return 0xFF10B981;
-    if (t.contains('shared')) return 0xFFF59E0B;
-    return 0xFF3B82F6;
-  }
+  // ── Helpers (Legacy - not used after removing quick ride options) ──────────
+  // int _typeColorVal(String type) {
+  //   final t = type.toLowerCase();
+  //   if (t.contains('premium')) return 0xFF6C63FF;
+  //   if (t.contains('bike')) return 0xFF10B981;
+  //   if (t.contains('shared')) return 0xFFF59E0B;
+  //   return 0xFF3B82F6;
+  // }
 
-  IconData _typeIcon(String type) {
-    final t = type.toLowerCase();
-    if (t.contains('premium')) return Icons.star_rounded;
-    if (t.contains('bike')) return Icons.electric_bike_rounded;
-    if (t.contains('shared')) return Icons.local_taxi_rounded;
-    return Icons.directions_car_rounded;
-  }
+  // IconData _typeIcon(String type) {
+  //   final t = type.toLowerCase();
+  //   if (t.contains('premium')) return Icons.star_rounded;
+  //   if (t.contains('bike')) return Icons.electric_bike_rounded;
+  //   if (t.contains('shared')) return Icons.local_taxi_rounded;
+  //   return Icons.directions_car_rounded;
+  // }
 
-  IconData _iconForLabel(String label) {
-    switch (label.toLowerCase()) {
-      case 'premium':
-        return Icons.star_rounded;
-      case 'bike':
-        return Icons.electric_bike_rounded;
-      case 'shared':
-        return Icons.local_taxi_rounded;
-      default:
-        return Icons.directions_car_rounded;
-    }
-  }
+  // IconData _iconForLabel(String label) {
+  //   switch (label.toLowerCase()) {
+  //     case 'premium':
+  //       return Icons.star_rounded;
+  //     case 'bike':
+  //       return Icons.electric_bike_rounded;
+  //     case 'shared':
+  //       return Icons.local_taxi_rounded;
+  //     default:
+  //       return Icons.directions_car_rounded;
+  //   }
+  // }
 }
 
 // =============================================================================

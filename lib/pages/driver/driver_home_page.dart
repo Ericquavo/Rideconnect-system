@@ -38,21 +38,21 @@ class _DriverHomePageState extends State<DriverHomePage> {
 
   bool get _isDarkMode => Theme.of(context).brightness == Brightness.dark;
   Color get _bgTop =>
-      _isDarkMode ? const Color(0xFF0A0E1A) : const Color(0xFFEFF4FF);
+      _isDarkMode ? const Color(0xFF0A0E1A) : const Color(0xFFF8FAFF);
   Color get _bgBottom =>
-      _isDarkMode ? const Color(0xFF1A1F3A) : const Color(0xFFDCE8FF);
+      _isDarkMode ? const Color(0xFF1A1F3A) : const Color(0xFFEFF4FF);
   Color get _cardBg =>
       _isDarkMode
           ? Colors.white.withValues(alpha: 0.05)
-          : Colors.white.withValues(alpha: 0.92);
+          : Colors.white.withValues(alpha: 0.98);
   Color get _cardBorder =>
       _isDarkMode
           ? Colors.white.withValues(alpha: 0.08)
-          : const Color(0xFFC9D6F2);
+          : const Color(0xFFD1D5E0);
   Color get _textPrimary =>
       _isDarkMode ? Colors.white : const Color(0xFF0F172A);
   Color get _textSecondary =>
-      _isDarkMode ? Colors.white54 : const Color(0xFF475569);
+      _isDarkMode ? Colors.white54 : const Color(0xFF334155);
   Color get _textMuted =>
       _isDarkMode ? Colors.white38 : const Color(0xFF64748B);
 

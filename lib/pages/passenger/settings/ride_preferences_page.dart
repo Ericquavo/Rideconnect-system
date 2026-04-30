@@ -12,9 +12,13 @@ class RidePreferencesPage extends StatefulWidget {
 
 class _RidePreferencesPageState extends State<RidePreferencesPage> {
   String _rideType = 'Economy';
+  String _preferredPayment = 'Mobile Money';
+  int _maxWaitMinutes = 8;
   bool _notifyPromo = true;
   bool _notifyTrip = true;
   bool _quietMode = false;
+  bool _allowPooling = true;
+  bool _avoidTolls = false;
   String _pickupLocation = 'Current Location';
 
   @override
@@ -66,6 +70,59 @@ class _RidePreferencesPageState extends State<RidePreferencesPage> {
             const SizedBox(height: 12),
             SettingsCard(
               child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Preferred payment method',
+                    style: GoogleFonts.poppins(
+                      color: palette.textPrimary,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 14,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  DropdownButtonFormField<String>(
+                    value: _preferredPayment,
+                    decoration: _inputDecoration(context),
+                    dropdownColor:
+                        palette.isDark ? const Color(0xFF1D2342) : Colors.white,
+                    items: const [
+                      DropdownMenuItem(
+                        value: 'Mobile Money',
+                        child: Text('Mobile Money'),
+                      ),
+                      DropdownMenuItem(value: 'Card', child: Text('Card')),
+                      DropdownMenuItem(value: 'Cash', child: Text('Cash')),
+                    ],
+                    onChanged: (v) {
+                      setState(
+                        () => _preferredPayment = v ?? _preferredPayment,
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    'Max wait time: $_maxWaitMinutes min',
+                    style: GoogleFonts.poppins(
+                      color: palette.textSecondary,
+                      fontSize: 13,
+                    ),
+                  ),
+                  Slider(
+                    value: _maxWaitMinutes.toDouble(),
+                    min: 3,
+                    max: 20,
+                    divisions: 17,
+                    onChanged: (value) {
+                      setState(() => _maxWaitMinutes = value.round());
+                    },
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            SettingsCard(
+              child: Column(
                 children: [
                   _switchTile(
                     context,
@@ -86,6 +143,20 @@ class _RidePreferencesPageState extends State<RidePreferencesPage> {
                     lang.t('ride.quietMode'),
                     _quietMode,
                     (v) => setState(() => _quietMode = v),
+                  ),
+                  Divider(color: palette.border),
+                  _switchTile(
+                    context,
+                    'Allow pooled rides',
+                    _allowPooling,
+                    (v) => setState(() => _allowPooling = v),
+                  ),
+                  Divider(color: palette.border),
+                  _switchTile(
+                    context,
+                    'Avoid toll roads',
+                    _avoidTolls,
+                    (v) => setState(() => _avoidTolls = v),
                   ),
                 ],
               ),

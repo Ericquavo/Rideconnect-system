@@ -11,6 +11,7 @@ class PassengerLanguageService {
 
   final ValueNotifier<PassengerLanguage> languageNotifier =
       ValueNotifier<PassengerLanguage>(PassengerLanguage.english);
+  bool _isInitialized = false;
 
   static const Map<PassengerLanguage, String> _codes = {
     PassengerLanguage.english: 'en',
@@ -311,6 +312,41 @@ class PassengerLanguageService {
       PassengerLanguage.kinyarwanda: 'Amahitamo y urugendo rwihuse',
       PassengerLanguage.swahili: 'Chaguo za safari za haraka',
       PassengerLanguage.spanish: 'Opciones rapidas de viaje',
+    },
+    'home.rideType': {
+      PassengerLanguage.english: 'Ride Type',
+      PassengerLanguage.french: 'Type de trajet',
+      PassengerLanguage.kinyarwanda: 'Ubwoko bw urugendo',
+      PassengerLanguage.swahili: 'Aina ya safari',
+      PassengerLanguage.spanish: 'Tipo de viaje',
+    },
+    'home.private': {
+      PassengerLanguage.english: 'Private',
+      PassengerLanguage.french: 'Prive',
+      PassengerLanguage.kinyarwanda: 'Privee',
+      PassengerLanguage.swahili: 'Binafsi',
+      PassengerLanguage.spanish: 'Privado',
+    },
+    'home.privateDesc': {
+      PassengerLanguage.english: 'Just for you',
+      PassengerLanguage.french: 'Juste pour vous',
+      PassengerLanguage.kinyarwanda: 'Gusa kwawe',
+      PassengerLanguage.swahili: 'Ni kwako tu',
+      PassengerLanguage.spanish: 'Solo para ti',
+    },
+    'home.public': {
+      PassengerLanguage.english: 'Public',
+      PassengerLanguage.french: 'Public',
+      PassengerLanguage.kinyarwanda: 'Rusange',
+      PassengerLanguage.swahili: 'Umma',
+      PassengerLanguage.spanish: 'Publico',
+    },
+    'home.publicDesc': {
+      PassengerLanguage.english: 'Share & save',
+      PassengerLanguage.french: 'Partagez et economisez',
+      PassengerLanguage.kinyarwanda: 'Gabanya kandi eza',
+      PassengerLanguage.swahili: 'Shiriki na kuokoa',
+      PassengerLanguage.spanish: 'Comparte y ahorra',
     },
     'home.nearbyDrivers': {
       PassengerLanguage.english: 'Nearby Drivers',
@@ -1376,10 +1412,14 @@ class PassengerLanguageService {
   };
 
   Future<void> init() async {
+    if (_isInitialized) return;
     final prefs = await SharedPreferences.getInstance();
     final code = prefs.getString(_prefKey) ?? 'en';
     languageNotifier.value = _byCode[code] ?? PassengerLanguage.english;
+    _isInitialized = true;
   }
+
+  Future<void> ensureInitialized() => init();
 
   String codeOf(PassengerLanguage language) => _codes[language] ?? 'en';
 

@@ -5,11 +5,13 @@ import '../../features/mobile/data/mobile_flow_api_service.dart';
 import '../../services/passenger_language_service.dart';
 
 class NotificationsPage extends StatefulWidget {
+  final VoidCallback? onBack;
   final VoidCallback onRead;
   final ValueChanged<int>? onUnreadChanged;
 
   const NotificationsPage({
     super.key,
+    this.onBack,
     required this.onRead,
     this.onUnreadChanged,
   });
@@ -158,6 +160,22 @@ class _NotificationsPageState extends State<NotificationsPage> {
             physics: const AlwaysScrollableScrollPhysics(),
             padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
             children: [
+              if (widget.onBack != null)
+                Row(
+                  children: [
+                    IconButton(
+                      onPressed: widget.onBack,
+                      icon: const Icon(Icons.arrow_back_ios_new_rounded),
+                    ),
+                    Text(
+                      'Back',
+                      style: GoogleFonts.poppins(
+                        color: textSecondary,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
               Text(
                 _lang.t('notifications.title'),
                 style: GoogleFonts.poppins(

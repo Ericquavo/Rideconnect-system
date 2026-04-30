@@ -4,6 +4,7 @@ import '../../auth/auth_api.dart';
 import '../../auth/auth_session.dart';
 import '../../services/passenger_api.dart';
 import '../../services/app_theme_service.dart';
+import '../../services/passenger_preferences_service.dart';
 import '../../services/passenger_language_service.dart';
 import '../login_page.dart';
 import 'settings/settings_theme.dart';
@@ -36,8 +37,8 @@ class _ProfilePageState extends State<ProfilePage> {
   static const String _idRateApp = 'rateApp';
 
   bool _darkMode = AppThemeService.isDarkMode;
-  bool _notifications = true;
-  bool _locationSharing = true;
+  bool _notifications = PassengerPreferencesService.pushNotifications;
+  bool _locationSharing = PassengerPreferencesService.locationSharing;
   bool _isLoggingOut = false;
   String _profileName = '';
   String _profileEmail = '';
@@ -100,14 +101,51 @@ class _ProfilePageState extends State<ProfilePage> {
     _loadProfile();
     _loadSummary();
     AppThemeService.themeModeNotifier.addListener(_syncDarkModeFromAppTheme);
+    PassengerPreferencesService.locationSharingNotifier.addListener(
+      _syncLocationSharing,
+    );
+    PassengerPreferencesService.pushNotificationsNotifier.addListener(
+      _syncPushNotifications,
+    );
+    PassengerPreferencesService.profilePhotoNotifier.addListener(
+      _refreshAvatar,
+    );
     _lang.languageNotifier.addListener(_onLanguageChanged);
   }
 
   @override
   void dispose() {
     AppThemeService.themeModeNotifier.removeListener(_syncDarkModeFromAppTheme);
+    PassengerPreferencesService.locationSharingNotifier.removeListener(
+      _syncLocationSharing,
+    );
+    PassengerPreferencesService.pushNotificationsNotifier.removeListener(
+      _syncPushNotifications,
+    );
+    PassengerPreferencesService.profilePhotoNotifier.removeListener(
+      _refreshAvatar,
+    );
     _lang.languageNotifier.removeListener(_onLanguageChanged);
     super.dispose();
+  }
+
+  void _syncLocationSharing() {
+    if (!mounted) return;
+    setState(
+      () => _locationSharing = PassengerPreferencesService.locationSharing,
+    );
+  }
+
+  void _syncPushNotifications() {
+    if (!mounted) return;
+    setState(
+      () => _notifications = PassengerPreferencesService.pushNotifications,
+    );
+  }
+
+  void _refreshAvatar() {
+    if (!mounted) return;
+    setState(() {});
   }
 
   void _onLanguageChanged() {
@@ -185,10 +223,15 @@ class _ProfilePageState extends State<ProfilePage> {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final bgGradient =
+        isDark
+            ? const [Color(0xFF0A0E1A), Color(0xFF1A1F3A)]
+            : const [Color(0xFFEFF4FF), Color(0xFFDCE8FF)];
     return Container(
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         gradient: LinearGradient(
-          colors: [Color(0xFF0A0E1A), Color(0xFF1A1F3A)],
+          colors: bgGradient,
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
         ),
@@ -219,6 +262,7 @@ class _ProfilePageState extends State<ProfilePage> {
   }
 
   Widget _buildHeader() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Row(
       children: [
         Container(
@@ -239,7 +283,7 @@ class _ProfilePageState extends State<ProfilePage> {
           style: GoogleFonts.poppins(
             fontSize: 20,
             fontWeight: FontWeight.w700,
-            color: Colors.white,
+            color: isDark ? Colors.white : const Color(0xFF0F172A),
           ),
         ),
       ],
@@ -247,16 +291,26 @@ class _ProfilePageState extends State<ProfilePage> {
   }
 
   Widget _buildProfileCard() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final avatarBytes = PassengerPreferencesService.profilePhoto;
     return Container(
       padding: const EdgeInsets.all(22),
       decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [Color(0xFF1B1F3A), Color(0xFF0D1430)],
+        gradient: LinearGradient(
+          colors:
+              isDark
+                  ? const [Color(0xFF1B1F3A), Color(0xFF0D1430)]
+                  : const [Color(0xFFFFFFFF), Color(0xFFF5F8FF)],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
         borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+        border: Border.all(
+          color:
+              isDark
+                  ? Colors.white.withValues(alpha: 0.1)
+                  : const Color(0xFFD9E2F7),
+        ),
         boxShadow: [
           BoxShadow(
             color: const Color(0xFF6C63FF).withValues(alpha: 0.15),
@@ -285,17 +339,22 @@ class _ProfilePageState extends State<ProfilePage> {
                     ),
                   ],
                 ),
-                child: Center(
-                  child: Text(
-                    _profileName.isNotEmpty
-                        ? _profileName[0].toUpperCase()
-                        : 'P',
-                    style: GoogleFonts.poppins(
-                      fontSize: 28,
-                      fontWeight: FontWeight.w700,
-                      color: Colors.white,
-                    ),
-                  ),
+                child: ClipOval(
+                  child:
+                      avatarBytes != null && avatarBytes.isNotEmpty
+                          ? Image.memory(avatarBytes, fit: BoxFit.cover)
+                          : Center(
+                            child: Text(
+                              _profileName.isNotEmpty
+                                  ? _profileName[0].toUpperCase()
+                                  : 'P',
+                              style: GoogleFonts.poppins(
+                                fontSize: 28,
+                                fontWeight: FontWeight.w700,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ),
                 ),
               ),
               // Online indicator
@@ -327,7 +386,7 @@ class _ProfilePageState extends State<ProfilePage> {
                   style: GoogleFonts.poppins(
                     fontSize: 18,
                     fontWeight: FontWeight.w700,
-                    color: Colors.white,
+                    color: isDark ? Colors.white : const Color(0xFF0F172A),
                   ),
                 ),
                 const SizedBox(height: 4),
@@ -335,7 +394,7 @@ class _ProfilePageState extends State<ProfilePage> {
                   _profileEmail,
                   style: GoogleFonts.poppins(
                     fontSize: 12,
-                    color: Colors.white54,
+                    color: isDark ? Colors.white54 : const Color(0xFF64748B),
                   ),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
@@ -414,12 +473,21 @@ class _ProfilePageState extends State<ProfilePage> {
   }
 
   Widget _buildToggleSection() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.05),
+        color:
+            isDark
+                ? Colors.white.withValues(alpha: 0.05)
+                : Colors.white.withValues(alpha: 0.92),
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+        border: Border.all(
+          color:
+              isDark
+                  ? Colors.white.withValues(alpha: 0.08)
+                  : const Color(0xFFD9E2F7),
+        ),
       ),
       child: Column(
         children: [
@@ -433,21 +501,39 @@ class _ProfilePageState extends State<ProfilePage> {
               await AppThemeService.setDarkMode(v);
             },
           ),
-          Divider(color: Colors.white.withValues(alpha: 0.07), height: 20),
+          Divider(
+            color:
+                isDark
+                    ? Colors.white.withValues(alpha: 0.07)
+                    : const Color(0xFFE2E8F0),
+            height: 20,
+          ),
           _ToggleRow(
             icon: Icons.notifications_rounded,
             label: _lang.t('profile.pushNotifications'),
             color: const Color(0xFF3B82F6),
             value: _notifications,
-            onChanged: (v) => setState(() => _notifications = v),
+            onChanged: (v) async {
+              setState(() => _notifications = v);
+              await PassengerPreferencesService.setPushNotifications(v);
+            },
           ),
-          Divider(color: Colors.white.withValues(alpha: 0.07), height: 20),
+          Divider(
+            color:
+                isDark
+                    ? Colors.white.withValues(alpha: 0.07)
+                    : const Color(0xFFE2E8F0),
+            height: 20,
+          ),
           _ToggleRow(
             icon: Icons.location_on_rounded,
             label: _lang.t('profile.locationSharing'),
             color: const Color(0xFF10B981),
             value: _locationSharing,
-            onChanged: (v) => setState(() => _locationSharing = v),
+            onChanged: (v) async {
+              setState(() => _locationSharing = v);
+              await PassengerPreferencesService.setLocationSharing(v);
+            },
           ),
         ],
       ),
@@ -455,11 +541,20 @@ class _ProfilePageState extends State<ProfilePage> {
   }
 
   Widget _buildSettingsList(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.05),
+        color:
+            isDark
+                ? Colors.white.withValues(alpha: 0.05)
+                : Colors.white.withValues(alpha: 0.92),
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+        border: Border.all(
+          color:
+              isDark
+                  ? Colors.white.withValues(alpha: 0.08)
+                  : const Color(0xFFD9E2F7),
+        ),
       ),
       child: Column(
         children: List.generate(_settingsItems.length, (i) {
@@ -486,19 +581,22 @@ class _ProfilePageState extends State<ProfilePage> {
                 title: Text(
                   _lang.t(item['labelKey'] as String),
                   style: GoogleFonts.poppins(
-                    color: Colors.white70,
+                    color: isDark ? Colors.white70 : const Color(0xFF334155),
                     fontSize: 14,
                   ),
                 ),
-                trailing: const Icon(
+                trailing: Icon(
                   Icons.chevron_right_rounded,
-                  color: Colors.white24,
+                  color: isDark ? Colors.white24 : const Color(0xFF94A3B8),
                   size: 20,
                 ),
               ),
               if (!isLast)
                 Divider(
-                  color: Colors.white.withValues(alpha: 0.06),
+                  color:
+                      isDark
+                          ? Colors.white.withValues(alpha: 0.06)
+                          : const Color(0xFFE2E8F0),
                   height: 1,
                   indent: 18,
                   endIndent: 18,
@@ -594,121 +692,137 @@ class _ProfilePageState extends State<ProfilePage> {
     showDialog(
       context: context,
       barrierColor: Colors.black.withValues(alpha: 0.7),
-      builder:
-          (_) => Dialog(
-            backgroundColor: Colors.transparent,
-            insetPadding: const EdgeInsets.symmetric(horizontal: 40),
-            child: Container(
-              padding: const EdgeInsets.all(28),
-              decoration: BoxDecoration(
-                color: const Color(0xFF131729),
-                borderRadius: BorderRadius.circular(22),
-                border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Container(
-                    width: 60,
-                    height: 60,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: const Color(0xFFFF5E5B).withValues(alpha: 0.15),
-                      border: Border.all(
-                        color: const Color(0xFFFF5E5B).withValues(alpha: 0.4),
-                      ),
-                    ),
-                    child: const Icon(
-                      Icons.logout_rounded,
-                      color: Color(0xFFFF5E5B),
-                      size: 26,
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    _lang.t('profile.logoutTitle'),
-                    style: GoogleFonts.poppins(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w700,
-                      fontSize: 18,
+      builder: (BuildContext dialogContext) {
+        final isDark = Theme.of(dialogContext).brightness == Brightness.dark;
+        final cardBg = isDark ? const Color(0xFF131729) : Colors.white;
+        final cardBorder =
+            isDark
+                ? Colors.white.withValues(alpha: 0.1)
+                : const Color(0xFFC9D6F2);
+        final textPrimary = isDark ? Colors.white : const Color(0xFF0F172A);
+        final textSecondary = isDark ? Colors.white54 : const Color(0xFF334155);
+
+        return Dialog(
+          backgroundColor: Colors.transparent,
+          insetPadding: const EdgeInsets.symmetric(horizontal: 40),
+          child: Container(
+            padding: const EdgeInsets.all(28),
+            decoration: BoxDecoration(
+              color: cardBg,
+              borderRadius: BorderRadius.circular(22),
+              border: Border.all(color: cardBorder),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 60,
+                  height: 60,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: const Color(0xFFFF5E5B).withValues(alpha: 0.15),
+                    border: Border.all(
+                      color: const Color(0xFFFF5E5B).withValues(alpha: 0.4),
                     ),
                   ),
-                  const SizedBox(height: 8),
-                  Text(
-                    _lang.t('profile.logoutBody'),
-                    textAlign: TextAlign.center,
-                    style: GoogleFonts.poppins(
-                      color: Colors.white54,
-                      fontSize: 13,
-                      height: 1.5,
-                    ),
+                  child: const Icon(
+                    Icons.logout_rounded,
+                    color: Color(0xFFFF5E5B),
+                    size: 26,
                   ),
-                  const SizedBox(height: 24),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: OutlinedButton(
-                          onPressed: () => Navigator.pop(context),
-                          style: OutlinedButton.styleFrom(
-                            side: BorderSide(
-                              color: Colors.white.withValues(alpha: 0.2),
-                            ),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            padding: const EdgeInsets.symmetric(vertical: 12),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  _lang.t('profile.logoutTitle'),
+                  style: GoogleFonts.poppins(
+                    color: textPrimary,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 18,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  _lang.t('profile.logoutBody'),
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.poppins(
+                    color: textSecondary,
+                    fontSize: 13,
+                    height: 1.5,
+                  ),
+                ),
+                const SizedBox(height: 24),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () => Navigator.pop(dialogContext),
+                        style: OutlinedButton.styleFrom(
+                          side: BorderSide(
+                            color:
+                                isDark
+                                    ? Colors.white.withValues(alpha: 0.2)
+                                    : const Color(0xFFC9D6F2),
                           ),
-                          child: Text(
-                            _lang.t('common.cancel'),
-                            style: GoogleFonts.poppins(
-                              color: Colors.white70,
-                              fontWeight: FontWeight.w500,
-                            ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                        ),
+                        child: Text(
+                          _lang.t('common.cancel'),
+                          style: GoogleFonts.poppins(
+                            color:
+                                isDark
+                                    ? Colors.white70
+                                    : const Color(0xFF334155),
+                            fontWeight: FontWeight.w500,
                           ),
                         ),
                       ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: ElevatedButton(
-                          onPressed:
-                              _isLoggingOut
-                                  ? null
-                                  : () async {
-                                    Navigator.pop(context);
-                                    await _logout();
-                                  },
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFFFF5E5B),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            padding: const EdgeInsets.symmetric(vertical: 12),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed:
+                            _isLoggingOut
+                                ? null
+                                : () async {
+                                  Navigator.pop(dialogContext);
+                                  await _logout();
+                                },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFFFF5E5B),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
                           ),
-                          child:
-                              _isLoggingOut
-                                  ? const SizedBox(
-                                    width: 18,
-                                    height: 18,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                      color: Colors.white,
-                                    ),
-                                  )
-                                  : Text(
-                                    _lang.t('profile.logout'),
-                                    style: GoogleFonts.poppins(
-                                      color: Colors.white,
-                                      fontWeight: FontWeight.w600,
-                                    ),
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                        ),
+                        child:
+                            _isLoggingOut
+                                ? const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Colors.white,
                                   ),
-                        ),
+                                )
+                                : Text(
+                                  _lang.t('profile.logout'),
+                                  style: GoogleFonts.poppins(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
                       ),
-                    ],
-                  ),
-                ],
-              ),
+                    ),
+                  ],
+                ),
+              ],
             ),
           ),
+        );
+      },
     );
   }
 

@@ -153,12 +153,24 @@ class PassengerApi {
   Future<Map<String, dynamic>> cancelTrip(dynamic tripId) =>
       _put('/trips/$tripId/cancel', <String, dynamic>{});
 
+  Future<Map<String, dynamic>> cancelRideRequest(dynamic requestId) =>
+      _put('/ride-requests/$requestId/cancel', <String, dynamic>{});
+
   Future<Map<String, dynamic>> createPayment(Map<String, dynamic> payload) =>
       _post('/payments', payload);
 
   Future<List<Map<String, dynamic>>> getPaymentHistory() async {
     final response = await _get('/payments/history');
     return _extractList(response);
+  }
+
+  Future<int> getUnreadNotificationCount() async {
+    final response = await _get('/notifications/unread-count');
+    final data = _extractDataMap(response);
+    return _asInt(
+      data['unread_count'] ?? data['count'] ?? data['unread'],
+      fallback: 0,
+    );
   }
 
   Future<Map<String, dynamic>> _get(String path) => _request('GET', path);
@@ -245,15 +257,66 @@ class PassengerApi {
           errorMap is Map<String, dynamic>
               ? _asString(errorMap['description'])
               : null;
+      final fieldErrors = _extractFieldErrors(parsed);
       final message =
           _asString(parsed['message']) ??
           nestedError ??
           _asString(parsed['error']) ??
           'Request failed (${response.statusCode})';
-      throw Exception(message);
+      throw PassengerApiException(
+        message: message,
+        statusCode: response.statusCode,
+        raw: parsed,
+        fieldErrors: fieldErrors,
+      );
     }
 
     return parsed;
+  }
+
+  Map<String, dynamic> _extractDataMap(Map<String, dynamic> response) {
+    final data = response['data'];
+    if (data is Map<String, dynamic>) {
+      return data;
+    }
+    return response;
+  }
+
+  Map<String, String> _extractFieldErrors(Map<String, dynamic> payload) {
+    final result = <String, String>{};
+    final candidates = <dynamic>[
+      payload['errors'],
+      payload['field_errors'],
+      payload['validation_errors'],
+      payload['details'],
+      payload['data'] is Map<String, dynamic>
+          ? (payload['data'] as Map<String, dynamic>)['errors']
+          : null,
+    ];
+
+    for (final candidate in candidates) {
+      if (candidate is! Map<String, dynamic>) continue;
+      candidate.forEach((key, value) {
+        final message = _normalizeFieldError(value);
+        if (message != null && message.isNotEmpty) {
+          result[key] = message;
+        }
+      });
+    }
+
+    return result;
+  }
+
+  String? _normalizeFieldError(dynamic value) {
+    if (value is String) return value;
+    if (value is List) {
+      final first = value.isNotEmpty ? value.first : null;
+      return _asString(first);
+    }
+    if (value is Map<String, dynamic>) {
+      return _asString(value['message']) ?? _asString(value['error']);
+    }
+    return _asString(value);
   }
 
   List<Map<String, dynamic>> _extractList(Map<String, dynamic> response) {
@@ -305,9 +368,36 @@ class PassengerApi {
     return null;
   }
 
+  int _asInt(dynamic value, {required int fallback}) {
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    if (value is String) return int.tryParse(value) ?? fallback;
+    return fallback;
+  }
+
   String? _asString(dynamic value) {
     if (value == null) return null;
     if (value is String) return value;
     return value.toString();
   }
+}
+
+class PassengerApiException implements Exception {
+  PassengerApiException({
+    required this.message,
+    required this.statusCode,
+    required this.raw,
+    Map<String, String>? fieldErrors,
+  }) : fieldErrors = fieldErrors ?? const <String, String>{};
+
+  final String message;
+  final int statusCode;
+  final Map<String, dynamic> raw;
+  final Map<String, String> fieldErrors;
+
+  bool get isForbidden => statusCode == 403;
+  bool get isValidationError => statusCode == 422;
+
+  @override
+  String toString() => 'PassengerApiException($statusCode): $message';
 }

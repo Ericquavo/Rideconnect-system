@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../../auth/auth_api.dart';
 import '../../../auth/auth_session.dart';
 import '../../../services/app_theme_service.dart';
 import '../../../services/passenger_language_service.dart';
+import '../../../services/passenger_preferences_service.dart';
 import 'settings_theme.dart';
 
 class AppSettingsPage extends StatefulWidget {
@@ -15,8 +18,11 @@ class AppSettingsPage extends StatefulWidget {
 
 class _AppSettingsPageState extends State<AppSettingsPage> {
   bool _darkMode = AppThemeService.isDarkMode;
-  bool _pushNotifications = true;
-  bool _locationSharing = true;
+  bool _pushNotifications = PassengerPreferencesService.pushNotifications;
+  bool _locationSharing = PassengerPreferencesService.locationSharing;
+  bool _compactMapControls = false;
+  bool _autoRefreshDashboard = true;
+  bool _highAccuracyLocation = true;
   bool _updatingPassword = false;
   final TextEditingController _currentPasswordCtrl = TextEditingController();
   final TextEditingController _newPasswordCtrl = TextEditingController();
@@ -27,6 +33,7 @@ class _AppSettingsPageState extends State<AppSettingsPage> {
   void initState() {
     super.initState();
     _lang.languageNotifier.addListener(_onLanguageChanged);
+    _loadLocalSettings();
   }
 
   @override
@@ -41,6 +48,23 @@ class _AppSettingsPageState extends State<AppSettingsPage> {
   void _onLanguageChanged() {
     if (!mounted) return;
     setState(() {});
+  }
+
+  Future<void> _loadLocalSettings() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (!mounted) return;
+    setState(() {
+      _compactMapControls = prefs.getBool('app.compact_map_controls') ?? false;
+      _autoRefreshDashboard =
+          prefs.getBool('app.auto_refresh_dashboard') ?? true;
+      _highAccuracyLocation =
+          prefs.getBool('app.high_accuracy_location') ?? true;
+    });
+  }
+
+  Future<void> _saveBool(String key, bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(key, value);
   }
 
   @override
@@ -72,7 +96,10 @@ class _AppSettingsPageState extends State<AppSettingsPage> {
                     _lang.t('profile.pushNotifications'),
                     _pushNotifications,
                     Icons.notifications_rounded,
-                    (v) => setState(() => _pushNotifications = v),
+                    (v) async {
+                      setState(() => _pushNotifications = v);
+                      await PassengerPreferencesService.setPushNotifications(v);
+                    },
                   ),
                   Divider(color: palette.border),
                   _switchTile(
@@ -80,7 +107,57 @@ class _AppSettingsPageState extends State<AppSettingsPage> {
                     _lang.t('profile.locationSharing'),
                     _locationSharing,
                     Icons.location_on_rounded,
-                    (v) => setState(() => _locationSharing = v),
+                    (v) async {
+                      if (v) {
+                        final serviceEnabled =
+                            await Geolocator.isLocationServiceEnabled();
+                        if (!serviceEnabled) {
+                          _showPasswordSnack(
+                            'Enable device location service first.',
+                          );
+                          return;
+                        }
+                        var permission = await Geolocator.checkPermission();
+                        if (permission == LocationPermission.denied) {
+                          permission = await Geolocator.requestPermission();
+                        }
+                      }
+                      setState(() => _locationSharing = v);
+                      await PassengerPreferencesService.setLocationSharing(v);
+                    },
+                  ),
+                  Divider(color: palette.border),
+                  _switchTile(
+                    context,
+                    'Compact map controls',
+                    _compactMapControls,
+                    Icons.map_rounded,
+                    (v) async {
+                      setState(() => _compactMapControls = v);
+                      await _saveBool('app.compact_map_controls', v);
+                    },
+                  ),
+                  Divider(color: palette.border),
+                  _switchTile(
+                    context,
+                    'Auto refresh dashboard',
+                    _autoRefreshDashboard,
+                    Icons.refresh_rounded,
+                    (v) async {
+                      setState(() => _autoRefreshDashboard = v);
+                      await _saveBool('app.auto_refresh_dashboard', v);
+                    },
+                  ),
+                  Divider(color: palette.border),
+                  _switchTile(
+                    context,
+                    'High-accuracy location mode',
+                    _highAccuracyLocation,
+                    Icons.gps_fixed_rounded,
+                    (v) async {
+                      setState(() => _highAccuracyLocation = v);
+                      await _saveBool('app.high_accuracy_location', v);
+                    },
                   ),
                 ],
               ),

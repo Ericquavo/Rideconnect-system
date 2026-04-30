@@ -6,6 +6,7 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import '../../features/mobile/data/mobile_flow_api_service.dart';
 import '../../features/trips/data/passenger_trips_api_service.dart';
 import '../../services/passenger_language_service.dart';
+import '../../services/currency_formatter.dart';
 
 /// Book Ride screen — passenger selects pickup, destination and ride type.
 class BookRidePage extends StatefulWidget {
@@ -54,21 +55,21 @@ class _BookRidePageState extends State<BookRidePage> {
     {
       'label': 'Economy',
       'icon': Icons.directions_car_rounded,
-      'price': '\$3.50',
+      'price': '3,500 RWF',
       'eta': '4 min',
       'color': 0xFF3B82F6,
     },
     {
       'label': 'Premium',
       'icon': Icons.star_rounded,
-      'price': '\$8.00',
+      'price': '8,000 RWF',
       'eta': '6 min',
       'color': 0xFF6C63FF,
     },
     {
       'label': 'Bike',
       'icon': Icons.electric_bike_rounded,
-      'price': '\$1.20',
+      'price': '1,200 RWF',
       'eta': '2 min',
       'color': 0xFF10B981,
     },
@@ -143,23 +144,45 @@ class _BookRidePageState extends State<BookRidePage> {
       if (placemarks.isEmpty) return null;
 
       final place = placemarks.first;
-      final rawParts = <String?>[
-        place.name,
-        place.street,
-        place.subLocality,
-        place.locality,
-        place.administrativeArea,
-        place.country,
-      ];
 
-      final parts = <String>[];
-      for (final part in rawParts) {
-        final value = (part ?? '').trim();
-        if (value.isEmpty || parts.contains(value)) continue;
-        parts.add(value);
+      // Prioritize place name for landmarks
+      if (place.name != null &&
+          place.name!.isNotEmpty &&
+          place.name != place.street) {
+        return place.name;
       }
-      if (parts.isEmpty) return null;
-      return parts.join(', ');
+
+      // Build location string: Street, City format
+      final parts = <String>[];
+
+      // Add street first if available
+      if (place.street != null && place.street!.isNotEmpty) {
+        parts.add(place.street!);
+      }
+
+      // Add specific location names (not generic administrative areas)
+      if (place.subLocality != null && place.subLocality!.isNotEmpty) {
+        parts.add(place.subLocality!);
+      } else if (place.locality != null && place.locality!.isNotEmpty) {
+        parts.add(place.locality!);
+      }
+
+      if (parts.isNotEmpty) {
+        return parts.join(', ');
+      }
+
+      // Fallback to name if available
+      if (place.name != null && place.name!.isNotEmpty) {
+        return place.name;
+      }
+
+      // Last resort: administrative area + country
+      if (place.administrativeArea != null &&
+          place.administrativeArea!.isNotEmpty) {
+        return place.administrativeArea;
+      }
+
+      return null;
     } catch (_) {
       return null;
     }
@@ -224,7 +247,7 @@ class _BookRidePageState extends State<BookRidePage> {
               'ride_id': r.id,
               'label': type,
               'icon': _iconForType(type),
-              'price': '\$$price',
+              'price': CurrencyFormatter.formatPrice(price),
               'price_per_seat': r.pricePerSeat,
               'eta': eta,
               'color': _colorForType(type),
@@ -418,149 +441,157 @@ class _BookRidePageState extends State<BookRidePage> {
     showDialog(
       context: context,
       barrierColor: Colors.black.withValues(alpha: 0.7),
-      builder:
-          (_) => Dialog(
-            backgroundColor: Colors.transparent,
-            insetPadding: const EdgeInsets.symmetric(horizontal: 28),
-            child: Container(
-              padding: const EdgeInsets.all(28),
-              decoration: BoxDecoration(
-                color: const Color(0xFF131729),
-                borderRadius: BorderRadius.circular(24),
-                border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Container(
-                    width: 64,
-                    height: 64,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: Color(ride['color'] as int).withValues(alpha: 0.2),
-                      border: Border.all(
-                        color: Color(
-                          ride['color'] as int,
-                        ).withValues(alpha: 0.5),
+      builder: (BuildContext dialogContext) {
+        final isDark = Theme.of(dialogContext).brightness == Brightness.dark;
+        final cardBg = isDark ? const Color(0xFF131729) : Colors.white;
+        final cardBorder =
+            isDark
+                ? Colors.white.withValues(alpha: 0.1)
+                : const Color(0xFFC9D6F2);
+        final textPrimary = isDark ? Colors.white : const Color(0xFF0F172A);
+        final textSecondary = isDark ? Colors.white54 : const Color(0xFF334155);
+
+        return Dialog(
+          backgroundColor: Colors.transparent,
+          insetPadding: const EdgeInsets.symmetric(horizontal: 28),
+          child: Container(
+            padding: const EdgeInsets.all(28),
+            decoration: BoxDecoration(
+              color: cardBg,
+              borderRadius: BorderRadius.circular(24),
+              border: Border.all(color: cardBorder),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 64,
+                  height: 64,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: Color(ride['color'] as int).withValues(alpha: 0.2),
+                    border: Border.all(
+                      color: Color(ride['color'] as int).withValues(alpha: 0.5),
+                    ),
+                  ),
+                  child: Icon(
+                    ride['icon'] as IconData,
+                    color: Color(ride['color'] as int),
+                    size: 28,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  _lang.t('book.rideRequestedTitle'),
+                  style: GoogleFonts.poppins(
+                    color: textPrimary,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 18,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  _lang.t(
+                    'book.rideRequestedBody',
+                    args: <String, String>{
+                      'ride': _rideTypeLabel(_selectedRide),
+                      'eta': ride['eta'].toString(),
+                    },
+                  ),
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.poppins(
+                    color: textSecondary,
+                    fontSize: 13,
+                    height: 1.6,
+                  ),
+                ),
+                const SizedBox(height: 20),
+                _InfoRow(
+                  label: _lang.t('book.estimatedFare'),
+                  value: ride['price'] as String,
+                ),
+                _InfoRow(
+                  label: _lang.t('book.eta'),
+                  value: ride['eta'] as String,
+                ),
+                _InfoRow(
+                  label: _lang.t('book.seats'),
+                  value: _seatsController.text.trim(),
+                ),
+                _InfoRow(
+                  label: _lang.t('book.destination'),
+                  value: _destinationController.text.trim(),
+                ),
+                const SizedBox(height: 20),
+                SizedBox(
+                  width: double.infinity,
+                  height: 50,
+                  child: _GradientButton(
+                    label: _lang.t('book.trackDriver'),
+                    onTap: () {
+                      Navigator.pop(dialogContext);
+                      _handleBookingCompleted();
+                    },
+                  ),
+                ),
+                const SizedBox(height: 10),
+                SizedBox(
+                  width: double.infinity,
+                  height: 50,
+                  child: _buildPaymentMethodSelector(),
+                ),
+                const SizedBox(height: 10),
+                SizedBox(
+                  width: double.infinity,
+                  height: 50,
+                  child: OutlinedButton.icon(
+                    onPressed: _isPaying ? null : _payForLatestBooking,
+                    style: OutlinedButton.styleFrom(
+                      side: BorderSide(
+                        color: const Color(0xFF3B82F6).withValues(alpha: 0.6),
+                      ),
+                      foregroundColor: textPrimary,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
                       ),
                     ),
-                    child: Icon(
-                      ride['icon'] as IconData,
-                      color: Color(ride['color'] as int),
-                      size: 28,
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    _lang.t('book.rideRequestedTitle'),
-                    style: GoogleFonts.poppins(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w700,
-                      fontSize: 18,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    _lang.t(
-                      'book.rideRequestedBody',
-                      args: <String, String>{
-                        'ride': _rideTypeLabel(_selectedRide),
-                        'eta': ride['eta'].toString(),
-                      },
-                    ),
-                    textAlign: TextAlign.center,
-                    style: GoogleFonts.poppins(
-                      color: Colors.white54,
-                      fontSize: 13,
-                      height: 1.6,
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-                  _InfoRow(
-                    label: _lang.t('book.estimatedFare'),
-                    value: ride['price'] as String,
-                  ),
-                  _InfoRow(
-                    label: _lang.t('book.eta'),
-                    value: ride['eta'] as String,
-                  ),
-                  _InfoRow(
-                    label: _lang.t('book.seats'),
-                    value: _seatsController.text.trim(),
-                  ),
-                  _InfoRow(
-                    label: _lang.t('book.destination'),
-                    value: _destinationController.text.trim(),
-                  ),
-                  const SizedBox(height: 20),
-                  SizedBox(
-                    width: double.infinity,
-                    height: 50,
-                    child: _GradientButton(
-                      label: _lang.t('book.trackDriver'),
-                      onTap: () {
-                        Navigator.pop(context);
-                        _handleBookingCompleted();
-                      },
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  SizedBox(
-                    width: double.infinity,
-                    height: 50,
-                    child: _buildPaymentMethodSelector(),
-                  ),
-                  const SizedBox(height: 10),
-                  SizedBox(
-                    width: double.infinity,
-                    height: 50,
-                    child: OutlinedButton.icon(
-                      onPressed: _isPaying ? null : _payForLatestBooking,
-                      style: OutlinedButton.styleFrom(
-                        side: BorderSide(
-                          color: const Color(0xFF3B82F6).withValues(alpha: 0.6),
-                        ),
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-                      ),
-                      icon:
-                          _isPaying
-                              ? const SizedBox(
-                                width: 18,
-                                height: 18,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: Colors.white,
-                                ),
-                              )
-                              : const Icon(Icons.payments_rounded),
-                      label: Text(
+                    icon:
                         _isPaying
-                            ? _lang.t(
-                              'book.processingPayment',
-                              args: {
-                                'method': _paymentLabel(_selectedPaymentMethod),
-                              },
+                            ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
                             )
-                            : _lang.t(
-                              'book.payNowWithMethod',
-                              args: {
-                                'method': _paymentLabel(_selectedPaymentMethod),
-                              },
-                            ),
-                        style: GoogleFonts.poppins(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w600,
-                        ),
+                            : const Icon(Icons.payments_rounded),
+                    label: Text(
+                      _isPaying
+                          ? _lang.t(
+                            'book.processingPayment',
+                            args: {
+                              'method': _paymentLabel(_selectedPaymentMethod),
+                            },
+                          )
+                          : _lang.t(
+                            'book.payNowWithMethod',
+                            args: {
+                              'method': _paymentLabel(_selectedPaymentMethod),
+                            },
+                          ),
+                      style: GoogleFonts.poppins(
+                        color: textPrimary,
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
+        );
+      },
     );
   }
 

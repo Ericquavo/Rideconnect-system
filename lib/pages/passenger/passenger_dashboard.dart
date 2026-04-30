@@ -65,6 +65,7 @@ class _PassengerDashboardState extends State<PassengerDashboard> {
         onGoToBookRide: () => setState(() => _currentIndex = 1),
         notifCount: _notifCount,
         onOpenNotifications: _openNotifications,
+        onOpenProfile: _openProfileFromHome,
       ),
       PassengerBookingFlowPage(onBookingCompleted: _onBookingCompleted),
       TripsPage(
@@ -88,6 +89,13 @@ class _PassengerDashboardState extends State<PassengerDashboard> {
     await _refreshUnreadCount();
   }
 
+  void _openProfileFromHome() {
+    setState(() {
+      _showNotificationsPage = false;
+      _currentIndex = 3;
+    });
+  }
+
   Future<void> _refreshUnreadCount() async {
     try {
       final count = await mobileFlowApi.getUnreadCount();
@@ -105,6 +113,7 @@ class _PassengerDashboardState extends State<PassengerDashboard> {
     final content =
         _showNotificationsPage
             ? NotificationsPage(
+              onBack: () => setState(() => _showNotificationsPage = false),
               onRead: () => setState(() => _notifCount = 0),
               onUnreadChanged: (count) => setState(() => _notifCount = count),
             )
