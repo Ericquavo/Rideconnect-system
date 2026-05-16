@@ -20,8 +20,9 @@ class _AppSettingsPageState extends State<AppSettingsPage> {
   bool _darkMode = AppThemeService.isDarkMode;
   bool _pushNotifications = PassengerPreferencesService.pushNotifications;
   bool _locationSharing = PassengerPreferencesService.locationSharing;
+  bool _rideRequestAlerts = PassengerPreferencesService.rideRequestAlerts;
   bool _compactMapControls = false;
-  bool _autoRefreshDashboard = true;
+  bool _autoRefreshDashboard = PassengerPreferencesService.autoRefreshDashboard;
   bool _highAccuracyLocation = true;
   bool _updatingPassword = false;
   final TextEditingController _currentPasswordCtrl = TextEditingController();
@@ -99,6 +100,17 @@ class _AppSettingsPageState extends State<AppSettingsPage> {
                     (v) async {
                       setState(() => _pushNotifications = v);
                       await PassengerPreferencesService.setPushNotifications(v);
+                    },
+                  ),
+                  Divider(color: palette.border),
+                  _switchTile(
+                    context,
+                    _lang.t('settings.rideRequestAlerts'),
+                    _rideRequestAlerts,
+                    Icons.notifications_active_rounded,
+                    (v) async {
+                      setState(() => _rideRequestAlerts = v);
+                      await PassengerPreferencesService.setRideRequestAlerts(v);
                     },
                   ),
                   Divider(color: palette.border),

@@ -7,6 +7,8 @@ import '../../features/mobile/data/mobile_flow_api_service.dart';
 import '../../features/trips/data/passenger_trips_api_service.dart';
 import '../../services/passenger_language_service.dart';
 import '../../services/currency_formatter.dart';
+import '../../services/passenger_api.dart';
+import '../../auth/auth_session.dart';
 
 /// Book Ride screen — passenger selects pickup, destination and ride type.
 class BookRidePage extends StatefulWidget {
@@ -102,6 +104,45 @@ class _BookRidePageState extends State<BookRidePage> {
     }
 
     _loadAvailableRides();
+    _loadSavedPaymentMethod();
+  }
+
+  Future<void> _loadSavedPaymentMethod() async {
+    try {
+      final resp = await PassengerApi.instance.getProfile();
+      final data = resp['data'];
+      final profile =
+          data is Map<String, dynamic>
+              ? (data['user'] is Map<String, dynamic>
+                  ? data['user'] as Map<String, dynamic>
+                  : data)
+              : <String, dynamic>{};
+
+      final paymentRaw = profile['payment'];
+      final payment =
+          paymentRaw is Map<String, dynamic> ? paymentRaw : <String, dynamic>{};
+      final methodRaw =
+          (payment['method'] ?? payment['type'] ?? '').toString().toLowerCase();
+
+      String mapped = _selectedPaymentMethod;
+      if (methodRaw.contains('mobile')) {
+        mapped = 'mobile_money';
+      } else if (methodRaw.contains('card') ||
+          methodRaw.contains('visa') ||
+          methodRaw.contains('master')) {
+        mapped = 'card';
+      } else if (methodRaw.contains('bank') || methodRaw.contains('account')) {
+        // Map bank account to card option in booking (closest match)
+        mapped = 'card';
+      } else if (methodRaw.contains('cash')) {
+        mapped = 'cash';
+      }
+
+      if (!mounted) return;
+      setState(() => _selectedPaymentMethod = mapped);
+    } catch (_) {
+      // Ignore and keep default
+    }
   }
 
   @override
@@ -133,6 +174,23 @@ class _BookRidePageState extends State<BookRidePage> {
         ),
       ),
     );
+  }
+
+  /// Ensure passenger profile is initialized before accessing passenger features
+  Future<void> _ensureProfileInitialized() async {
+    try {
+      final session = await AuthSession.load();
+      if (session == null) return;
+
+      // Try to initialize the profile (safe to call multiple times)
+      await PassengerApi.instance.initializeProfile(
+        name: session.name,
+        email: session.email,
+      );
+    } catch (e) {
+      // Log but don't block - initialization might already be done
+      print('Profile initialization attempt: $e');
+    }
   }
 
   Future<String?> _reverseGeocodePoint(LatLng point) async {
@@ -279,6 +337,9 @@ class _BookRidePageState extends State<BookRidePage> {
   }
 
   void _requestRide() async {
+    // Ensure passenger profile is initialized before requesting a ride
+    await _ensureProfileInitialized();
+
     final pickup = _pickupController.text.trim();
     final dropoff = _destinationController.text.trim();
     final seats = int.tryParse(_seatsController.text.trim()) ?? 1;

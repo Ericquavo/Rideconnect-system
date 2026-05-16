@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:flutter/foundation.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:convert';
 import 'dart:typed_data';
@@ -73,7 +74,9 @@ class _EditProfilePageState extends State<EditProfilePage> {
           if (_photoBytes != null) 'avatar_base64': base64Encode(_photoBytes!),
         },
       );
-      await PassengerPreferencesService.setProfilePhotoBytes(_photoBytes);
+      // Defer updating the shared preferences notifier until after the route
+      // pop completes to avoid notifier callbacks running during route
+      // disposal which can cause framework assertion failures.
     } catch (e) {
       if (!mounted) return;
       setState(() => _saving = false);
@@ -92,6 +95,15 @@ class _EditProfilePageState extends State<EditProfilePage> {
       'name': _nameCtrl.text.trim(),
       'email': _emailCtrl.text.trim(),
       'phone': _phoneCtrl.text.trim(),
+    });
+
+    // Update profile photo preferences after popping the route so any
+    // listeners on other pages (which may rebuild) are notified when it's
+    // safe. Do not await; any error here is non-fatal for the UI flow.
+    PassengerPreferencesService.setProfilePhotoBytes(_photoBytes).catchError((
+      _,
+    ) {
+      /* ignore */
     });
   }
 

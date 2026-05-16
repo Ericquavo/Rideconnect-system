@@ -6,14 +6,18 @@ import 'pages/driver/driver_dashboard.dart';
 import 'pages/login_page.dart';
 import 'pages/passenger/passenger_dashboard.dart';
 import 'services/app_theme_service.dart';
+import 'services/driver_preferences_service.dart';
 import 'services/passenger_preferences_service.dart';
 import 'services/passenger_language_service.dart';
+import 'services/driver_language_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await AppThemeService.init();
+  await DriverPreferencesService.init();
   await PassengerPreferencesService.init();
   await PassengerLanguageService.instance.init();
+  await DriverLanguageService.instance.ensureInitialized();
   assert(() {
     // Ensure debug baseline overlays are off in dev mode.
     debugPaintBaselinesEnabled = false;
@@ -22,39 +26,66 @@ Future<void> main() async {
   runApp(const RideConnectApp());
 }
 
-class RideConnectApp extends StatelessWidget {
+class RideConnectApp extends StatefulWidget {
   const RideConnectApp({super.key});
 
   @override
+  State<RideConnectApp> createState() => _RideConnectAppState();
+}
+
+class _RideConnectAppState extends State<RideConnectApp> {
+  @override
+  void initState() {
+    super.initState();
+    AppThemeService.themeModeNotifier.addListener(_onThemeOrLanguageChanged);
+    PassengerLanguageService.instance.languageNotifier.addListener(
+      _onThemeOrLanguageChanged,
+    );
+    DriverLanguageService.instance.languageNotifier.addListener(
+      _onThemeOrLanguageChanged,
+    );
+  }
+
+  @override
+  void dispose() {
+    AppThemeService.themeModeNotifier.removeListener(_onThemeOrLanguageChanged);
+    PassengerLanguageService.instance.languageNotifier.removeListener(
+      _onThemeOrLanguageChanged,
+    );
+    DriverLanguageService.instance.languageNotifier.removeListener(
+      _onThemeOrLanguageChanged,
+    );
+    super.dispose();
+  }
+
+  void _onThemeOrLanguageChanged() => setState(() {});
+
+  @override
   Widget build(BuildContext context) {
-    return ValueListenableBuilder<ThemeMode>(
-      valueListenable: AppThemeService.themeModeNotifier,
-      builder: (_, themeMode, __) {
-        return MaterialApp(
-          title: 'RideConnect',
-          debugShowCheckedModeBanner: false,
-          themeMode: themeMode,
-          theme: ThemeData(
-            useMaterial3: true,
-            colorScheme: const ColorScheme.light(
-              primary: Color(0xFF4C57D6),
-              secondary: Color(0xFF2D8CFF),
-              surface: Color(0xFFF5F7FF),
-            ),
-            scaffoldBackgroundColor: const Color(0xFFF2F5FF),
-          ),
-          darkTheme: ThemeData(
-            useMaterial3: true,
-            colorScheme: const ColorScheme.dark(
-              primary: Color(0xFF6C63FF),
-              secondary: Color(0xFF3B82F6),
-              surface: Color(0xFF0A0E1A),
-            ),
-            scaffoldBackgroundColor: const Color(0xFF0A0E1A),
-          ),
-          home: const AppEntryPage(),
-        );
-      },
+    final themeMode = AppThemeService.themeModeNotifier.value;
+    return MaterialApp(
+      title: 'RideConnect',
+      debugShowCheckedModeBanner: false,
+      themeMode: themeMode,
+      theme: ThemeData(
+        useMaterial3: true,
+        colorScheme: const ColorScheme.light(
+          primary: Color(0xFF4C57D6),
+          secondary: Color(0xFF2D8CFF),
+          surface: Color(0xFFF5F7FF),
+        ),
+        scaffoldBackgroundColor: const Color(0xFFF2F5FF),
+      ),
+      darkTheme: ThemeData(
+        useMaterial3: true,
+        colorScheme: const ColorScheme.dark(
+          primary: Color(0xFF6C63FF),
+          secondary: Color(0xFF3B82F6),
+          surface: Color(0xFF0A0E1A),
+        ),
+        scaffoldBackgroundColor: const Color(0xFF0A0E1A),
+      ),
+      home: const AppEntryPage(),
     );
   }
 }

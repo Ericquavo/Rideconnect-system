@@ -1,6 +1,8 @@
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
+import 'dart:async';
+import 'dart:io';
 
 import '../auth/auth_session.dart';
 
@@ -117,19 +119,41 @@ class DriverApi {
     );
   }
 
-  Future<Map<String, dynamic>> acceptRequest(dynamic id) async {
+  Future<Map<String, dynamic>> acceptRequest(
+    dynamic id, {
+    String? rideId,
+    String? requestId,
+    String? bookingId,
+  }) async {
+    final payload = _requestActionPayload(
+      id: id,
+      rideId: rideId,
+      requestId: requestId,
+      bookingId: bookingId,
+    );
     try {
-      return await _put('/trip-requests/$id/accept', <String, dynamic>{});
+      return await _put('/trip-requests/$id/accept', payload);
     } catch (_) {
-      return _put('/requests/$id/accept', <String, dynamic>{});
+      return _put('/requests/$id/accept', payload);
     }
   }
 
-  Future<Map<String, dynamic>> rejectRequest(dynamic id) async {
+  Future<Map<String, dynamic>> rejectRequest(
+    dynamic id, {
+    String? rideId,
+    String? requestId,
+    String? bookingId,
+  }) async {
+    final payload = _requestActionPayload(
+      id: id,
+      rideId: rideId,
+      requestId: requestId,
+      bookingId: bookingId,
+    );
     try {
-      return await _put('/trip-requests/$id/reject', <String, dynamic>{});
+      return await _put('/trip-requests/$id/reject', payload);
     } catch (_) {
-      return _put('/requests/$id/reject', <String, dynamic>{});
+      return _put('/requests/$id/reject', payload);
     }
   }
 
@@ -142,11 +166,22 @@ class DriverApi {
     }
   }
 
-  Future<Map<String, dynamic>> completeRequest(dynamic id) async {
+  Future<Map<String, dynamic>> completeRequest(
+    dynamic id, {
+    String? rideId,
+    String? requestId,
+    String? bookingId,
+  }) async {
+    final payload = _requestActionPayload(
+      id: id,
+      rideId: rideId,
+      requestId: requestId,
+      bookingId: bookingId,
+    );
     try {
-      return await _put('/trip-requests/$id/complete', <String, dynamic>{});
+      return await _put('/trip-requests/$id/complete', payload);
     } catch (_) {
-      return _put('/requests/$id/complete', <String, dynamic>{});
+      return _put('/requests/$id/complete', payload);
     }
   }
 
@@ -274,6 +309,38 @@ class DriverApi {
 
   Future<Map<String, dynamic>> _delete(String path) => _request('DELETE', path);
 
+  Map<String, dynamic> _requestActionPayload({
+    required dynamic id,
+    String? rideId,
+    String? requestId,
+    String? bookingId,
+  }) {
+    final payload = <String, dynamic>{
+      if (rideId != null && rideId.trim().isNotEmpty) ...<String, dynamic>{
+        'ride_id': rideId.trim(),
+        'trip_id': rideId.trim(),
+      },
+      if (requestId != null &&
+          requestId.trim().isNotEmpty) ...<String, dynamic>{
+        'request_id': requestId.trim(),
+        'ride_request_id': requestId.trim(),
+        'trip_request_id': requestId.trim(),
+      },
+      if (bookingId != null &&
+          bookingId.trim().isNotEmpty) ...<String, dynamic>{
+        'booking_id': bookingId.trim(),
+        'order_id': bookingId.trim(),
+      },
+    };
+
+    final rawId = '$id'.trim();
+    if (rawId.isNotEmpty) {
+      payload['id'] = rawId;
+    }
+
+    return payload;
+  }
+
   Future<Map<String, dynamic>> _requestRoot(
     String method,
     String path, {
@@ -309,28 +376,45 @@ class DriverApi {
     };
 
     late http.Response response;
-    if (method == 'GET') {
-      response = await http.get(uri, headers: headers).timeout(_timeout);
-    } else if (method == 'POST') {
-      response = await http
-          .post(
-            uri,
-            headers: headers,
-            body: jsonEncode(body ?? <String, dynamic>{}),
-          )
-          .timeout(_timeout);
-    } else if (method == 'PUT') {
-      response = await http
-          .put(
-            uri,
-            headers: headers,
-            body: jsonEncode(body ?? <String, dynamic>{}),
-          )
-          .timeout(_timeout);
-    } else if (method == 'DELETE') {
-      response = await http.delete(uri, headers: headers).timeout(_timeout);
-    } else {
-      throw Exception('Unsupported HTTP method: $method');
+    try {
+      if (method == 'GET') {
+        response = await http.get(uri, headers: headers).timeout(_timeout);
+      } else if (method == 'POST') {
+        response = await http
+            .post(
+              uri,
+              headers: headers,
+              body: jsonEncode(body ?? <String, dynamic>{}),
+            )
+            .timeout(_timeout);
+      } else if (method == 'PUT') {
+        response = await http
+            .put(
+              uri,
+              headers: headers,
+              body: jsonEncode(body ?? <String, dynamic>{}),
+            )
+            .timeout(_timeout);
+      } else if (method == 'DELETE') {
+        response = await http.delete(uri, headers: headers).timeout(_timeout);
+      } else {
+        throw Exception('Unsupported HTTP method: $method');
+      }
+    } on TimeoutException catch (_) {
+      throw DriverApiException(
+        message:
+            'Request timed out after ${_timeout.inSeconds} seconds. Check your network and try again.',
+        statusCode: 408,
+      );
+    } on SocketException catch (e) {
+      throw DriverApiException(
+        message: 'Network error: ${e.message}. Please check your connection.',
+        statusCode: 0,
+      );
+    } catch (e) {
+      // Re-throw driver API exceptions unchanged
+      if (e is DriverApiException) rethrow;
+      throw DriverApiException(message: e.toString(), statusCode: 0);
     }
 
     final parsed = _decodeObject(response.body);

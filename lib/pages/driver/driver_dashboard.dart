@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -6,6 +7,7 @@ import '../../auth/auth_api.dart';
 import '../../auth/auth_session.dart';
 import '../../services/driver_api.dart';
 import '../../services/driver_language_service.dart';
+import '../../services/driver_preferences_service.dart';
 import '../login_page.dart';
 import 'driver_home_page.dart';
 import 'driver_requests_page.dart';
@@ -38,6 +40,9 @@ class _DriverDashboardState extends State<DriverDashboard> {
   int _currentIndex = 0;
   bool _isOnline = true;
   int _notificationUnreadCount = 0;
+  late String _driverName;
+  late String _driverEmail;
+  Uint8List? _driverAvatarBytes;
   Timer? _notificationTimer;
   Timer? _presenceTimer;
   final DriverLanguageService _lang = DriverLanguageService.instance;
@@ -47,21 +52,38 @@ class _DriverDashboardState extends State<DriverDashboard> {
     super.initState();
     _lang.ensureInitialized();
     _lang.languageNotifier.addListener(_onLanguageChanged);
+    _driverName = widget.driverName;
+    _driverEmail = widget.driverEmail;
+    DriverPreferencesService.appNotificationsNotifier.addListener(
+      _onNotificationPreferencesChanged,
+    );
+    DriverPreferencesService.rideRequestAlertsNotifier.addListener(
+      _onNotificationPreferencesChanged,
+    );
+    DriverPreferencesService.autoRefreshRequestsNotifier.addListener(
+      _onNotificationPreferencesChanged,
+    );
     _syncDriverPresence();
     _refreshNotificationBadge();
     _presenceTimer = Timer.periodic(
       const Duration(seconds: 30),
       (_) => _syncDriverPresence(),
     );
-    _notificationTimer = Timer.periodic(
-      const Duration(seconds: 20),
-      (_) => _refreshNotificationBadge(),
-    );
+    _syncNotificationTimer();
   }
 
   @override
   void dispose() {
     _lang.languageNotifier.removeListener(_onLanguageChanged);
+    DriverPreferencesService.appNotificationsNotifier.removeListener(
+      _onNotificationPreferencesChanged,
+    );
+    DriverPreferencesService.rideRequestAlertsNotifier.removeListener(
+      _onNotificationPreferencesChanged,
+    );
+    DriverPreferencesService.autoRefreshRequestsNotifier.removeListener(
+      _onNotificationPreferencesChanged,
+    );
     _notificationTimer?.cancel();
     _presenceTimer?.cancel();
     super.dispose();
@@ -79,6 +101,43 @@ class _DriverDashboardState extends State<DriverDashboard> {
   void _onLanguageChanged() {
     if (!mounted) return;
     setState(() {});
+  }
+
+  void _updateDriverProfile({
+    required String name,
+    required String email,
+    Uint8List? avatarBytes,
+  }) {
+    if (!mounted) return;
+    setState(() {
+      _driverName = name.trim().isEmpty ? _driverName : name.trim();
+      _driverEmail = email.trim().isEmpty ? _driverEmail : email.trim();
+      _driverAvatarBytes = avatarBytes;
+    });
+  }
+
+  void _onNotificationPreferencesChanged() {
+    if (!mounted) return;
+    _syncNotificationTimer();
+    setState(() {});
+  }
+
+  bool get _canRefreshNotifications =>
+      DriverPreferencesService.appNotifications &&
+      DriverPreferencesService.rideRequestAlerts &&
+      DriverPreferencesService.autoRefreshRequests;
+
+  void _syncNotificationTimer() {
+    if (_canRefreshNotifications) {
+      _notificationTimer ??= Timer.periodic(
+        const Duration(seconds: 20),
+        (_) => _refreshNotificationBadge(),
+      );
+      return;
+    }
+
+    _notificationTimer?.cancel();
+    _notificationTimer = null;
   }
 
   void _handleStatusChanged(bool value) {
@@ -173,16 +232,21 @@ class _DriverDashboardState extends State<DriverDashboard> {
 
     final pages = [
       DriverHomePage(
-        driverName: widget.driverName,
+        driverName: _driverName,
+        driverEmail: _driverEmail,
+        driverAvatarBytes: _driverAvatarBytes,
         isOnline: _isOnline,
+        unreadNotificationCount: _notificationUnreadCount,
         onStatusChanged: _handleStatusChanged,
+        onNotificationsTap: _openNotifications,
+        onProfileUpdated: _updateDriverProfile,
       ),
       DriverRequestsPage(isOnline: _isOnline),
       const DriverEarningsPage(),
       const DriverTripsPage(),
       DriverProfilePage(
-        driverName: widget.driverName,
-        driverEmail: widget.driverEmail,
+        driverName: _driverName,
+        driverEmail: _driverEmail,
         unreadNotificationCount: _notificationUnreadCount,
         isOnline: _isOnline,
         onStatusChanged: _handleStatusChanged,

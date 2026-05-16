@@ -1,12 +1,17 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:http/http.dart' as http;
+import 'package:flutter_google_places_sdk/flutter_google_places_sdk.dart'
+    as places_sdk;
 
 import '../../services/passenger_api.dart';
+import '../../services/passenger_language_service.dart';
 
 class PassengerBookingFlowPage extends StatefulWidget {
   final VoidCallback? onBookingCompleted;
@@ -19,7 +24,10 @@ class PassengerBookingFlowPage extends StatefulWidget {
 }
 
 class _PassengerBookingFlowPageState extends State<PassengerBookingFlowPage> {
+  final PassengerLanguageService _lang = PassengerLanguageService.instance;
   static const LatLng _kigaliCenter = LatLng(-1.9441, 30.0619);
+  static const String _kGooglePlacesApiKey =
+      'AIzaSyA_eEtOH6NASsbFkH7xKQEVp46mnyk_3mc';
 
   _TravelTab _selectedTab = _TravelTab.rideRequest;
   final ScrollController _scrollController = ScrollController();
@@ -119,24 +127,320 @@ class _PassengerBookingFlowPageState extends State<PassengerBookingFlowPage> {
         point.longitude,
       );
       if (places.isEmpty) {
-        return 'Selected location';
+        return _lang.t('common.selectedLocation');
       }
       final place = places.first;
-      final chunks = <String>[
-        if ((place.name ?? '').trim().isNotEmpty) place.name!.trim(),
-        if ((place.street ?? '').trim().isNotEmpty) place.street!.trim(),
-        if ((place.locality ?? '').trim().isNotEmpty) place.locality!.trim(),
-      ];
-      if (chunks.isEmpty) {
-        return 'Selected location';
+      final name = (place.name ?? '').trim();
+      final street = (place.street ?? '').trim();
+      final subLocality = (place.subLocality ?? '').trim();
+      final locality = (place.locality ?? '').trim();
+      final administrativeArea = (place.administrativeArea ?? '').trim();
+      final country = (place.country ?? '').trim();
+
+      final genericName = RegExp(
+        r'^(?:\d+[\s,]*|\d+\s+KG|.*\bSt\.?\b)',
+        caseSensitive: false,
+      );
+      final hasLetters = RegExp(r'[A-Za-zÀ-ÖØ-öø-ÿ]');
+      final isGoodPlaceName =
+          name.isNotEmpty &&
+          name != street &&
+          hasLetters.hasMatch(name) &&
+          !genericName.hasMatch(name);
+
+      if (isGoodPlaceName) {
+        return [
+          name,
+          locality,
+          administrativeArea,
+          country,
+        ].where((part) => part.isNotEmpty).take(2).join(', ');
       }
-      return chunks.take(2).join(', ');
+
+      if (street.isNotEmpty) {
+        return [
+          street,
+          locality,
+          administrativeArea,
+        ].where((part) => part.isNotEmpty).take(2).join(', ');
+      }
+
+      if (subLocality.isNotEmpty) {
+        return [
+          subLocality,
+          locality,
+          administrativeArea,
+        ].where((part) => part.isNotEmpty).take(2).join(', ');
+      }
+
+      final fallbackChunks = <String>[
+        if (name.isNotEmpty) name,
+        if (locality.isNotEmpty) locality,
+        if (administrativeArea.isNotEmpty) administrativeArea,
+      ];
+      if (fallbackChunks.isEmpty) {
+        return _lang.t('common.selectedLocation');
+      }
+      return fallbackChunks.take(2).join(', ');
     } catch (_) {
-      return 'Selected location';
+      return _lang.t('common.selectedLocation');
+    }
+  }
+
+  Future<_PickedLocation?> _resolveLocationFromQuery(
+    String query,
+    LatLng fallback,
+  ) async {
+    try {
+      final places = await locationFromAddress(query);
+      if (places.isEmpty) {
+        return null;
+      }
+
+      final first = places.first;
+      final point = LatLng(first.latitude, first.longitude);
+      final resolvedAddress = await _resolveAddressFromPoint(point);
+
+      if (_isGenericResolvedAddress(resolvedAddress)) {
+        final geocodedPlaces = await placemarkFromCoordinates(
+          point.latitude,
+          point.longitude,
+        );
+        final locality =
+            geocodedPlaces.isNotEmpty
+                ? (geocodedPlaces.first.locality ??
+                        geocodedPlaces.first.subLocality ??
+                        geocodedPlaces.first.administrativeArea ??
+                        '')
+                    .trim()
+                : '';
+        final fallbackLabel = _buildLabelFromQuery(query, locality);
+        return _PickedLocation(
+          address: fallbackLabel.isNotEmpty ? fallbackLabel : resolvedAddress,
+          point: point,
+        );
+      }
+
+      return _PickedLocation(address: resolvedAddress, point: point);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  bool _isGenericResolvedAddress(String address) {
+    if (address.toLowerCase().contains(
+      _lang.t('common.selectedLocation').toLowerCase(),
+    )) {
+      return true;
+    }
+    final firstSegment = address.split(',').first.trim();
+    final genericName = RegExp(
+      r'^(?:\d+[\s,]*|\d+\s+KG|.*\bSt\.?\b)$',
+      caseSensitive: false,
+    );
+    return genericName.hasMatch(firstSegment) || firstSegment.length <= 2;
+  }
+
+  String _buildLabelFromQuery(String query, String locality) {
+    final normalized = query.trim();
+    if (normalized.isEmpty) {
+      return locality;
+    }
+    final queryLabel = normalized
+        .split(RegExp(r'\s+'))
+        .map(
+          (part) =>
+              part.isEmpty
+                  ? ''
+                  : '${part[0].toUpperCase()}${part.substring(1).toLowerCase()}',
+        )
+        .where((part) => part.isNotEmpty)
+        .join(' ');
+    return [queryLabel, locality].where((part) => part.isNotEmpty).join(', ');
+  }
+
+  Future<_PlaceSuggestionResult> _fetchPlaceSuggestions(String input) async {
+    try {
+      final uri = Uri.https(
+        'maps.googleapis.com',
+        '/maps/api/place/autocomplete/json',
+        {
+          'input': input,
+          'key': _kGooglePlacesApiKey,
+          'language': 'en',
+          'components': 'country:rw',
+        },
+      );
+      final response = await http.get(uri);
+      if (response.statusCode != 200) {
+        return const _PlaceSuggestionResult(
+          suggestions: [],
+          error: 'Unable to reach place search service.',
+        );
+      }
+
+      final data = json.decode(response.body) as Map<String, dynamic>;
+      final status = data['status'] as String? ?? 'UNKNOWN_ERROR';
+      if (status == 'ZERO_RESULTS') {
+        return const _PlaceSuggestionResult(suggestions: [], error: null);
+      }
+      if (status != 'OK') {
+        return _PlaceSuggestionResult(
+          suggestions: [],
+          error:
+              'Place search unavailable: $status. Enable Google Places API for this key.',
+        );
+      }
+
+      final predictions = (data['predictions'] as List<dynamic>?) ?? [];
+      return _PlaceSuggestionResult(
+        suggestions:
+            predictions
+                .map(
+                  (entry) => _PlaceSuggestion(
+                    description: entry['description'] as String? ?? '',
+                    placeId: entry['place_id'] as String? ?? '',
+                  ),
+                )
+                .where((suggestion) => suggestion.description.isNotEmpty)
+                .toList(),
+        error: null,
+      );
+    } catch (_) {
+      return const _PlaceSuggestionResult(
+        suggestions: [],
+        error: 'Place search failed. Check your network or API setup.',
+      );
+    }
+  }
+
+  // Native Places SDK wrapper (safe no-op stub)
+  // TODO: When you add a native Places SDK plugin, implement these
+  // methods to return native autocomplete results/place details.
+  // They are intentionally safe no-ops so the existing HTTP/geocoding
+  // fallback continues to work until you wire a real SDK.
+  Future<_PlaceSuggestionResult> _nativePlaceSuggestions(String input) async {
+    try {
+      final sdk = places_sdk.FlutterGooglePlacesSdk(_kGooglePlacesApiKey);
+      final res = await sdk.findAutocompletePredictions(
+        input,
+        countries: const ['RW'],
+        placeTypesFilter: const [places_sdk.PlaceTypeFilter.ADDRESS],
+      );
+
+      final preds = (res as dynamic).predictions as List<dynamic>? ?? [];
+      final suggestions =
+          preds
+              .map((p) {
+                final desc =
+                    (p as dynamic).fullText ??
+                    (p as dynamic).getFullText?.call() ??
+                    '';
+                final id = (p as dynamic).placeId ?? '';
+                return _PlaceSuggestion(
+                  description: desc,
+                  placeId: id,
+                  location: null,
+                );
+              })
+              .where((s) => s.description.isNotEmpty)
+              .toList();
+
+      return _PlaceSuggestionResult(suggestions: suggestions, error: null);
+    } catch (_) {
+      return const _PlaceSuggestionResult(suggestions: [], error: null);
+    }
+  }
+
+  Future<_PlaceSuggestion?> _nativeFetchPlaceDetails(String placeId) async {
+    try {
+      final sdk = places_sdk.FlutterGooglePlacesSdk(_kGooglePlacesApiKey);
+      // Request commonly needed fields; plugin will return available data.
+      final place = await sdk.fetchPlace(
+        placeId,
+        fields: const [
+          places_sdk.PlaceField.Location,
+          places_sdk.PlaceField.Address,
+          places_sdk.PlaceField.Name,
+        ],
+      );
+      final lat = (place as dynamic).latLng?.lat as double?;
+      final lng = (place as dynamic).latLng?.lng as double?;
+      final desc =
+          (place as dynamic).formattedAddress ?? (place as dynamic).name ?? '';
+      if (lat == null || lng == null) return null;
+      return _PlaceSuggestion(
+        description: desc,
+        placeId: placeId,
+        location: LatLng(lat, lng),
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<_PlaceSuggestion?> _fetchPlaceDetails(String placeId) async {
+    try {
+      final uri =
+          Uri.https('maps.googleapis.com', '/maps/api/place/details/json', {
+            'place_id': placeId,
+            'key': _kGooglePlacesApiKey,
+            'fields': 'name,formatted_address,geometry',
+            'language': 'en',
+          });
+      final response = await http.get(uri);
+      if (response.statusCode != 200) {
+        return null;
+      }
+
+      final data = json.decode(response.body) as Map<String, dynamic>;
+      if (data['status'] != 'OK') {
+        return null;
+      }
+
+      final result = data['result'] as Map<String, dynamic>?;
+      if (result == null) {
+        return null;
+      }
+      final geometry = result['geometry'] as Map<String, dynamic>?;
+      final location = geometry?['location'] as Map<String, dynamic>?;
+      final lat = location?['lat'] as num?;
+      final lng = location?['lng'] as num?;
+      final description =
+          (result['formatted_address'] as String?) ??
+          (result['name'] as String?) ??
+          '';
+      if (lat == null || lng == null || description.isEmpty) {
+        return null;
+      }
+
+      return _PlaceSuggestion(
+        description: description,
+        placeId: placeId,
+        location: LatLng(lat.toDouble(), lng.toDouble()),
+      );
+    } catch (_) {
+      return null;
     }
   }
 
   void _recomputeEstimatedFare() {
+    // Only compute an estimate when both pickup and dropoff are provided by user.
+    final pickupText = _pickupRequestController.text.trim();
+    final dropoffText = _dropoffRequestController.text.trim();
+    if (pickupText.isEmpty || dropoffText.isEmpty) {
+      _fareController.text = '0';
+      return;
+    }
+
+    if (!_validLat(_pickupRequestLat) ||
+        !_validLng(_pickupRequestLng) ||
+        !_validLat(_dropoffRequestLat) ||
+        !_validLng(_dropoffRequestLng)) {
+      _fareController.text = '0';
+      return;
+    }
+
     final pickup = _latLngOrDefault(_pickupRequestLat, _pickupRequestLng);
     final dropoff = _latLngOrDefault(_dropoffRequestLat, _dropoffRequestLng);
     final meters = Geolocator.distanceBetween(
@@ -454,8 +758,14 @@ class _PassengerBookingFlowPageState extends State<PassengerBookingFlowPage> {
     required String title,
     required LatLng initial,
   }) async {
-    final addressController = TextEditingController(text: 'Selected location');
+    final addressController = TextEditingController(
+      text: _lang.t('common.selectedLocation'),
+    );
     LatLng selected = initial;
+    List<_PlaceSuggestion> autocompleteSuggestions = [];
+    bool isSearchingSuggestions = false;
+    String suggestionError = '';
+    Timer? autocompleteDebounce;
 
     final result = await showModalBottomSheet<_PickedLocation>(
       context: context,
@@ -464,11 +774,27 @@ class _PassengerBookingFlowPageState extends State<PassengerBookingFlowPage> {
       builder: (_) {
         return StatefulBuilder(
           builder: (context, setSheetState) {
+            final isDark = Theme.of(context).brightness == Brightness.dark;
+            final sheetBg = isDark ? const Color(0xFF0F1428) : Colors.white;
+            final textColor = isDark ? Colors.white : const Color(0xFF0F172A);
+            final labelColor =
+                isDark ? Colors.white70 : const Color(0xFF64748B);
+            final fieldBg =
+                isDark
+                    ? Colors.white.withValues(alpha: 0.07)
+                    : const Color(0xFFF1F5F9);
+            final borderColor =
+                isDark
+                    ? Colors.white.withValues(alpha: 0.15)
+                    : const Color(0xFFD1D5DB);
+
             return Container(
               height: MediaQuery.of(context).size.height * 0.75,
-              decoration: const BoxDecoration(
-                color: Color(0xFF0F1428),
-                borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+              decoration: BoxDecoration(
+                color: sheetBg,
+                borderRadius: const BorderRadius.vertical(
+                  top: Radius.circular(20),
+                ),
               ),
               padding: const EdgeInsets.all(16),
               child: Column(
@@ -477,7 +803,7 @@ class _PassengerBookingFlowPageState extends State<PassengerBookingFlowPage> {
                   Text(
                     title,
                     style: GoogleFonts.poppins(
-                      color: Colors.white,
+                      color: textColor,
                       fontSize: 18,
                       fontWeight: FontWeight.w700,
                     ),
@@ -492,10 +818,24 @@ class _PassengerBookingFlowPageState extends State<PassengerBookingFlowPage> {
                           target: initial,
                           zoom: 14,
                         ),
-                        onTap: (point) {
+                        zoomGesturesEnabled: true,
+                        scrollGesturesEnabled: true,
+                        rotateGesturesEnabled: true,
+                        tiltGesturesEnabled: true,
+                        onTap: (point) async {
+                          final currentPoint = point;
                           setSheetState(() {
-                            selected = point;
-                            addressController.text = 'Selected location';
+                            selected = currentPoint;
+                            addressController.text = 'Loading location...';
+                          });
+                          final resolved = await _resolveAddressFromPoint(
+                            currentPoint,
+                          );
+                          if (!context.mounted) return;
+                          setSheetState(() {
+                            if (selected == currentPoint) {
+                              addressController.text = resolved;
+                            }
                           });
                         },
                         markers: <Marker>{
@@ -510,25 +850,216 @@ class _PassengerBookingFlowPageState extends State<PassengerBookingFlowPage> {
                   const SizedBox(height: 12),
                   TextField(
                     controller: addressController,
-                    style: GoogleFonts.poppins(color: Colors.white),
+                    onChanged: (value) {
+                      autocompleteDebounce?.cancel();
+                      if (value.trim().isEmpty ||
+                          value == _lang.t('common.selectedLocation') ||
+                          value == _lang.t('book.locatingAddress')) {
+                        setSheetState(() {
+                          autocompleteSuggestions.clear();
+                          suggestionError = '';
+                          isSearchingSuggestions = false;
+                        });
+                        return;
+                      }
+
+                      autocompleteDebounce = Timer(
+                        const Duration(milliseconds: 350),
+                        () async {
+                          if (!context.mounted) return;
+                          setSheetState(() {
+                            isSearchingSuggestions = true;
+                            suggestionError = '';
+                          });
+
+                          // Try native Places SDK first (if implemented). If
+                          // native suggestions are unavailable, fall back to
+                          // the existing HTTP Places autocomplete + geocoding.
+                          final nativeResult = await _nativePlaceSuggestions(
+                            value,
+                          );
+                          if (!context.mounted) return;
+
+                          _PlaceSuggestionResult result;
+                          if (nativeResult.suggestions.isNotEmpty ||
+                              (nativeResult.error != null &&
+                                  nativeResult.error!.isNotEmpty)) {
+                            result = nativeResult;
+                          } else {
+                            result = await _fetchPlaceSuggestions(value);
+                          }
+
+                          if (!context.mounted) return;
+
+                          List<_PlaceSuggestion> suggestions =
+                              result.suggestions;
+                          String fallbackError = result.error ?? '';
+                          if (suggestions.isEmpty) {
+                            final fallback = await _resolveLocationFromQuery(
+                              value,
+                              selected,
+                            );
+                            if (fallback != null) {
+                              suggestions = <_PlaceSuggestion>[
+                                _PlaceSuggestion(
+                                  description: fallback.address,
+                                  placeId: '',
+                                  location: fallback.point,
+                                ),
+                              ];
+                              fallbackError = '';
+                            } else {
+                              if (fallbackError.isEmpty) {
+                                fallbackError =
+                                    'No matching places were found.';
+                              }
+                            }
+                          }
+
+                          setSheetState(() {
+                            autocompleteSuggestions = suggestions;
+                            isSearchingSuggestions = false;
+                            suggestionError = fallbackError;
+                          });
+                        },
+                      );
+                    },
+                    style: GoogleFonts.poppins(color: textColor),
                     decoration: InputDecoration(
                       labelText: 'Address',
-                      labelStyle: GoogleFonts.poppins(color: Colors.white70),
+                      labelStyle: GoogleFonts.poppins(color: labelColor),
                       filled: true,
-                      fillColor: Colors.white.withValues(alpha: 0.07),
+                      fillColor: fieldBg,
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
-                        borderSide: BorderSide(
-                          color: Colors.white.withValues(alpha: 0.15),
-                        ),
+                        borderSide: BorderSide(color: borderColor),
                       ),
                     ),
                   ),
+                  if (isSearchingSuggestions ||
+                      autocompleteSuggestions.isNotEmpty ||
+                      suggestionError.isNotEmpty)
+                    Container(
+                      margin: const EdgeInsets.only(top: 10),
+                      padding: const EdgeInsets.symmetric(
+                        vertical: 8,
+                        horizontal: 0,
+                      ),
+                      decoration: BoxDecoration(
+                        color: fieldBg,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: borderColor),
+                      ),
+                      constraints: const BoxConstraints(maxHeight: 180),
+                      child:
+                          isSearchingSuggestions
+                              ? Padding(
+                                padding: const EdgeInsets.all(14),
+                                child: Row(
+                                  children: <Widget>[
+                                    const SizedBox(
+                                      width: 18,
+                                      height: 18,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    Text(
+                                      'Searching places...',
+                                      style: GoogleFonts.poppins(
+                                        color: textColor,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              )
+                              : autocompleteSuggestions.isNotEmpty
+                              ? ListView.separated(
+                                padding: EdgeInsets.zero,
+                                itemCount: autocompleteSuggestions.length,
+                                separatorBuilder:
+                                    (_, __) => const Divider(height: 1),
+                                itemBuilder: (context, index) {
+                                  final suggestion =
+                                      autocompleteSuggestions[index];
+                                  return ListTile(
+                                    title: Text(
+                                      suggestion.description,
+                                      style: GoogleFonts.poppins(
+                                        color: textColor,
+                                        fontSize: 14,
+                                      ),
+                                    ),
+                                    onTap: () async {
+                                      if (!context.mounted) return;
+                                      setSheetState(() {
+                                        isSearchingSuggestions = true;
+                                        suggestionError = '';
+                                      });
+
+                                      // If the suggestion already has a location (fallback
+                                      // geocoding), use it directly. Otherwise fetch
+                                      // full place details from Places API.
+                                      LatLng? resolvedPoint;
+                                      String resolvedDescription =
+                                          suggestion.description;
+                                      if (suggestion.location != null) {
+                                        resolvedPoint = suggestion.location;
+                                      } else if (suggestion
+                                          .placeId
+                                          .isNotEmpty) {
+                                        final place = await _fetchPlaceDetails(
+                                          suggestion.placeId,
+                                        );
+                                        if (place != null &&
+                                            place.location != null) {
+                                          resolvedPoint = place.location;
+                                          resolvedDescription =
+                                              place.description;
+                                        }
+                                      }
+
+                                      if (!context.mounted) return;
+                                      setSheetState(() {
+                                        if (resolvedPoint != null) {
+                                          selected = resolvedPoint!;
+                                          addressController.text =
+                                              resolvedDescription;
+                                        }
+                                        autocompleteSuggestions.clear();
+                                        isSearchingSuggestions = false;
+                                      });
+                                    },
+                                  );
+                                },
+                              )
+                              : Padding(
+                                padding: const EdgeInsets.all(14),
+                                child: Text(
+                                  suggestionError,
+                                  style: GoogleFonts.poppins(color: labelColor),
+                                ),
+                              ),
+                    ),
                   const Spacer(),
                   SizedBox(
                     width: double.infinity,
                     child: ElevatedButton(
-                      onPressed: () {
+                      onPressed: () async {
+                        final inputText = addressController.text.trim();
+                        if (inputText.isNotEmpty &&
+                            inputText != 'Selected location' &&
+                            inputText != 'Loading location...') {
+                          final resolved = await _resolveLocationFromQuery(
+                            inputText,
+                            selected,
+                          );
+                          if (resolved != null) {
+                            Navigator.of(context).pop(resolved);
+                            return;
+                          }
+                        }
                         Navigator.of(context).pop(
                           _PickedLocation(
                             address: addressController.text.trim(),
@@ -568,22 +1099,22 @@ class _PassengerBookingFlowPageState extends State<PassengerBookingFlowPage> {
     final fare = double.tryParse(_fareController.text.trim()) ?? 0;
 
     if (driverId == null || driverId <= 0) {
-      errors['driver_id'] = 'Driver is required.';
+      errors['driver_id'] = _lang.t('book.driverRequired');
     }
     if (pickup.isEmpty) {
-      errors['pickup_location'] = 'Pickup location is required.';
+      errors['pickup_location'] = _lang.t('book.enterPickup');
     }
     if (dropoff.isEmpty) {
-      errors['dropoff_location'] = 'Dropoff location is required.';
+      errors['dropoff_location'] = _lang.t('book.enterDropoff');
     }
     if (!_validLat(_pickupRequestLat) || !_validLng(_pickupRequestLng)) {
-      errors['pickup_lat'] = 'Pickup coordinates are invalid.';
+      errors['pickup_lat'] = _lang.t('validation.pickupInvalidCoordinates');
     }
     if (!_validLat(_dropoffRequestLat) || !_validLng(_dropoffRequestLng)) {
-      errors['dropoff_lat'] = 'Dropoff coordinates are invalid.';
+      errors['dropoff_lat'] = _lang.t('validation.dropoffInvalidCoordinates');
     }
     if (fare < 0) {
-      errors['fare'] = 'Fare must be greater than or equal to 0.';
+      errors['fare'] = _lang.t('validation.fareNonNegative');
     }
 
     if (errors.isNotEmpty) {
@@ -1018,7 +1549,7 @@ class _PassengerBookingFlowPageState extends State<PassengerBookingFlowPage> {
       final status = _rideRequestStatus;
       if (status.isEmpty) {
         return _ActionConfig(
-          label: 'Send Ride Request',
+          label: _lang.t('book.requestRide'),
           onTap: _submitRideRequest,
         );
       }
@@ -1027,48 +1558,57 @@ class _PassengerBookingFlowPageState extends State<PassengerBookingFlowPage> {
       }
       if (status == 'accepted') {
         return _ActionConfig(
-          label: 'View Driver and Track Trip',
+          label: _lang.t('book.viewDriverTrack'),
           onTap: () => _showMessage('Driver details loaded.'),
         );
       }
       if (status == 'started') {
         return _ActionConfig(
-          label: 'Live Trip View',
+          label: _lang.t('book.liveTripView'),
           onTap: () => _showMessage('Opening live trip view...'),
         );
       }
       if (status == 'completed') {
         return _ActionConfig(
-          label: 'Rate Trip',
+          label: _lang.t('book.rateTrip'),
           onTap: () => _showMessage('Rate trip flow coming next.'),
         );
       }
       return _ActionConfig(
-        label: 'Request Again',
+        label: _lang.t('book.requestAgain'),
         onTap: _clearRideRequestForm,
       );
     }
 
     final status = _bookingStatus;
     if (status.isEmpty) {
-      return _ActionConfig(label: 'Book Now', onTap: _submitBooking);
+      return _ActionConfig(
+        label: _lang.t('book.bookNow'),
+        onTap: _submitBooking,
+      );
     }
     if (status == 'pending') {
-      return _ActionConfig(label: 'Edit Booking', onTap: _editBooking);
+      return _ActionConfig(
+        label: _lang.t('book.editBooking'),
+        onTap: _editBooking,
+      );
     }
     if (status == 'confirmed') {
       return _ActionConfig(
-        label: 'View Ticket',
+        label: _lang.t('book.viewTicket'),
         onTap: () => _showMessage('Ticket details opened.'),
       );
     }
     if (status == 'completed') {
       return _ActionConfig(
-        label: 'Receipt',
+        label: _lang.t('book.receipt'),
         onTap: () => _showMessage('Showing trip receipt.'),
       );
     }
-    return _ActionConfig(label: 'Rebook', onTap: _clearBookingForm);
+    return _ActionConfig(
+      label: _lang.t('book.rebook'),
+      onTap: _clearBookingForm,
+    );
   }
 
   @override
@@ -1081,7 +1621,7 @@ class _PassengerBookingFlowPageState extends State<PassengerBookingFlowPage> {
           isDark ? const Color(0xFF0B1020) : const Color(0xFFEFF4FF),
       appBar: AppBar(
         title: Text(
-          'Travel',
+          _lang.t('nav.book'),
           style: GoogleFonts.poppins(fontWeight: FontWeight.w700),
         ),
         centerTitle: false,
@@ -1147,16 +1687,16 @@ class _PassengerBookingFlowPageState extends State<PassengerBookingFlowPage> {
                     'Your account is not approved yet. Please contact support to continue.',
               ),
             SegmentedButton<_TravelTab>(
-              segments: const <ButtonSegment<_TravelTab>>[
+              segments: <ButtonSegment<_TravelTab>>[
                 ButtonSegment<_TravelTab>(
                   value: _TravelTab.rideRequest,
                   icon: Icon(Icons.local_taxi_rounded),
-                  label: Text('Ride Request'),
+                  label: Text(_lang.t('book.requestRide')),
                 ),
                 ButtonSegment<_TravelTab>(
                   value: _TravelTab.booking,
                   icon: Icon(Icons.confirmation_number_rounded),
-                  label: Text('Booking'),
+                  label: Text(_lang.t('book.title')),
                 ),
               ],
               selected: <_TravelTab>{_selectedTab},
@@ -1244,15 +1784,15 @@ class _PassengerBookingFlowPageState extends State<PassengerBookingFlowPage> {
                   Expanded(
                     child: Text(
                       _selectedDriver == null
-                          ? 'No driver selected'
-                          : 'Driver selected',
+                          ? _lang.t('book.noDriverSelected')
+                          : _lang.t('book.driverSelected'),
                       style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
                     ),
                   ),
                   TextButton.icon(
                     onPressed: _selectDriver,
                     icon: const Icon(Icons.person_search_rounded, size: 18),
-                    label: const Text('Select driver'),
+                    label: Text(_lang.t('book.selectDriver')),
                   ),
                 ],
               ),
@@ -1266,10 +1806,10 @@ class _PassengerBookingFlowPageState extends State<PassengerBookingFlowPage> {
                 ),
               const SizedBox(height: 8),
               _selectedDriver == null
-                  ? const _EmptyState(
+                  ? _EmptyState(
                     icon: Icons.person_outline_rounded,
-                    title: 'No driver selected',
-                    message: 'Tap Select driver to choose from online drivers.',
+                    title: _lang.t('book.noDriverSelected'),
+                    message: _lang.t('book.tapSelectDriver'),
                   )
                   : _DriverCard(driver: _selectedDriver!),
             ],
@@ -1277,7 +1817,7 @@ class _PassengerBookingFlowPageState extends State<PassengerBookingFlowPage> {
         ),
         const SizedBox(height: 10),
         _LocationInputCard(
-          title: 'Pickup location',
+          title: _lang.t('book.pickupHint'),
           controller: _pickupRequestController,
           onPickMap: _pickRequestPickup,
           lat: _pickupRequestLat,
@@ -1288,7 +1828,7 @@ class _PassengerBookingFlowPageState extends State<PassengerBookingFlowPage> {
         ),
         const SizedBox(height: 10),
         _LocationInputCard(
-          title: 'Dropoff location',
+          title: _lang.t('book.dropoffHint'),
           controller: _dropoffRequestController,
           onPickMap: _pickRequestDropoff,
           lat: _dropoffRequestLat,
@@ -1303,7 +1843,7 @@ class _PassengerBookingFlowPageState extends State<PassengerBookingFlowPage> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
               Text(
-                'Fare Estimator',
+                _lang.t('book.estimatedFare'),
                 style: GoogleFonts.poppins(fontWeight: FontWeight.w700),
               ),
               const SizedBox(height: 10),
@@ -1329,9 +1869,23 @@ class _PassengerBookingFlowPageState extends State<PassengerBookingFlowPage> {
                     ),
                     const SizedBox(width: 8),
                     Expanded(
-                      child: Text(
-                        'System estimate: \$${_fareController.text}',
-                        style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
+                      child: Builder(
+                        builder: (context) {
+                          final usd =
+                              double.tryParse(_fareController.text) ?? 0.0;
+                          const rate = 1465.70; // 1 USD = 1465.70 RWF
+                          final rwf = (usd * rate).round();
+                          final rwfStr = rwf.toString().replaceAllMapped(
+                            RegExp(r"\B(?=(\d{3})+(?!\d))"),
+                            (m) => ',',
+                          );
+                          return Text(
+                            '${_lang.t('book.systemEstimate')}: RWF $rwfStr',
+                            style: GoogleFonts.poppins(
+                              fontWeight: FontWeight.w600,
+                            ),
+                          );
+                        },
                       ),
                     ),
                   ],
@@ -1708,6 +2262,25 @@ class _PickedLocation {
   final LatLng point;
 }
 
+class _PlaceSuggestion {
+  const _PlaceSuggestion({
+    required this.description,
+    required this.placeId,
+    this.location,
+  });
+
+  final String description;
+  final String placeId;
+  final LatLng? location;
+}
+
+class _PlaceSuggestionResult {
+  const _PlaceSuggestionResult({required this.suggestions, this.error});
+
+  final List<_PlaceSuggestion> suggestions;
+  final String? error;
+}
+
 class _SelectionSheet extends StatelessWidget {
   const _SelectionSheet({required this.title, required this.child});
 
@@ -1716,14 +2289,18 @@ class _SelectionSheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final bgColor = isDark ? const Color(0xFF0F1428) : Colors.white;
+    final textColor = isDark ? Colors.white : const Color(0xFF0F172A);
+
     return Container(
       padding: const EdgeInsets.all(16),
       constraints: BoxConstraints(
         maxHeight: MediaQuery.of(context).size.height * 0.8,
       ),
-      decoration: const BoxDecoration(
-        color: Color(0xFF0F1428),
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      decoration: BoxDecoration(
+        color: bgColor,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
       ),
       child: SingleChildScrollView(
         child: Column(
@@ -1732,7 +2309,7 @@ class _SelectionSheet extends StatelessWidget {
             Text(
               title,
               style: GoogleFonts.poppins(
-                color: Colors.white,
+                color: textColor,
                 fontSize: 18,
                 fontWeight: FontWeight.w700,
               ),
@@ -2037,6 +2614,7 @@ class _LocationInputCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final lang = PassengerLanguageService.instance;
     return _SectionCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -2051,14 +2629,14 @@ class _LocationInputCard extends StatelessWidget {
               TextButton.icon(
                 onPressed: onPickMap,
                 icon: const Icon(Icons.map_outlined, size: 18),
-                label: const Text('Pick on map'),
+                label: Text(lang.t('book.tapToSetOnMap')),
               ),
             ],
           ),
           TextField(
             controller: controller,
             decoration: InputDecoration(
-              hintText: 'Enter address',
+              hintText: lang.t('common.enterAddress'),
               errorText: error,
             ),
           ),
@@ -2081,8 +2659,8 @@ class _LocationInputCard extends StatelessWidget {
                 Expanded(
                   child: Text(
                     lat == null || lng == null
-                        ? 'No map pin selected yet'
-                        : 'Location pinned on map',
+                        ? lang.t('common.noMapPinSelected')
+                        : lang.t('common.locationPinnedOnMap'),
                     style: GoogleFonts.poppins(fontSize: 12),
                   ),
                 ),
@@ -2095,7 +2673,7 @@ class _LocationInputCard extends StatelessWidget {
   }
 }
 
-class _DirectionPreviewCard extends StatelessWidget {
+class _DirectionPreviewCard extends StatefulWidget {
   const _DirectionPreviewCard({
     required this.title,
     required this.from,
@@ -2107,18 +2685,258 @@ class _DirectionPreviewCard extends StatelessWidget {
   final LatLng to;
 
   @override
+  State<_DirectionPreviewCard> createState() => _DirectionPreviewCardState();
+}
+
+class _DirectionPreviewCardState extends State<_DirectionPreviewCard> {
+  Set<Polyline> _polylines = {};
+  Set<Marker> _markers = {};
+  String? _durationText;
+  String? _distanceText;
+  String? _error;
+  bool _loading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _updateRoute();
+  }
+
+  @override
+  void didUpdateWidget(covariant _DirectionPreviewCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.from != widget.from || oldWidget.to != widget.to) {
+      _updateRoute();
+    }
+  }
+
+  Future<void> _updateRoute() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+      _durationText = null;
+      _distanceText = null;
+      _polylines = {};
+      _markers = {};
+    });
+
+    try {
+      final params = {
+        'origin': '${widget.from.latitude},${widget.from.longitude}',
+        'destination': '${widget.to.latitude},${widget.to.longitude}',
+        'mode': 'driving',
+        'language': 'en',
+        'key': _PassengerBookingFlowPageState._kGooglePlacesApiKey,
+      };
+      final uri = Uri.https(
+        'maps.googleapis.com',
+        '/maps/api/directions/json',
+        params,
+      );
+      final resp = await http.get(uri);
+
+      if (resp.statusCode == 200) {
+        final data = json.decode(resp.body) as Map<String, dynamic>;
+        final status = (data['status'] as String?) ?? 'UNKNOWN';
+        if (status == 'OK' && (data['routes'] as List).isNotEmpty) {
+          final route = (data['routes'] as List).first as Map<String, dynamic>;
+          final overview = route['overview_polyline'] as Map<String, dynamic>?;
+          final pointsEncoded =
+              overview != null ? (overview['points'] as String?) : null;
+
+          final legs = (route['legs'] as List<dynamic>?) ?? <dynamic>[];
+          if (legs.isNotEmpty) {
+            final leg = legs.first as Map<String, dynamic>;
+            _durationText = (leg['duration']?['text'] as String?) ?? null;
+            _distanceText = (leg['distance']?['text'] as String?) ?? null;
+          }
+
+          List<LatLng> decoded;
+          if (pointsEncoded != null && pointsEncoded.isNotEmpty) {
+            decoded = _decodePolyline(pointsEncoded);
+          } else {
+            decoded = [widget.from, widget.to];
+          }
+
+          _polylines = {
+            Polyline(
+              polylineId: const PolylineId('route_preview'),
+              points: decoded,
+              color: const Color(0xFF3B82F6),
+              width: 5,
+            ),
+          };
+          _markers = {
+            Marker(
+              markerId: const MarkerId('from_marker'),
+              position: widget.from,
+              icon: BitmapDescriptor.defaultMarkerWithHue(
+                BitmapDescriptor.hueGreen,
+              ),
+            ),
+            Marker(markerId: const MarkerId('to_marker'), position: widget.to),
+          };
+        } else {
+          _error = 'Directions unavailable: $status';
+          // fallback: straight line + local distance & ETA estimate
+          final meters = Geolocator.distanceBetween(
+            widget.from.latitude,
+            widget.from.longitude,
+            widget.to.latitude,
+            widget.to.longitude,
+          );
+          final km = (meters / 1000);
+          _distanceText = '${km.toStringAsFixed(2)} km';
+          // Estimate travel time using an average urban speed (30 km/h)
+          final avgKmh = 30.0;
+          final minutes = (km / avgKmh) * 60;
+          _durationText = '${minutes.round()} mins';
+
+          _polylines = {
+            Polyline(
+              polylineId: const PolylineId('route_preview'),
+              points: [widget.from, widget.to],
+              color: const Color(0xFF3B82F6),
+              width: 3,
+            ),
+          };
+          _markers = {
+            Marker(
+              markerId: const MarkerId('from_marker'),
+              position: widget.from,
+            ),
+            Marker(markerId: const MarkerId('to_marker'), position: widget.to),
+          };
+        }
+      } else {
+        _error = 'Failed to fetch directions (${resp.statusCode})';
+        _polylines = {
+          Polyline(
+            polylineId: const PolylineId('route_preview'),
+            points: [widget.from, widget.to],
+            color: const Color(0xFF3B82F6),
+            width: 3,
+          ),
+        };
+        _markers = {
+          Marker(
+            markerId: const MarkerId('from_marker'),
+            position: widget.from,
+          ),
+          Marker(markerId: const MarkerId('to_marker'), position: widget.to),
+        };
+      }
+    } catch (e) {
+      _error = e.toString();
+      _polylines = {
+        Polyline(
+          polylineId: const PolylineId('route_preview'),
+          points: [widget.from, widget.to],
+          color: const Color(0xFF3B82F6),
+          width: 3,
+        ),
+      };
+      _markers = {
+        Marker(markerId: const MarkerId('from_marker'), position: widget.from),
+        Marker(markerId: const MarkerId('to_marker'), position: widget.to),
+      };
+    } finally {
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+      });
+    }
+  }
+
+  List<LatLng> _decodePolyline(String encoded) {
+    final List<LatLng> points = <LatLng>[];
+    int index = 0;
+    int len = encoded.length;
+    int lat = 0;
+    int lng = 0;
+
+    while (index < len) {
+      int shift = 0;
+      int result = 0;
+      while (true) {
+        final int b = encoded.codeUnitAt(index++) - 63;
+        result |= (b & 0x1f) << shift;
+        shift += 5;
+        if (b < 0x20) break;
+      }
+      final int dlat = ((result & 1) != 0) ? ~(result >> 1) : (result >> 1);
+      lat += dlat;
+
+      shift = 0;
+      result = 0;
+      while (true) {
+        final int b = encoded.codeUnitAt(index++) - 63;
+        result |= (b & 0x1f) << shift;
+        shift += 5;
+        if (b < 0x20) break;
+      }
+      final int dlng = ((result & 1) != 0) ? ~(result >> 1) : (result >> 1);
+      lng += dlng;
+
+      points.add(LatLng(lat / 1e5, lng / 1e5));
+    }
+    return points;
+  }
+
+  @override
   Widget build(BuildContext context) {
     final center = LatLng(
-      (from.latitude + to.latitude) / 2,
-      (from.longitude + to.longitude) / 2,
+      (widget.from.latitude + widget.to.latitude) / 2,
+      (widget.from.longitude + widget.to.longitude) / 2,
     );
 
     return _SectionCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(title, style: GoogleFonts.poppins(fontWeight: FontWeight.w700)),
-          const SizedBox(height: 10),
+          Text(
+            widget.title,
+            style: GoogleFonts.poppins(fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(height: 8),
+          if (_loading) ...[
+            const SizedBox(height: 6),
+            LinearProgressIndicator(minHeight: 4),
+          ],
+          if (_durationText != null || _distanceText != null || _error != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 8.0, bottom: 6.0),
+              child: Row(
+                children: [
+                  if (_durationText != null)
+                    Text(
+                      '$_durationText',
+                      style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
+                    ),
+                  if (_durationText != null && _distanceText != null)
+                    const SizedBox(width: 8),
+                  if (_distanceText != null)
+                    Text(
+                      '• $_distanceText',
+                      style: GoogleFonts.poppins(
+                        color: const Color(0xFF64748B),
+                      ),
+                    ),
+                  if (_error != null) ...[
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        _error!,
+                        style: GoogleFonts.poppins(
+                          color: const Color(0xFFEF4444),
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          const SizedBox(height: 6),
           ClipRRect(
             borderRadius: BorderRadius.circular(12),
             child: SizedBox(
@@ -2129,24 +2947,33 @@ class _DirectionPreviewCard extends StatelessWidget {
                 zoomControlsEnabled: false,
                 compassEnabled: false,
                 mapToolbarEnabled: false,
-                markers: {
-                  Marker(
-                    markerId: const MarkerId('from_marker'),
-                    position: from,
-                    icon: BitmapDescriptor.defaultMarkerWithHue(
-                      BitmapDescriptor.hueGreen,
-                    ),
-                  ),
-                  Marker(markerId: const MarkerId('to_marker'), position: to),
-                },
-                polylines: {
-                  Polyline(
-                    polylineId: const PolylineId('route_preview'),
-                    points: [from, to],
-                    color: const Color(0xFF3B82F6),
-                    width: 5,
-                  ),
-                },
+                markers:
+                    _markers.isEmpty
+                        ? {
+                          Marker(
+                            markerId: const MarkerId('from_marker'),
+                            position: widget.from,
+                            icon: BitmapDescriptor.defaultMarkerWithHue(
+                              BitmapDescriptor.hueGreen,
+                            ),
+                          ),
+                          Marker(
+                            markerId: const MarkerId('to_marker'),
+                            position: widget.to,
+                          ),
+                        }
+                        : _markers,
+                polylines:
+                    _polylines.isEmpty
+                        ? {
+                          Polyline(
+                            polylineId: const PolylineId('route_preview'),
+                            points: [widget.from, widget.to],
+                            color: const Color(0xFF3B82F6),
+                            width: 3,
+                          ),
+                        }
+                        : _polylines,
               ),
             ),
           ),

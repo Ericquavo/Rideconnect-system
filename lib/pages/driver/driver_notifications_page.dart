@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'dart:async';
+import 'dart:convert';
 
 import '../../services/driver_api.dart';
 import '../../services/driver_language_service.dart';
+import '../../services/driver_preferences_service.dart';
 
 class DriverNotificationsPage extends StatefulWidget {
   const DriverNotificationsPage({super.key});
@@ -18,7 +20,7 @@ class _DriverNotificationsPageState extends State<DriverNotificationsPage> {
   final DriverApi _api = DriverApi.instance;
 
   bool _loading = true;
-  bool _actionBusy = false;
+  final Map<String, bool> _processingActions = <String, bool>{};
   bool _unreadOnly = false;
   String? _error;
   List<Map<String, dynamic>> _items = <Map<String, dynamic>>[];
@@ -29,17 +31,31 @@ class _DriverNotificationsPageState extends State<DriverNotificationsPage> {
     super.initState();
     _lang.ensureInitialized();
     _lang.languageNotifier.addListener(_onLanguageChanged);
-    _loadNotifications();
-    // Auto-refresh notifications every 15 seconds for dynamic updates
-    _refreshTimer = Timer.periodic(
-      const Duration(seconds: 15),
-      (_) => _loadNotifications(),
+    DriverPreferencesService.appNotificationsNotifier.addListener(
+      _onPreferenceChanged,
     );
+    DriverPreferencesService.rideRequestAlertsNotifier.addListener(
+      _onPreferenceChanged,
+    );
+    DriverPreferencesService.autoRefreshRequestsNotifier.addListener(
+      _onPreferenceChanged,
+    );
+    _loadNotifications();
+    _syncRefreshTimer();
   }
 
   @override
   void dispose() {
     _lang.languageNotifier.removeListener(_onLanguageChanged);
+    DriverPreferencesService.appNotificationsNotifier.removeListener(
+      _onPreferenceChanged,
+    );
+    DriverPreferencesService.rideRequestAlertsNotifier.removeListener(
+      _onPreferenceChanged,
+    );
+    DriverPreferencesService.autoRefreshRequestsNotifier.removeListener(
+      _onPreferenceChanged,
+    );
     _refreshTimer?.cancel();
     super.dispose();
   }
@@ -49,7 +65,35 @@ class _DriverNotificationsPageState extends State<DriverNotificationsPage> {
     setState(() {});
   }
 
+  void _onPreferenceChanged() {
+    if (!mounted) return;
+    _syncRefreshTimer();
+    setState(() {});
+  }
+
+  bool get _canAutoRefresh =>
+      DriverPreferencesService.appNotifications &&
+      DriverPreferencesService.rideRequestAlerts &&
+      DriverPreferencesService.autoRefreshRequests;
+
+  void _syncRefreshTimer() {
+    if (_canAutoRefresh) {
+      _refreshTimer ??= Timer.periodic(
+        const Duration(seconds: 15),
+        (_) => _loadNotifications(),
+      );
+      return;
+    }
+
+    _refreshTimer?.cancel();
+    _refreshTimer = null;
+  }
+
   Future<void> _loadNotifications() async {
+    if (!_canAutoRefresh && _items.isNotEmpty) {
+      return;
+    }
+
     setState(() {
       _loading = true;
       _error = null;
@@ -117,15 +161,129 @@ class _DriverNotificationsPageState extends State<DriverNotificationsPage> {
     Map<String, dynamic> item, {
     required bool accepted,
   }) async {
-    if (_actionBusy) return;
-
     final notificationId = _notificationId(item);
-    final requestId = _extractId(item, const <String>[
-      'request_id',
+
+    // Prevent duplicate processing of same notification
+    final actionKey = _notificationKey(item);
+    if (_processingActions.containsKey(actionKey)) return;
+    _processingActions[actionKey] = accepted;
+
+    // Extract ride ID (most important for the backend) - comprehensive search
+    var rideId = _extractId(item, const <String>[
+      'ride_id',
       'ride_request_id',
-      'trip_request_id',
+      'rideId',
+      'rideid',
+      'trip_id',
+      'tripId',
     ]);
-    final bookingId = _extractId(item, const <String>['booking_id']);
+
+    // Check in data map if not found
+    if (rideId.isEmpty) {
+      final data = _extractDataMap(item);
+      rideId = _extractString(data, const <String>[
+        'ride_id',
+        'rideId',
+        'trip_id',
+        'tripId',
+        'id',
+      ]);
+      if (rideId.isEmpty) {
+        rideId = _extractNestedObjectId(data, const <String>['ride', 'trip']);
+      }
+    }
+
+    // Check in payload object
+    if (rideId.isEmpty) {
+      final payload = item['payload'];
+      if (payload is Map<String, dynamic>) {
+        rideId = _extractString(payload, const <String>[
+          'ride_id',
+          'rideId',
+          'trip_id',
+          'tripId',
+          'id',
+        ]);
+      }
+    }
+
+    // Check in nested trip object
+    if (rideId.isEmpty) {
+      final trip = item['trip'];
+      if (trip is Map<String, dynamic>) {
+        rideId = _extractString(trip, const <String>[
+          'id',
+          'ride_id',
+          'rideId',
+          'trip_id',
+          'tripId',
+        ]);
+      }
+    }
+
+    // Check in nested ride object
+    if (rideId.isEmpty) {
+      final ride = item['ride'];
+      if (ride is Map<String, dynamic>) {
+        rideId = _extractString(ride, const <String>[
+          'id',
+          'ride_id',
+          'rideId',
+          '_id',
+        ]);
+      }
+    }
+
+    // Debug logging
+    print('[DRIVER_NOTIFICATIONS] Full notification: ${jsonEncode(item)}');
+    print('[DRIVER_NOTIFICATIONS] Extracted rideId: "$rideId"');
+
+    // Try to extract request/booking ID with extensive fallbacks
+    var requestId = _extractId(item, const <String>[
+      'request_id',
+      'trip_request_id',
+      'reference_id',
+      'referenceId',
+      'request_id_string',
+    ]);
+
+    // If still not found, check in data map
+    if (requestId.isEmpty) {
+      final data = _extractDataMap(item);
+      requestId = _extractString(data, const <String>[
+        'request_id',
+        'trip_request_id',
+        'trip_id',
+        'reference_id',
+        'id',
+      ]);
+      if (requestId.isEmpty) {
+        requestId = _extractNestedObjectId(data, const <String>[
+          'request',
+          'trip_request',
+        ]);
+      }
+    }
+
+    var bookingId = _extractId(item, const <String>[
+      'booking_id',
+      'order_id',
+      'orderId',
+      'bookingId',
+    ]);
+
+    // If still not found, check in data map
+    if (bookingId.isEmpty) {
+      final data = _extractDataMap(item);
+      bookingId = _extractString(data, const <String>[
+        'booking_id',
+        'order_id',
+        'orderId',
+      ]);
+      if (bookingId.isEmpty) {
+        bookingId = _extractNestedObjectId(data, const <String>['booking']);
+      }
+    }
 
     // Extract passenger ID with multiple fallbacks including nested objects
     var passengerId = _extractString(item, const <String>[
@@ -134,6 +292,9 @@ class _DriverNotificationsPageState extends State<DriverNotificationsPage> {
       'recipient_id',
       'rider_id',
       'passengerId',
+      'from_user_id',
+      'sender_id',
+      'from_id',
     ]);
 
     // Check nested passenger object if not found at top level
@@ -149,74 +310,235 @@ class _DriverNotificationsPageState extends State<DriverNotificationsPage> {
       }
     }
 
+    // Check in data map
+    if (passengerId.isEmpty) {
+      final data = _extractDataMap(item);
+      passengerId = _extractString(data, const <String>[
+        'passenger_id',
+        'user_id',
+        'rider_id',
+        'from_user_id',
+        'from_id',
+      ]);
+    }
+
+    // Try to extract from nested data structures
+    if (passengerId.isEmpty) {
+      final payload = item['payload'];
+      if (payload is Map<String, dynamic>) {
+        passengerId = _extractString(payload, const <String>[
+          'passenger_id',
+          'user_id',
+          'from_id',
+          'rider_id',
+        ]);
+      }
+    }
+
+    // Additional fallback: try to get passenger info from notification metadata
+    if (passengerId.isEmpty) {
+      final from = item['from'];
+      if (from is Map<String, dynamic>) {
+        passengerId = _extractString(from, const <String>['id', '_id']);
+      } else if (from is String) {
+        passengerId = from;
+      }
+    }
+
     final passengerName = _extractString(item, const <String>[
       'passenger_name',
       'passenger',
       'name',
+      'user_name',
+      'from_name',
     ]);
     final pickup = _extractString(item, const <String>[
       'pickup',
       'pickup_address',
       'pickup_location',
+      'from',
+      'start_location',
     ]);
     final dropoff = _extractString(item, const <String>[
       'dropoff',
       'dropoff_address',
       'dropoff_location',
       'destination',
+      'to',
+      'end_location',
     ]);
 
     final isBooking = bookingId.isNotEmpty || _isBookingType(item);
-    final actionId = isBooking ? bookingId : requestId;
 
-    // Validate request/booking ID
+    // Prefer ride_id, then booking_id, then request_id
+    final actionId =
+        rideId.isNotEmpty ? rideId : (isBooking ? bookingId : requestId);
+
+    // Validate action ID
     if (actionId.isEmpty) {
       final errorMsg =
-          isBooking
-              ? 'Booking ID is missing for this notification.'
-              : 'Request id is missing for this notification.';
+          'Request/Booking/Ride ID is missing for this notification.';
       if (!mounted) return;
+      _processingActions.remove(actionKey);
       _showSnack(errorMsg, isError: true);
       return;
     }
 
-    // Validate passenger ID
-    if (passengerId.isEmpty) {
-      if (!mounted) return;
-      _showSnack(
-        'Passenger ID is missing for this notification.',
-        isError: true,
-      );
-      return;
+    // Update UI to show this notification is processing
+    if (mounted) {
+      setState(() {});
     }
-
-    setState(() => _actionBusy = true);
     try {
-      // Execute driver action first
-      if (isBooking) {
-        if (accepted) {
-          await _api.confirmBooking(actionId);
-        } else {
-          await _api.cancelBooking(actionId);
-        }
-      } else {
-        if (accepted) {
-          await _api.acceptRequest(actionId);
-        } else {
-          await _api.rejectRequest(actionId);
+      // Log notification details for debugging
+      print('[DRIVER_NOTIFICATIONS] Processing single notification:');
+      print(
+        '[DRIVER_NOTIFICATIONS] IDs - ride: "$rideId", request: "$requestId", booking: "$bookingId"',
+      );
+
+      // Strategy: Try available IDs in order of priority, using different endpoint types
+      bool success = false;
+      String lastError = '';
+
+      // Try 1: Use trip request endpoints with request_id (primary - this is what we should use)
+      if (!success && requestId.isNotEmpty) {
+        try {
+          print(
+            '[DRIVER_NOTIFICATIONS] [1/3] Trying trip request endpoint with request_id=$requestId',
+          );
+          if (accepted) {
+            await _api.acceptRequest(
+              requestId,
+              rideId: rideId,
+              requestId: requestId,
+              bookingId: bookingId,
+            );
+          } else {
+            await _api.rejectRequest(
+              requestId,
+              rideId: rideId,
+              requestId: requestId,
+              bookingId: bookingId,
+            );
+          }
+          success = true;
+          print(
+            '[DRIVER_NOTIFICATIONS] ✓ SUCCESS: Trip request endpoint accepted with request_id',
+          );
+        } catch (e) {
+          lastError = e.toString().replaceFirst('Exception: ', '');
+          print(
+            '[DRIVER_NOTIFICATIONS] ✗ FAILED: Trip request endpoint - $lastError',
+          );
         }
       }
 
-      // Notify passenger of decision
-      final notified = await _api.notifyPassengerDecision(
-        passengerId: passengerId,
-        accepted: accepted,
-        bookingDecision: isBooking,
-        passengerName: passengerName,
-        referenceId: actionId,
-        pickup: pickup,
-        dropoff: dropoff,
-      );
+      // Try 2: Try with ride_id as fallback
+      if (!success && rideId.isNotEmpty) {
+        try {
+          print(
+            '[DRIVER_NOTIFICATIONS] [2/3] Trying ride endpoint with ride_id=$rideId',
+          );
+          if (accepted) {
+            await _api.acceptRequest(
+              rideId,
+              rideId: rideId,
+              requestId: requestId,
+              bookingId: bookingId,
+            );
+          } else {
+            await _api.rejectRequest(
+              rideId,
+              rideId: rideId,
+              requestId: requestId,
+              bookingId: bookingId,
+            );
+          }
+          success = true;
+          print(
+            '[DRIVER_NOTIFICATIONS] ✓ SUCCESS: Ride endpoint accepted with ride_id',
+          );
+        } catch (e) {
+          lastError = e.toString().replaceFirst('Exception: ', '');
+          print('[DRIVER_NOTIFICATIONS] ✗ FAILED: Ride endpoint - $lastError');
+        }
+      }
+
+      // Try 3: Use booking endpoints if we have booking_id
+      if (!success && bookingId.isNotEmpty) {
+        try {
+          print(
+            '[DRIVER_NOTIFICATIONS] [3/3] Trying booking endpoint with booking_id=$bookingId',
+          );
+          if (accepted) {
+            await _api.confirmBooking(bookingId);
+          } else {
+            await _api.cancelBooking(bookingId);
+          }
+          success = true;
+          print('[DRIVER_NOTIFICATIONS] ✓ SUCCESS: Booking endpoint succeeded');
+        } catch (e) {
+          lastError = e.toString().replaceFirst('Exception: ', '');
+          print(
+            '[DRIVER_NOTIFICATIONS] ✗ FAILED: Booking endpoint - $lastError',
+          );
+        }
+      }
+
+      // Try 4: Fallback - use ride_id as numeric
+      if (!success && rideId.isNotEmpty) {
+        try {
+          print(
+            '[DRIVER_NOTIFICATIONS] [4/4] Fallback: Using ride_id as direct ID: $rideId',
+          );
+          final intId = int.tryParse(rideId);
+          if (intId != null && intId > 0) {
+            if (accepted) {
+              await _api.acceptRequest(
+                intId,
+                rideId: rideId,
+                requestId: requestId,
+                bookingId: bookingId,
+              );
+            } else {
+              await _api.rejectRequest(
+                intId,
+                rideId: rideId,
+                requestId: requestId,
+                bookingId: bookingId,
+              );
+            }
+            success = true;
+            print('[DRIVER_NOTIFICATIONS] ✓ SUCCESS: Fallback accepted');
+          }
+        } catch (e) {
+          lastError = e.toString().replaceFirst('Exception: ', '');
+          print('[DRIVER_NOTIFICATIONS] ✗ FAILED: Fallback - $lastError');
+        }
+      }
+
+      if (!success) {
+        final detailError = 'Last error: $lastError';
+        throw Exception(
+          'Could not process ride action. $detailError\nIDs: ride=$rideId, request=$requestId, booking=$bookingId',
+        );
+      }
+
+      // Attempt to notify passenger if passenger ID is available
+      if (passengerId.isNotEmpty) {
+        try {
+          await _api.notifyPassengerDecision(
+            passengerId: passengerId,
+            accepted: accepted,
+            bookingDecision: isBooking,
+            passengerName: passengerName,
+            referenceId: actionId,
+            pickup: pickup,
+            dropoff: dropoff,
+          );
+        } catch (_) {
+          // Continue even if passenger notification fails
+        }
+      }
 
       // Mark notification as read if it has an ID
       if (notificationId > 0) {
@@ -229,45 +551,28 @@ class _DriverNotificationsPageState extends State<DriverNotificationsPage> {
 
       if (!mounted) return;
 
-      // Update local UI to reflect the change
-      setState(() {
-        final index = _items.indexOf(item);
-        if (index >= 0) {
-          final current = Map<String, dynamic>.from(_items[index]);
-          final data = _extractDataMap(current);
-          data['status'] = accepted ? 'accepted' : 'rejected';
-          data['action_required'] = false;
-          current['status'] = accepted ? 'accepted' : 'rejected';
-          current['read'] = true;
-          current['data'] = data;
-          _items[index] = current;
-        }
-      });
+      // Show user feedback immediately (don't wait for refresh)
+      _showSnack(
+        accepted
+            ? 'Ride request accepted! ✓'
+            : 'Ride request rejected. Passenger notified.',
+        isError: false,
+      );
 
-      // Show user feedback
-      if (notified) {
-        _showSnack(
-          accepted
-              ? 'Ride request accepted. Passenger has been notified.'
-              : 'Ride request rejected. Passenger has been notified.',
-          isError: false,
-        );
-      } else {
-        _showSnack(
-          'Action completed. Passenger notification pending.',
-          isError: false,
-        );
+      // Refresh only after a slight delay to ensure backend processed the change
+      await Future<void>.delayed(const Duration(milliseconds: 600));
+      if (mounted) {
+        await _loadNotifications();
       }
-
-      // Refresh notifications list
-      await _loadNotifications();
     } catch (e) {
       if (!mounted) return;
       final errorMsg = e.toString().replaceFirst('Exception: ', '');
       _showSnack(errorMsg, isError: true);
     } finally {
+      // Remove this notification from processing state
+      _processingActions.remove(actionKey);
       if (mounted) {
-        setState(() => _actionBusy = false);
+        setState(() {});
       }
     }
   }
@@ -280,6 +585,12 @@ class _DriverNotificationsPageState extends State<DriverNotificationsPage> {
 
   int _notificationId(Map<String, dynamic> item) {
     return _extractInt(item, const <String>['id', 'notification_id']);
+  }
+
+  String _notificationKey(Map<String, dynamic> item) {
+    final id = _extractString(item, const <String>['id', 'notification_id']);
+    if (id.isNotEmpty) return id;
+    return item.hashCode.toString();
   }
 
   Map<String, dynamic> _extractDataMap(Map<String, dynamic> source) {
@@ -313,7 +624,13 @@ class _DriverNotificationsPageState extends State<DriverNotificationsPage> {
     }
 
     // Check deeply nested structures
-    for (final nestedKey in ['notification_data', 'payload', 'metadata']) {
+    for (final nestedKey in [
+      'notification_data',
+      'payload',
+      'metadata',
+      'content',
+      'extra',
+    ]) {
       final nested = source[nestedKey];
       if (nested is Map<String, dynamic>) {
         for (final key in keys) {
@@ -353,6 +670,32 @@ class _DriverNotificationsPageState extends State<DriverNotificationsPage> {
     if (direct.isNotEmpty) return direct;
     final numeric = _extractInt(source, keys);
     return numeric > 0 ? '$numeric' : '';
+  }
+
+  String _extractNestedObjectId(
+    Map<String, dynamic> source,
+    List<String> keys,
+  ) {
+    for (final key in keys) {
+      final nested = source[key];
+      if (nested is Map<String, dynamic>) {
+        final nestedId = _extractId(nested, const <String>[
+          'id',
+          '_id',
+          'ride_id',
+          'trip_id',
+          'request_id',
+        ]);
+        if (nestedId.isNotEmpty) return nestedId;
+      } else if (nested is String) {
+        final text = nested.trim();
+        if (text.isNotEmpty) return text;
+      } else if (nested is num) {
+        final text = nested.toInt().toString();
+        if (text.isNotEmpty) return text;
+      }
+    }
+    return '';
   }
 
   int _toInt(dynamic value) {
@@ -622,50 +965,130 @@ class _DriverNotificationsPageState extends State<DriverNotificationsPage> {
     Color textSecondary,
     Color cardBg,
   ) {
-    return Container(
-      margin: const EdgeInsets.only(top: 10),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: cardBg,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(
-          color:
-              _isRead(item)
-                  ? Colors.transparent
-                  : const Color(0xFF6C63FF).withValues(alpha: 0.45),
+    final isRead = _isRead(item);
+    final isAction = _isActionRequired(item);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    // Enhanced styling for read vs unread
+    final backgroundColor =
+        isRead
+            ? cardBg
+            : (isDark
+                ? const Color(0xFF1E293B).withValues(alpha: 0.6)
+                : const Color(0xFFE8EEFF));
+
+    final borderColor =
+        isRead
+            ? (isDark
+                ? Colors.white.withValues(alpha: 0.1)
+                : const Color(0xFFE2E8F0))
+            : const Color(0xFF6C63FF).withValues(alpha: 0.6);
+
+    return GestureDetector(
+      onTap: () => _showNotificationDetails(item),
+      child: Container(
+        margin: const EdgeInsets.only(top: 10),
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: backgroundColor,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: borderColor, width: isRead ? 1 : 2),
+          boxShadow:
+              isRead
+                  ? null
+                  : [
+                    BoxShadow(
+                      color: const Color(0xFF6C63FF).withValues(alpha: 0.15),
+                      blurRadius: 8,
+                      spreadRadius: 1,
+                    ),
+                  ],
         ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  _getNotificationTitle(item),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: GoogleFonts.poppins(
-                    color: textPrimary,
-                    fontWeight: FontWeight.w600,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                // Unread indicator dot
+                if (!isRead)
+                  Container(
+                    width: 10,
+                    height: 10,
+                    decoration: const BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: Color(0xFF6C63FF),
+                    ),
+                    margin: const EdgeInsets.only(right: 8),
+                  )
+                else
+                  SizedBox(
+                    width: 10,
+                    child: Icon(
+                      Icons.check_circle,
+                      color: const Color(0xFF10B981).withValues(alpha: 0.7),
+                      size: 10,
+                    ),
+                  ),
+                Expanded(
+                  child: Text(
+                    _getNotificationTitle(item),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: GoogleFonts.poppins(
+                      color: textPrimary,
+                      fontWeight: isRead ? FontWeight.w500 : FontWeight.w700,
+                      fontSize: isRead ? 14 : 15,
+                    ),
                   ),
                 ),
+                const SizedBox(width: 8),
+                if (isAction)
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFF5E5B).withValues(alpha: 0.2),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      'Action',
+                      style: GoogleFonts.poppins(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w600,
+                        color: const Color(0xFFFF5E5B),
+                      ),
+                    ),
+                  ),
+                const SizedBox(width: 4),
+                Text(
+                  _timeLabel(_createdAt(item)),
+                  style: GoogleFonts.poppins(
+                    color: textSecondary,
+                    fontSize: 11,
+                    fontStyle: isRead ? FontStyle.italic : FontStyle.normal,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              _getNotificationBody(item),
+              style: GoogleFonts.poppins(
+                color: textSecondary,
+                fontWeight: isRead ? FontWeight.w400 : FontWeight.w500,
+                fontSize: isRead ? 13 : 13.5,
               ),
-              const SizedBox(width: 8),
-              Text(
-                _timeLabel(_createdAt(item)),
-                style: GoogleFonts.poppins(color: textSecondary, fontSize: 11),
-              ),
-            ],
-          ),
-          const SizedBox(height: 4),
-          Text(
-            _getNotificationBody(item),
-            style: GoogleFonts.poppins(color: textSecondary),
-          ),
-          const SizedBox(height: 10),
-          Wrap(spacing: 8, runSpacing: 6, children: _buildActionButtons(item)),
-        ],
+            ),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              runSpacing: 6,
+              children: _buildActionButtons(item),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -696,32 +1119,79 @@ class _DriverNotificationsPageState extends State<DriverNotificationsPage> {
 
   List<Widget> _buildActionButtons(Map<String, dynamic> item) {
     final buttons = <Widget>[];
+    final notificationKey = _notificationKey(item);
+    final bool? processingAction = _processingActions[notificationKey];
+    final isProcessing = processingAction != null;
 
     if (_isActionRequired(item)) {
       buttons.add(
         ElevatedButton.icon(
           onPressed:
-              _actionBusy
+              isProcessing
                   ? null
                   : () => _applyDriverDecision(item, accepted: true),
-          icon: const Icon(Icons.check_rounded, size: 16),
-          label: Text(_lang.t('requests.accept')),
+          icon:
+              processingAction == true
+                  ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                    ),
+                  )
+                  : const Icon(Icons.check_rounded, size: 16),
+          label: Text(
+            processingAction == true ? 'Processing...' : 'Accept',
+            style: GoogleFonts.poppins(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
           style: ElevatedButton.styleFrom(
             backgroundColor: const Color(0xFF10B981),
             foregroundColor: Colors.white,
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
+            elevation: 2,
           ),
         ),
       );
       buttons.add(
         OutlinedButton.icon(
           onPressed:
-              _actionBusy
+              isProcessing
                   ? null
                   : () => _applyDriverDecision(item, accepted: false),
-          icon: const Icon(Icons.close_rounded, size: 16),
-          label: Text(_lang.t('requests.reject')),
+          icon:
+              processingAction == false
+                  ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      valueColor: AlwaysStoppedAnimation<Color>(
+                        Color(0xFFFF5E5B),
+                      ),
+                    ),
+                  )
+                  : const Icon(Icons.close_rounded, size: 16),
+          label: Text(
+            processingAction == false ? 'Processing...' : 'Reject',
+            style: GoogleFonts.poppins(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
           style: OutlinedButton.styleFrom(
             foregroundColor: const Color(0xFFFF5E5B),
+            side: const BorderSide(color: Color(0xFFFF5E5B), width: 1.5),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
           ),
         ),
       );
@@ -730,21 +1200,248 @@ class _DriverNotificationsPageState extends State<DriverNotificationsPage> {
     if (!_isRead(item)) {
       buttons.add(
         OutlinedButton.icon(
-          onPressed: () => _markRead(item),
+          onPressed: isProcessing ? null : () => _markRead(item),
           icon: const Icon(Icons.done_rounded, size: 16),
-          label: Text(_lang.t('notifications.markRead')),
+          label: Text(
+            'Mark read',
+            style: GoogleFonts.poppins(
+              fontSize: 12,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          style: OutlinedButton.styleFrom(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+          ),
         ),
       );
     }
 
     buttons.add(
       OutlinedButton.icon(
-        onPressed: () => _deleteItem(item),
+        onPressed: isProcessing ? null : () => _deleteItem(item),
         icon: const Icon(Icons.delete_outline_rounded, size: 16),
-        label: Text(_lang.t('notifications.delete')),
+        label: Text(
+          'Delete',
+          style: GoogleFonts.poppins(fontSize: 12, fontWeight: FontWeight.w500),
+        ),
+        style: OutlinedButton.styleFrom(
+          foregroundColor: const Color(0xFF64748B),
+          side: const BorderSide(color: Color(0xFFE2E8F0)),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        ),
       ),
     );
 
     return buttons;
+  }
+
+  void _showNotificationDetails(Map<String, dynamic> item) {
+    // Auto-mark as read when opening notification
+    if (!_isRead(item)) {
+      _markRead(item);
+    }
+
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final textPrimary = isDark ? Colors.white : const Color(0xFF0F172A);
+    final textSecondary = isDark ? Colors.white60 : const Color(0xFF475569);
+    final bgColor =
+        isDark
+            ? Colors.white.withValues(alpha: 0.06)
+            : Colors.white.withValues(alpha: 0.92);
+
+    showModalBottomSheet(
+      context: context,
+      isDismissible: true,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder:
+          (context) => Container(
+            decoration: BoxDecoration(
+              color: bgColor,
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(20),
+              ),
+            ),
+            child: DraggableScrollableSheet(
+              expand: false,
+              initialChildSize: 0.8,
+              minChildSize: 0.5,
+              maxChildSize: 0.95,
+              builder:
+                  (context, scrollController) => SingleChildScrollView(
+                    controller: scrollController,
+                    child: Padding(
+                      padding: const EdgeInsets.all(20),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // Handle bar
+                          Center(
+                            child: Container(
+                              width: 40,
+                              height: 4,
+                              decoration: BoxDecoration(
+                                color: textSecondary.withValues(alpha: 0.3),
+                                borderRadius: BorderRadius.circular(2),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 20),
+                          // Title
+                          Text(
+                            'Notification Details',
+                            style: GoogleFonts.poppins(
+                              color: textPrimary,
+                              fontSize: 18,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          const SizedBox(height: 20),
+                          // Details content
+                          _buildDetailField(
+                            'Title',
+                            _getNotificationTitle(item),
+                            textPrimary,
+                            textSecondary,
+                          ),
+                          _buildDetailField(
+                            'Message',
+                            _getNotificationBody(item),
+                            textPrimary,
+                            textSecondary,
+                          ),
+                          _buildDetailField(
+                            'Date & Time',
+                            _timeLabel(_createdAt(item)),
+                            textPrimary,
+                            textSecondary,
+                          ),
+                          _buildDetailField(
+                            'From',
+                            _extractString(item, const <String>[
+                              'passenger_name',
+                              'passenger',
+                              'name',
+                              'from_name',
+                            ]),
+                            textPrimary,
+                            textSecondary,
+                          ),
+                          _buildDetailField(
+                            'Pickup Location',
+                            _extractString(item, const <String>[
+                              'pickup',
+                              'pickup_address',
+                              'from',
+                              'start_location',
+                            ]),
+                            textPrimary,
+                            textSecondary,
+                          ),
+                          _buildDetailField(
+                            'Dropoff Location',
+                            _extractString(item, const <String>[
+                              'dropoff',
+                              'dropoff_address',
+                              'destination',
+                              'to',
+                              'end_location',
+                            ]),
+                            textPrimary,
+                            textSecondary,
+                          ),
+                          _buildDetailField(
+                            'Status',
+                            _extractString(item, const <String>['status']),
+                            textPrimary,
+                            textSecondary,
+                          ),
+                          _buildDetailField(
+                            'Type',
+                            _extractString(item, const <String>[
+                              'type',
+                              'event',
+                            ]),
+                            textPrimary,
+                            textSecondary,
+                          ),
+                          const SizedBox(height: 20),
+                          SizedBox(
+                            width: double.infinity,
+                            child: ElevatedButton(
+                              onPressed: () => Navigator.of(context).pop(),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFF6C63FF),
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 12,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                              ),
+                              child: Text(
+                                'Close',
+                                style: GoogleFonts.poppins(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+            ),
+          ),
+    );
+  }
+
+  Widget _buildDetailField(
+    String label,
+    String value,
+    Color textPrimary,
+    Color textSecondary,
+  ) {
+    if (value.isEmpty) return const SizedBox.shrink();
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: GoogleFonts.poppins(
+              color: textSecondary,
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: textPrimary.withValues(alpha: 0.05),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: textPrimary.withValues(alpha: 0.1)),
+            ),
+            child: Text(
+              value,
+              style: GoogleFonts.poppins(
+                color: textPrimary,
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }

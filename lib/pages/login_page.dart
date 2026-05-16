@@ -4,9 +4,11 @@ import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'signup_page.dart';
 import 'passenger/passenger_dashboard.dart';
+import 'passenger/pending_approval_page.dart';
 import 'driver/driver_dashboard.dart';
 import '../auth/auth_api.dart';
 import '../auth/auth_session.dart';
+import '../services/passenger_api.dart';
 import '../auth/google_oauth_service.dart';
 
 class LoginPage extends StatefulWidget {
@@ -71,12 +73,55 @@ class _LoginPageState extends State<LoginPage>
       final isDriver = normalizedRole == 'driver';
 
       if (isPassenger) {
+        // Check approval status for passengers
+        final approvalStatus = result.status.toLowerCase();
+
+        if (approvalStatus == 'pending') {
+          // Passenger account is pending admin approval
+          if (!mounted) return;
+          Navigator.of(context).pushReplacement(
+            PageRouteBuilder(
+              pageBuilder:
+                  (_, __, ___) => PendingApprovalPage(
+                    passengerName: result.name,
+                    passengerEmail: result.email,
+                  ),
+              transitionsBuilder:
+                  (_, anim, __, child) =>
+                      FadeTransition(opacity: anim, child: child),
+              transitionDuration: const Duration(milliseconds: 500),
+            ),
+          );
+          return;
+        }
+
+        if (approvalStatus == 'rejected') {
+          _showSnack(
+            'Your account has been rejected. Please contact support.',
+            isError: true,
+          );
+          return;
+        }
+
+        // Account is approved, proceed with login
         await AuthSession.save(
           role: normalizedRole,
           name: result.name,
           email: result.email,
           token: result.token,
         );
+
+        // Initialize passenger profile to enable ride booking
+        try {
+          await PassengerApi.instance.initializeProfile(
+            name: result.name,
+            email: result.email,
+          );
+        } catch (e) {
+          print('Profile initialization error (non-critical): $e');
+          // Continue even if profile init fails - user can try again
+        }
+
         if (!mounted) return;
         Navigator.of(context).pushReplacement(
           PageRouteBuilder(
@@ -177,124 +222,155 @@ class _LoginPageState extends State<LoginPage>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            colors: [Color(0xFF0A0E1A), Color(0xFF1A1F3A), Color(0xFF0D1B4B)],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
+      backgroundColor: const Color(0xFFF5F7FF),
+      body: Stack(
+        children: [
+          // Background Illustrations
+          Positioned(
+            left: -50,
+            bottom: 0,
+            child: Opacity(
+              opacity: 0.15,
+              child: Container(
+                width: 300,
+                height: 300,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: const Color(0xFF4C57D6),
+                ),
+              ),
+            ),
           ),
-        ),
-        child: SafeArea(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 20),
-            child: FadeTransition(
-              opacity: _fadeAnim,
-              child: SlideTransition(
-                position: _slideAnim,
-                child: Form(
-                  key: _formKey,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      const SizedBox(height: 20),
-                      _buildLogo(),
-                      const SizedBox(height: 32),
-                      _buildHeader(),
-                      const SizedBox(height: 36),
-                      _buildEmailField(),
-                      const SizedBox(height: 18),
-                      _buildPasswordField(),
-                      const SizedBox(height: 12),
-                      _buildForgotPassword(),
-                      const SizedBox(height: 28),
-                      _buildLoginButton(),
-                      const SizedBox(height: 28),
-                      _buildDivider(),
-                      const SizedBox(height: 24),
-                      _buildGoogleSignInButton(),
-                      const SizedBox(height: 36),
-                      _buildSignupRedirect(),
-                    ],
+          Positioned(
+            right: -80,
+            top: -50,
+            child: Opacity(
+              opacity: 0.1,
+              child: Container(
+                width: 400,
+                height: 400,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: const Color(0xFF2D8CFF),
+                ),
+              ),
+            ),
+          ),
+          // Main Content
+          SafeArea(
+            child: SingleChildScrollView(
+              child: FadeTransition(
+                opacity: _fadeAnim,
+                child: SlideTransition(
+                  position: _slideAnim,
+                  child: Center(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 24,
+                        vertical: 40,
+                      ),
+                      child: Container(
+                        constraints: const BoxConstraints(maxWidth: 420),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(24),
+                          boxShadow: [
+                            BoxShadow(
+                              color: const Color(
+                                0xFF4C57D6,
+                              ).withValues(alpha: 0.08),
+                              blurRadius: 30,
+                              spreadRadius: 0,
+                              offset: const Offset(0, 10),
+                            ),
+                          ],
+                        ),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 32,
+                          vertical: 40,
+                        ),
+                        child: Form(
+                          key: _formKey,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.center,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              _buildLogo(),
+                              const SizedBox(height: 28),
+                              _buildHeader(),
+                              const SizedBox(height: 32),
+                              _buildEmailField(),
+                              const SizedBox(height: 20),
+                              _buildPasswordField(),
+                              const SizedBox(height: 16),
+                              _buildRememberAndForgot(),
+                              const SizedBox(height: 28),
+                              _buildLoginButton(),
+                              const SizedBox(height: 28),
+                              _buildDivider(),
+                              const SizedBox(height: 24),
+                              _buildSocialButtons(),
+                              const SizedBox(height: 32),
+                              _buildSignupRedirect(),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
                   ),
                 ),
               ),
             ),
           ),
-        ),
+        ],
       ),
     );
   }
 
   Widget _buildLogo() {
-    return Column(
-      children: [
-        Container(
-          width: 90,
-          height: 90,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            gradient: const LinearGradient(
-              colors: [Color(0xFF6C63FF), Color(0xFF3B82F6)],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: const Color(0xFF6C63FF).withValues(alpha: 0.5),
-                blurRadius: 30,
-                spreadRadius: 4,
-              ),
-            ],
-          ),
-          child: const Icon(
-            Icons.directions_car_rounded,
-            color: Colors.white,
-            size: 44,
-          ),
+    return Center(
+      child: SizedBox(
+        width: 120,
+        height: 120,
+        child: Padding(
+          padding: const EdgeInsets.all(10),
+          child: Image.asset('assets/icon/app_icon.png', fit: BoxFit.contain),
         ),
-        const SizedBox(height: 14),
-        Text(
-          'RideConnect',
-          style: GoogleFonts.poppins(
-            fontSize: 30,
-            fontWeight: FontWeight.w700,
-            foreground:
-                Paint()
-                  ..shader = const LinearGradient(
-                    colors: [Color(0xFF6C63FF), Color(0xFF3B82F6)],
-                  ).createShader(const Rect.fromLTWH(0, 0, 200, 40)),
-          ),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          'Your smart ride companion',
-          style: GoogleFonts.poppins(
-            fontSize: 13,
-            color: Colors.white54,
-            letterSpacing: 0.4,
-          ),
-        ),
-      ],
+      ),
     );
   }
 
   Widget _buildHeader() {
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         Text(
-          'Welcome Back 👋',
+          'Welcome Back!',
           style: GoogleFonts.poppins(
-            fontSize: 26,
+            fontSize: 28,
             fontWeight: FontWeight.w700,
-            color: Colors.white,
+            color: const Color(0xFF1A1A1A),
           ),
         ),
-        const SizedBox(height: 6),
-        Text(
-          'Sign in to continue your journey',
-          style: GoogleFonts.poppins(fontSize: 14, color: Colors.white54),
+        const SizedBox(height: 8),
+        RichText(
+          text: TextSpan(
+            text: 'Login to continue your ride with ',
+            style: GoogleFonts.poppins(
+              fontSize: 14,
+              color: const Color(0xFF666666),
+            ),
+            children: [
+              TextSpan(
+                text: 'RideConnect',
+                style: GoogleFonts.poppins(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: const Color(0xFF4C57D6),
+                ),
+              ),
+            ],
+          ),
         ),
       ],
     );
@@ -303,8 +379,8 @@ class _LoginPageState extends State<LoginPage>
   Widget _buildEmailField() {
     return _InputField(
       controller: _emailController,
-      label: 'Email Address',
-      hint: 'you@example.com',
+      label: 'Email ID',
+      hint: 'Enter your email',
       prefixIcon: Icons.email_outlined,
       keyboardType: TextInputType.emailAddress,
       validator: (v) {
@@ -321,15 +397,15 @@ class _LoginPageState extends State<LoginPage>
     return _InputField(
       controller: _passwordController,
       label: 'Password',
-      hint: '••••••••',
-      prefixIcon: Icons.lock_outline_rounded,
+      hint: 'Enter your password',
+      prefixIcon: Icons.lock_outlined,
       obscureText: _obscurePassword,
       suffixIcon: IconButton(
         icon: Icon(
           _obscurePassword
               ? Icons.visibility_off_outlined
               : Icons.visibility_outlined,
-          color: Colors.white38,
+          color: const Color(0xFF999999),
           size: 20,
         ),
         onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
@@ -342,20 +418,39 @@ class _LoginPageState extends State<LoginPage>
     );
   }
 
-  Widget _buildForgotPassword() {
-    return Align(
-      alignment: Alignment.centerRight,
-      child: GestureDetector(
-        onTap: () {},
-        child: Text(
-          'Forgot Password?',
-          style: GoogleFonts.poppins(
-            fontSize: 13,
-            color: const Color(0xFF6C63FF),
-            fontWeight: FontWeight.w500,
+  Widget _buildRememberAndForgot() {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Row(
+          children: [
+            Checkbox(
+              value: true,
+              onChanged: (value) {},
+              activeColor: const Color(0xFF4C57D6),
+              side: const BorderSide(color: Color(0xFFDDDDDD), width: 1.5),
+            ),
+            Text(
+              'Remember me',
+              style: GoogleFonts.poppins(
+                fontSize: 13,
+                color: const Color(0xFF666666),
+              ),
+            ),
+          ],
+        ),
+        GestureDetector(
+          onTap: () {},
+          child: Text(
+            'Forgot Password?',
+            style: GoogleFonts.poppins(
+              fontSize: 13,
+              color: const Color(0xFF4C57D6),
+              fontWeight: FontWeight.w500,
+            ),
           ),
         ),
-      ),
+      ],
     );
   }
 
@@ -366,14 +461,17 @@ class _LoginPageState extends State<LoginPage>
       child: DecoratedBox(
         decoration: BoxDecoration(
           gradient: const LinearGradient(
-            colors: [Color(0xFF6C63FF), Color(0xFF3B82F6)],
+            colors: [Color(0xFF4C57D6), Color(0xFF2D8CFF)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
           ),
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(14),
           boxShadow: [
             BoxShadow(
-              color: const Color(0xFF6C63FF).withValues(alpha: 0.45),
-              blurRadius: 20,
-              offset: const Offset(0, 8),
+              color: const Color(0xFF4C57D6).withValues(alpha: 0.3),
+              blurRadius: 16,
+              spreadRadius: 0,
+              offset: const Offset(0, 6),
             ),
           ],
         ),
@@ -383,7 +481,7 @@ class _LoginPageState extends State<LoginPage>
             backgroundColor: Colors.transparent,
             shadowColor: Colors.transparent,
             shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
+              borderRadius: BorderRadius.circular(14),
             ),
           ),
           child:
@@ -397,11 +495,12 @@ class _LoginPageState extends State<LoginPage>
                     ),
                   )
                   : Text(
-                    'Sign In',
+                    'LOGIN',
                     style: GoogleFonts.poppins(
                       fontSize: 16,
-                      fontWeight: FontWeight.w600,
+                      fontWeight: FontWeight.w700,
                       color: Colors.white,
+                      letterSpacing: 0.5,
                     ),
                   ),
         ),
@@ -412,51 +511,45 @@ class _LoginPageState extends State<LoginPage>
   Widget _buildDivider() {
     return Row(
       children: [
-        Expanded(
-          child: Divider(
-            color: Colors.white.withValues(alpha: 0.15),
-            thickness: 1,
-          ),
-        ),
+        Expanded(child: Divider(color: const Color(0xFFE0E0E0), thickness: 1)),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 14),
           child: Text(
-            'or continue with',
-            style: GoogleFonts.poppins(fontSize: 12, color: Colors.white38),
+            'OR CONTINUE WITH',
+            style: GoogleFonts.poppins(
+              fontSize: 12,
+              fontWeight: FontWeight.w500,
+              color: const Color(0xFF999999),
+            ),
           ),
         ),
-        Expanded(
-          child: Divider(
-            color: Colors.white.withValues(alpha: 0.15),
-            thickness: 1,
-          ),
-        ),
+        Expanded(child: Divider(color: const Color(0xFFE0E0E0), thickness: 1)),
       ],
     );
   }
 
-  Widget _buildGoogleSignInButton() {
+  Widget _buildSocialButtons() {
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
         _SocialButton(
-          icon: FontAwesomeIcons.google,
-          label: 'Google',
+          // Official Google brand mark (existing asset at assets/icon/google.png)
+          assetPath: 'assets/icon/google.png',
           color: const Color(0xFFEA4335),
           onTap: _isLoading ? () {} : _handleGoogleLogin,
         ),
-        const SizedBox(width: 16),
+        const SizedBox(width: 20),
         _SocialButton(
-          icon: FontAwesomeIcons.facebook,
-          label: 'Facebook',
+          // Official Facebook mark (existing asset at assets/icon/facebook.png)
+          assetPath: 'assets/icon/facebook.png',
           color: const Color(0xFF1877F2),
           onTap: () {},
         ),
-        const SizedBox(width: 16),
+        const SizedBox(width: 20),
         _SocialButton(
-          icon: FontAwesomeIcons.apple,
-          label: 'Apple',
-          color: Colors.white,
+          // Official X mark (existing asset at assets/icon/X.png)
+          assetPath: 'assets/icon/X.png',
+          color: const Color(0xFF000000),
           onTap: () {},
         ),
       ],
@@ -469,7 +562,10 @@ class _LoginPageState extends State<LoginPage>
       children: [
         Text(
           "Don't have an account? ",
-          style: GoogleFonts.poppins(fontSize: 13, color: Colors.white54),
+          style: GoogleFonts.poppins(
+            fontSize: 13,
+            color: const Color(0xFF666666),
+          ),
         ),
         GestureDetector(
           onTap:
@@ -487,7 +583,7 @@ class _LoginPageState extends State<LoginPage>
             'Sign Up',
             style: GoogleFonts.poppins(
               fontSize: 13,
-              color: const Color(0xFF6C63FF),
+              color: const Color(0xFF4C57D6),
               fontWeight: FontWeight.w700,
             ),
           ),
@@ -530,7 +626,7 @@ class _InputField extends StatelessWidget {
           style: GoogleFonts.poppins(
             fontSize: 13,
             fontWeight: FontWeight.w500,
-            color: Colors.white70,
+            color: const Color(0xFF333333),
           ),
         ),
         const SizedBox(height: 8),
@@ -539,42 +635,49 @@ class _InputField extends StatelessWidget {
           obscureText: obscureText,
           keyboardType: keyboardType,
           validator: validator,
-          style: GoogleFonts.poppins(color: Colors.white, fontSize: 14),
+          style: GoogleFonts.poppins(
+            color: const Color(0xFF1A1A1A),
+            fontSize: 14,
+          ),
           decoration: InputDecoration(
             hintText: hint,
-            hintStyle: GoogleFonts.poppins(color: Colors.white24, fontSize: 14),
-            prefixIcon: Icon(prefixIcon, color: Colors.white38, size: 20),
+            hintStyle: GoogleFonts.poppins(
+              color: const Color(0xFFBBBBBB),
+              fontSize: 14,
+            ),
+            prefixIcon: Icon(
+              prefixIcon,
+              color: const Color(0xFF999999),
+              size: 20,
+            ),
             suffixIcon: suffixIcon,
             filled: true,
-            fillColor: Colors.white.withValues(alpha: 0.07),
+            fillColor: const Color(0xFFF8F8F8),
             contentPadding: const EdgeInsets.symmetric(
-              horizontal: 20,
-              vertical: 18,
+              horizontal: 16,
+              vertical: 14,
             ),
             border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(14),
+              borderRadius: BorderRadius.circular(10),
               borderSide: BorderSide.none,
             ),
             enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(14),
-              borderSide: BorderSide(
-                color: Colors.white.withValues(alpha: 0.1),
-                width: 1,
-              ),
+              borderRadius: BorderRadius.circular(10),
+              borderSide: const BorderSide(color: Color(0xFFE0E0E0), width: 1),
             ),
             focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(14),
+              borderRadius: BorderRadius.circular(10),
               borderSide: const BorderSide(
-                color: Color(0xFF6C63FF),
+                color: Color(0xFF4C57D6),
                 width: 1.5,
               ),
             ),
             errorBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(14),
+              borderRadius: BorderRadius.circular(10),
               borderSide: const BorderSide(color: Color(0xFFFF5E5B), width: 1),
             ),
             focusedErrorBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(14),
+              borderRadius: BorderRadius.circular(10),
               borderSide: const BorderSide(
                 color: Color(0xFFFF5E5B),
                 width: 1.5,
@@ -594,14 +697,14 @@ class _InputField extends StatelessWidget {
 // ─── Social Login Button ─────────────────────────────────────────────────────
 
 class _SocialButton extends StatelessWidget {
-  final IconData icon;
-  final String label;
+  final IconData? icon;
+  final String? assetPath;
   final Color color;
   final VoidCallback onTap;
 
   const _SocialButton({
-    required this.icon,
-    required this.label,
+    this.icon,
+    this.assetPath,
     required this.color,
     required this.onTap,
   });
@@ -611,27 +714,25 @@ class _SocialButton extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        width: 90,
-        height: 52,
+        width: 56,
+        height: 56,
         decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.06),
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
+          color: const Color(0xFFFAFAFA),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: const Color(0xFFE0E0E0), width: 1),
         ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            FaIcon(icon, color: color, size: 18),
-            const SizedBox(width: 6),
-            Text(
-              label,
-              style: GoogleFonts.poppins(
-                fontSize: 11,
-                color: Colors.white70,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ],
+        child: Center(
+          child:
+              assetPath != null
+                  ? Image.asset(
+                    assetPath!,
+                    width: 28,
+                    height: 28,
+                    fit: BoxFit.contain,
+                  )
+                  : (icon != null
+                      ? FaIcon(icon, color: color, size: 24)
+                      : const SizedBox.shrink()),
         ),
       ),
     );

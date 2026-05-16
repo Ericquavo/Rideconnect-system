@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/foundation.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import 'book_ride_page.dart';
@@ -25,6 +26,7 @@ class _TripsPageState extends State<TripsPage>
 
   bool _isLoading = true;
   String? _error;
+  String? _rawError;
   List<Map<String, dynamic>> _trips = <Map<String, dynamic>>[];
 
   String _statusFilter = 'all';
@@ -58,6 +60,7 @@ class _TripsPageState extends State<TripsPage>
     setState(() {
       _isLoading = true;
       _error = null;
+      _rawError = null;
     });
 
     final statusQuery = _statusFilter == 'all' ? null : _statusFilter;
@@ -92,10 +95,12 @@ class _TripsPageState extends State<TripsPage>
         }
       }
     } catch (e) {
-      activeError =
+      final raw =
           e is ApiException
               ? e.message
               : e.toString().replaceFirst('Exception: ', '');
+      _rawError = raw;
+      activeError = _sanitizeBackendError(raw);
     }
 
     try {
@@ -107,10 +112,12 @@ class _TripsPageState extends State<TripsPage>
       );
       history = historyTyped.map(_historyItemToMap).toList();
     } catch (e) {
-      final message =
+      final raw =
           e is ApiException
               ? e.message
               : e.toString().replaceFirst('Exception: ', '');
+      _rawError = raw;
+      final message = _sanitizeBackendError(raw);
       if (_isHistoryRouteConflict(message)) {
         historyError = _lang.t('trips.historyConflict');
       } else {
@@ -348,6 +355,53 @@ class _TripsPageState extends State<TripsPage>
     return '${parsed.year}-$month-$day $hour:$minute';
   }
 
+  /// Sanitize backend error messages before showing to users.
+  /// Returns a user-friendly message when the server returns internal
+  /// implementation details (class not found, stack traces, etc.).
+  String _sanitizeBackendError(String? raw) {
+    if (raw == null || raw.trim().isEmpty) return 'Unknown server error.';
+    final lower = raw.toLowerCase();
+    if (lower.contains('target class') && lower.contains('does not exist')) {
+      return 'Server configuration error: a backend service is missing. Please contact support.';
+    }
+    if (lower.contains('exception') ||
+        lower.contains('trace') ||
+        lower.contains('stack')) {
+      return 'Server error occurred. Please try again later.';
+    }
+    return raw;
+  }
+
+  void _showRawErrorDialog() {
+    final raw = _rawError;
+    if (raw == null) return;
+    showDialog<void>(
+      context: context,
+      builder:
+          (ctx) => AlertDialog(
+            title: Text(_lang.t('trips.errorDetails')),
+            content: SingleChildScrollView(child: SelectableText(raw)),
+            actions: [
+              TextButton(
+                onPressed: () async {
+                  await Clipboard.setData(ClipboardData(text: raw));
+                  if (!mounted) return;
+                  Navigator.of(ctx).pop();
+                  ScaffoldMessenger.of(
+                    context,
+                  ).showSnackBar(const SnackBar(content: Text('Copied')));
+                },
+                child: Text(_lang.t('common.copy')),
+              ),
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: Text(_lang.t('common.close')),
+              ),
+            ],
+          ),
+    );
+  }
+
   Future<void> _cancelRide(Map<String, dynamic> trip) async {
     final id = trip['rideId'] ?? trip['id'];
     if (id == null) return;
@@ -440,63 +494,77 @@ class _TripsPageState extends State<TripsPage>
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final active = _trips.where((t) => t['status'] == 'Active').toList();
     final history = _trips.where((t) => t['status'] != 'Active').toList();
 
     return Container(
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         gradient: LinearGradient(
-          colors: [Color(0xFF0A0E1A), Color(0xFF1A1F3A)],
+          colors:
+              isDark
+                  ? const [Color(0xFF0A0E1A), Color(0xFF1A1F3A)]
+                  : const [Color(0xFFEFF4FF), Color(0xFFDCE8FF)],
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
         ),
       ),
       child: SafeArea(
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _buildPageTitle(),
-                  const SizedBox(height: 20),
-                  if (_isLoading) const LinearProgressIndicator(minHeight: 2),
-                  if (_error != null)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 8),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              _error!,
-                              style: GoogleFonts.poppins(
-                                color: const Color(0xFFFF5E5B),
-                                fontSize: 12,
+            // Header section - fixed at top
+            SingleChildScrollView(
+              scrollDirection: Axis.vertical,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildPageTitle(),
+                    const SizedBox(height: 16),
+                    if (_isLoading) const LinearProgressIndicator(minHeight: 2),
+                    if (_error != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                _error!,
+                                style: GoogleFonts.poppins(
+                                  color: const Color(0xFFFF5E5B),
+                                  fontSize: 12,
+                                ),
                               ),
                             ),
-                          ),
-                          TextButton(
-                            onPressed: _loadTrips,
-                            child: Text(_lang.t('common.retry')),
-                          ),
-                        ],
+                            TextButton(
+                              onPressed: _loadTrips,
+                              child: Text(_lang.t('common.retry')),
+                            ),
+                            if (_rawError != null && kDebugMode)
+                              TextButton(
+                                onPressed: _showRawErrorDialog,
+                                child: const Text('Details'),
+                              ),
+                          ],
+                        ),
                       ),
-                    ),
-                  const SizedBox(height: 12),
-                  _buildStatsRow(),
-                  const SizedBox(height: 14),
-                  _buildFilterBar(),
-                  const SizedBox(height: 10),
-                  _buildActiveFilterChips(),
-                  const SizedBox(height: 8),
-                  _buildQueryPreview(),
-                  const SizedBox(height: 20),
-                  _buildTabBar(),
-                ],
+                    const SizedBox(height: 12),
+                    _buildStatsRow(),
+                    const SizedBox(height: 14),
+                    _buildFilterBar(),
+                    const SizedBox(height: 10),
+                    _buildActiveFilterChips(),
+                    const SizedBox(height: 8),
+                    _buildQueryPreview(),
+                    const SizedBox(height: 16),
+                    _buildTabBar(),
+                    const SizedBox(height: 8),
+                  ],
+                ),
               ),
             ),
+            // Scrollable content
             Expanded(
               child: RefreshIndicator(
                 onRefresh: _loadTrips,
@@ -516,6 +584,9 @@ class _TripsPageState extends State<TripsPage>
   }
 
   Widget _buildPageTitle() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final textColor = isDark ? Colors.white : const Color(0xFF0F172A);
+
     return Row(
       children: [
         Container(
@@ -536,7 +607,7 @@ class _TripsPageState extends State<TripsPage>
           style: GoogleFonts.poppins(
             fontSize: 20,
             fontWeight: FontWeight.w700,
-            color: Colors.white,
+            color: textColor,
           ),
         ),
       ],
@@ -580,12 +651,22 @@ class _TripsPageState extends State<TripsPage>
   }
 
   Widget _buildFilterBar() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.05),
+        color:
+            isDark
+                ? Colors.white.withValues(alpha: 0.05)
+                : Colors.black.withValues(alpha: 0.04),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+        border: Border.all(
+          color:
+              isDark
+                  ? Colors.white.withValues(alpha: 0.08)
+                  : Colors.black.withValues(alpha: 0.08),
+        ),
       ),
       child: Column(
         children: [
@@ -594,9 +675,15 @@ class _TripsPageState extends State<TripsPage>
               Expanded(
                 child: DropdownButtonFormField<String>(
                   value: _statusFilter,
-                  dropdownColor: const Color(0xFF131729),
+                  dropdownColor:
+                      isDark
+                          ? const Color(0xFF131729)
+                          : const Color(0xFFF5F5F5),
                   decoration: _filterDecoration(_lang.t('trips.status')),
-                  style: GoogleFonts.poppins(color: Colors.white, fontSize: 12),
+                  style: GoogleFonts.poppins(
+                    color: isDark ? Colors.white : const Color(0xFF0F172A),
+                    fontSize: 12,
+                  ),
                   items:
                       _availableStatusFilters
                           .map(
@@ -618,9 +705,15 @@ class _TripsPageState extends State<TripsPage>
                 width: 110,
                 child: DropdownButtonFormField<int>(
                   value: _perPage,
-                  dropdownColor: const Color(0xFF131729),
+                  dropdownColor:
+                      isDark
+                          ? const Color(0xFF131729)
+                          : const Color(0xFFF5F5F5),
                   decoration: _filterDecoration(_lang.t('trips.perPage')),
-                  style: GoogleFonts.poppins(color: Colors.white, fontSize: 12),
+                  style: GoogleFonts.poppins(
+                    color: isDark ? Colors.white : const Color(0xFF0F172A),
+                    fontSize: 12,
+                  ),
                   items: const [
                     DropdownMenuItem(value: 10, child: Text('10')),
                     DropdownMenuItem(value: 20, child: Text('20')),
@@ -726,6 +819,7 @@ class _TripsPageState extends State<TripsPage>
   }
 
   Widget _buildQueryPreview() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final params = <String, String>{'per_page': '$_perPage'};
     if (_statusFilter != 'all') {
       params['status'] = _statusFilter;
@@ -744,9 +838,17 @@ class _TripsPageState extends State<TripsPage>
       width: double.infinity,
       padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.04),
+        color:
+            isDark
+                ? Colors.white.withValues(alpha: 0.04)
+                : Colors.black.withValues(alpha: 0.04),
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+        border: Border.all(
+          color:
+              isDark
+                  ? Colors.white.withValues(alpha: 0.08)
+                  : Colors.black.withValues(alpha: 0.08),
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -754,7 +856,7 @@ class _TripsPageState extends State<TripsPage>
           Text(
             _lang.t('trips.backendQueryPreview'),
             style: GoogleFonts.poppins(
-              color: Colors.white70,
+              color: isDark ? Colors.white70 : Colors.black54,
               fontSize: 11,
               fontWeight: FontWeight.w600,
             ),
@@ -771,12 +873,17 @@ class _TripsPageState extends State<TripsPage>
   }
 
   Widget _buildCopyableQueryLine(String queryText) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     return Row(
       children: [
         Expanded(
           child: Text(
             queryText,
-            style: GoogleFonts.robotoMono(color: Colors.white54, fontSize: 10),
+            style: GoogleFonts.robotoMono(
+              color: isDark ? Colors.white54 : Colors.black54,
+              fontSize: 10,
+            ),
           ),
         ),
         IconButton(
@@ -790,7 +897,11 @@ class _TripsPageState extends State<TripsPage>
               ),
             );
           },
-          icon: const Icon(Icons.copy_rounded, size: 14, color: Colors.white70),
+          icon: Icon(
+            Icons.copy_rounded,
+            size: 14,
+            color: isDark ? Colors.white70 : Colors.black54,
+          ),
           tooltip: 'Copy query',
           visualDensity: VisualDensity.compact,
           padding: EdgeInsets.zero,
@@ -801,19 +912,37 @@ class _TripsPageState extends State<TripsPage>
   }
 
   InputDecoration _filterDecoration(String label) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     return InputDecoration(
       labelText: label,
-      labelStyle: GoogleFonts.poppins(color: Colors.white60, fontSize: 11),
+      labelStyle: GoogleFonts.poppins(
+        color: isDark ? Colors.white60 : Colors.black54,
+        fontSize: 11,
+      ),
       isDense: true,
       filled: true,
-      fillColor: Colors.white.withValues(alpha: 0.04),
+      fillColor:
+          isDark
+              ? Colors.white.withValues(alpha: 0.04)
+              : Colors.black.withValues(alpha: 0.04),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(10),
-        borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.12)),
+        borderSide: BorderSide(
+          color:
+              isDark
+                  ? Colors.white.withValues(alpha: 0.12)
+                  : Colors.black.withValues(alpha: 0.12),
+        ),
       ),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(10),
-        borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.12)),
+        borderSide: BorderSide(
+          color:
+              isDark
+                  ? Colors.white.withValues(alpha: 0.12)
+                  : Colors.black.withValues(alpha: 0.12),
+        ),
       ),
       focusedBorder: const OutlineInputBorder(
         borderRadius: BorderRadius.all(Radius.circular(10)),
@@ -823,9 +952,14 @@ class _TripsPageState extends State<TripsPage>
   }
 
   Widget _buildTabBar() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.05),
+        color:
+            isDark
+                ? Colors.white.withValues(alpha: 0.05)
+                : Colors.black.withValues(alpha: 0.05),
         borderRadius: BorderRadius.circular(12),
       ),
       child: TabBar(
@@ -847,7 +981,7 @@ class _TripsPageState extends State<TripsPage>
           fontSize: 13,
         ),
         labelColor: Colors.white,
-        unselectedLabelColor: Colors.white38,
+        unselectedLabelColor: isDark ? Colors.white38 : Colors.black54,
         tabs: [
           Tab(text: _lang.t('status.active')),
           Tab(text: _lang.t('trips.history')),
@@ -860,6 +994,8 @@ class _TripsPageState extends State<TripsPage>
     List<Map<String, dynamic>> trips, {
     bool canCancel = false,
   }) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     if (trips.isEmpty) {
       return ListView(
         physics: const AlwaysScrollableScrollPhysics(),
@@ -869,12 +1005,16 @@ class _TripsPageState extends State<TripsPage>
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(Icons.inbox_rounded, color: Colors.white24, size: 56),
+                Icon(
+                  Icons.inbox_rounded,
+                  color: isDark ? Colors.white24 : Colors.black26,
+                  size: 56,
+                ),
                 const SizedBox(height: 12),
                 Text(
                   _lang.t('trips.empty'),
                   style: GoogleFonts.poppins(
-                    color: Colors.white38,
+                    color: isDark ? Colors.white38 : Colors.black45,
                     fontSize: 14,
                   ),
                 ),
@@ -1189,11 +1329,14 @@ class _TripDetailsSheet extends StatelessWidget {
       ),
     ];
 
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final bgColor = isDark ? const Color(0xFF12172A) : Colors.white;
+
     return Container(
       padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
-      decoration: const BoxDecoration(
-        color: Color(0xFF12172A),
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      decoration: BoxDecoration(
+        color: bgColor,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
       ),
       child: SafeArea(
         top: false,
@@ -1220,7 +1363,7 @@ class _TripDetailsSheet extends StatelessWidget {
                 Text(
                   '${lang.t('trips.trip')} #${details['id']}',
                   style: GoogleFonts.poppins(
-                    color: Colors.white,
+                    color: isDark ? Colors.white : const Color(0xFF0F172A),
                     fontSize: 18,
                     fontWeight: FontWeight.w700,
                   ),
@@ -1268,37 +1411,43 @@ class _TripDetailsSheet extends StatelessWidget {
                 Text(
                   lang.t('trips.progress'),
                   style: GoogleFonts.poppins(
-                    color: Colors.white,
+                    color: isDark ? Colors.white : const Color(0xFF0F172A),
                     fontSize: 13,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
                 const SizedBox(height: 10),
-                _TripTimeline(steps: timelineSteps),
+                _TripTimeline(steps: timelineSteps, isDark: isDark),
                 const SizedBox(height: 14),
                 _DetailRow(
                   label: lang.t('trips.driver'),
                   value: details['driver'].toString(),
+                  isDark: isDark,
                 ),
                 _DetailRow(
                   label: lang.t('trips.date'),
                   value: details['date'].toString(),
+                  isDark: isDark,
                 ),
                 _DetailRow(
                   label: lang.t('book.seats'),
                   value: details['seats'].toString(),
+                  isDark: isDark,
                 ),
                 _DetailRow(
                   label: lang.t('trips.pickup'),
                   value: details['from'].toString(),
+                  isDark: isDark,
                 ),
                 _DetailRow(
                   label: lang.t('trips.dropoff'),
                   value: details['to'].toString(),
+                  isDark: isDark,
                 ),
                 _DetailRow(
                   label: lang.t('trips.notes'),
                   value: details['notes'].toString(),
+                  isDark: isDark,
                 ),
                 const SizedBox(height: 10),
                 SizedBox(
@@ -1360,8 +1509,9 @@ class _TimelineStep {
 
 class _TripTimeline extends StatelessWidget {
   final List<_TimelineStep> steps;
+  final bool isDark;
 
-  const _TripTimeline({required this.steps});
+  const _TripTimeline({required this.steps, this.isDark = true});
 
   Color _dotColor(_TimelineState state) {
     switch (state) {
@@ -1372,18 +1522,27 @@ class _TripTimeline extends StatelessWidget {
       case _TimelineState.cancelled:
         return const Color(0xFFFF5E5B);
       case _TimelineState.pending:
-        return Colors.white24;
+        return isDark ? Colors.white24 : Colors.black12;
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final borderColor =
+        isDark
+            ? Colors.white.withValues(alpha: 0.08)
+            : Colors.black.withValues(alpha: 0.08);
+    final bgColor =
+        isDark
+            ? Colors.white.withValues(alpha: 0.04)
+            : Colors.black.withValues(alpha: 0.02);
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.04),
+        color: bgColor,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+        border: Border.all(color: borderColor),
       ),
       child: Row(
         children: List.generate(steps.length, (index) {
@@ -1405,8 +1564,10 @@ class _TripTimeline extends StatelessWidget {
                       style: GoogleFonts.poppins(
                         color:
                             step.state == _TimelineState.pending
-                                ? Colors.white38
-                                : Colors.white,
+                                ? (isDark ? Colors.white38 : Colors.black38)
+                                : (isDark
+                                    ? Colors.white
+                                    : const Color(0xFF0F172A)),
                         fontSize: 10,
                         fontWeight:
                             step.state == _TimelineState.current
@@ -1420,7 +1581,8 @@ class _TripTimeline extends StatelessWidget {
                         step.subtitle!,
                         textAlign: TextAlign.center,
                         style: GoogleFonts.poppins(
-                          color: Colors.white54,
+                          color:
+                              isDark ? Colors.white54 : const Color(0xFF64748B),
                           fontSize: 8,
                           fontWeight: FontWeight.w400,
                         ),
@@ -1540,8 +1702,13 @@ class _MetricCard extends StatelessWidget {
 class _DetailRow extends StatelessWidget {
   final String label;
   final String value;
+  final bool isDark;
 
-  const _DetailRow({required this.label, required this.value});
+  const _DetailRow({
+    required this.label,
+    required this.value,
+    this.isDark = true,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -1554,14 +1721,20 @@ class _DetailRow extends StatelessWidget {
             width: 76,
             child: Text(
               label,
-              style: GoogleFonts.poppins(color: Colors.white54, fontSize: 12),
+              style: GoogleFonts.poppins(
+                color: isDark ? Colors.white54 : const Color(0xFF94A3B8),
+                fontSize: 12,
+              ),
             ),
           ),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
               value,
-              style: GoogleFonts.poppins(color: Colors.white, fontSize: 12),
+              style: GoogleFonts.poppins(
+                color: isDark ? Colors.white : const Color(0xFF0F172A),
+                fontSize: 12,
+              ),
             ),
           ),
         ],

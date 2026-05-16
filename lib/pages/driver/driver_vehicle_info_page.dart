@@ -18,6 +18,10 @@ class _VehicleInfoPageState extends State<VehicleInfoPage> {
   late final TextEditingController _vehicleNameController;
   late final TextEditingController _plateController;
   late final TextEditingController _colorController;
+  late final TextEditingController _seatsController;
+  late final TextEditingController _detailsController;
+  late final TextEditingController _bikeEngineController;
+  String _vehicleType = 'car';
   String _category = 'Economy';
   bool _loading = true;
   bool _saving = false;
@@ -48,6 +52,9 @@ class _VehicleInfoPageState extends State<VehicleInfoPage> {
     _vehicleNameController = TextEditingController();
     _plateController = TextEditingController();
     _colorController = TextEditingController();
+    _seatsController = TextEditingController();
+    _detailsController = TextEditingController();
+    _bikeEngineController = TextEditingController();
     _loadVehicle();
   }
 
@@ -57,6 +64,9 @@ class _VehicleInfoPageState extends State<VehicleInfoPage> {
     _vehicleNameController.dispose();
     _plateController.dispose();
     _colorController.dispose();
+    _seatsController.dispose();
+    _detailsController.dispose();
+    _bikeEngineController.dispose();
     super.dispose();
   }
 
@@ -90,6 +100,34 @@ class _VehicleInfoPageState extends State<VehicleInfoPage> {
           'color',
           'vehicle_color',
         ], fallback: api.readString(profile, const ['vehicle_color']));
+        _seatsController.text = api.readString(vehicle, const [
+          'seats',
+          'seat_count',
+          'number_of_seats',
+        ], fallback: api.readString(profile, const ['seats']));
+        _detailsController.text = api.readString(vehicle, const [
+          'details',
+          'description',
+          'other_details',
+          'notes',
+        ], fallback: api.readString(profile, const ['vehicle_details']));
+        _bikeEngineController.text = api.readString(vehicle, const [
+          'engine_cc',
+          'engine',
+          'cc',
+        ], fallback: api.readString(profile, const ['engine_cc']));
+        final inferredType =
+            api.readString(
+              vehicle,
+              const ['vehicle_type', 'type'],
+              fallback: api.readString(profile, const ['vehicle_type']),
+            ).toLowerCase();
+        if (inferredType.contains('motor')) {
+          _vehicleType = 'motorcycle';
+        } else if (inferredType.contains('car') ||
+            inferredType.contains('vehicle')) {
+          _vehicleType = 'car';
+        }
         _category = api.readString(
           vehicle,
           const ['category', 'type', 'vehicle_category'],
@@ -113,14 +151,38 @@ class _VehicleInfoPageState extends State<VehicleInfoPage> {
 
     setState(() => _saving = true);
     try {
-      await DriverApi.instance.updateProfile({
-        'vehicle': {
-          'name': _vehicleNameController.text.trim(),
-          'plate_number': _plateController.text.trim(),
-          'color': _colorController.text.trim(),
-          'category': _category,
-        },
-      });
+      final vehiclePayload = <String, dynamic>{
+        'vehicle_type': _vehicleType,
+        'type': _vehicleType,
+        'name': _vehicleNameController.text.trim(),
+        'plate_number': _plateController.text.trim(),
+        'plate': _plateController.text.trim(),
+        'color': _colorController.text.trim(),
+        'vehicle_color': _colorController.text.trim(),
+        'category': _category,
+        'vehicle_category': _category,
+      };
+
+      if (_vehicleType == 'car') {
+        vehiclePayload.addAll(<String, dynamic>{
+          'seats': _seatsController.text.trim(),
+          'seat_count': _seatsController.text.trim(),
+          'number_of_seats': _seatsController.text.trim(),
+          'details': _detailsController.text.trim(),
+          'description': _detailsController.text.trim(),
+          'other_details': _detailsController.text.trim(),
+        });
+      } else {
+        vehiclePayload.addAll(<String, dynamic>{
+          'engine_cc': _bikeEngineController.text.trim(),
+          'cc': _bikeEngineController.text.trim(),
+          'details': _detailsController.text.trim(),
+          'description': _detailsController.text.trim(),
+          'other_details': _detailsController.text.trim(),
+        });
+      }
+
+      await DriverApi.instance.updateProfile({'vehicle': vehiclePayload});
     } catch (e) {
       if (!mounted) return;
       setState(() => _saving = false);
@@ -184,23 +246,85 @@ class _VehicleInfoPageState extends State<VehicleInfoPage> {
                       child: Column(
                         children: [
                           _infoCard(
-                            title: _lang.t('vehicle.current'),
+                            title: 'Vehicle Type',
                             icon: Icons.directions_car_filled_rounded,
+                            useLogo: true,
                             child: Column(
                               children: [
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: _VehicleTypeChip(
+                                        label: 'Car',
+                                        selected: _vehicleType == 'car',
+                                        icon: Icons.directions_car_rounded,
+                                        onTap: () {
+                                          setState(() => _vehicleType = 'car');
+                                        },
+                                      ),
+                                    ),
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      child: _VehicleTypeChip(
+                                        label: 'Motorcycle',
+                                        selected: _vehicleType == 'motorcycle',
+                                        icon: Icons.two_wheeler_rounded,
+                                        onTap: () {
+                                          setState(
+                                            () => _vehicleType = 'motorcycle',
+                                          );
+                                        },
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 14),
                                 _buildField(
                                   controller: _vehicleNameController,
-                                  label: _lang.t('vehicle.name'),
+                                  label:
+                                      _vehicleType == 'car'
+                                          ? 'Car model'
+                                          : 'Motorcycle model',
                                 ),
                                 const SizedBox(height: 10),
                                 _buildField(
                                   controller: _plateController,
-                                  label: _lang.t('vehicle.plate'),
+                                  label:
+                                      _vehicleType == 'car'
+                                          ? 'Car plate number'
+                                          : 'Motorcycle plate number',
                                 ),
                                 const SizedBox(height: 10),
                                 _buildField(
                                   controller: _colorController,
-                                  label: _lang.t('vehicle.color'),
+                                  label:
+                                      _vehicleType == 'car'
+                                          ? 'Car color'
+                                          : 'Motorcycle color',
+                                ),
+                                const SizedBox(height: 10),
+                                if (_vehicleType == 'car') ...[
+                                  _buildField(
+                                    controller: _seatsController,
+                                    label: 'Number of seats',
+                                    keyboardType: TextInputType.number,
+                                  ),
+                                  const SizedBox(height: 10),
+                                ] else ...[
+                                  _buildField(
+                                    controller: _bikeEngineController,
+                                    label: 'Engine size (cc)',
+                                    keyboardType: TextInputType.number,
+                                  ),
+                                  const SizedBox(height: 10),
+                                ],
+                                _buildField(
+                                  controller: _detailsController,
+                                  label:
+                                      _vehicleType == 'car'
+                                          ? 'Other car details'
+                                          : 'Other motorcycle details',
+                                  maxLines: 3,
                                 ),
                                 const SizedBox(height: 10),
                                 DropdownButtonFormField<String>(
@@ -296,6 +420,7 @@ class _VehicleInfoPageState extends State<VehicleInfoPage> {
     required String title,
     required IconData icon,
     required Widget child,
+    bool useLogo = false,
   }) {
     return Container(
       width: double.infinity,
@@ -310,7 +435,18 @@ class _VehicleInfoPageState extends State<VehicleInfoPage> {
         children: [
           Row(
             children: [
-              Icon(icon, color: const Color(0xFF6C63FF), size: 20),
+              useLogo
+                  ? SizedBox(
+                    width: 24,
+                    height: 24,
+                    child: ClipOval(
+                      child: Image.asset(
+                        'assets/icon/rideconnect_logo.png',
+                        fit: BoxFit.cover,
+                      ),
+                    ),
+                  )
+                  : Icon(icon, color: const Color(0xFF6C63FF), size: 20),
               const SizedBox(width: 8),
               Text(
                 title,
@@ -332,9 +468,13 @@ class _VehicleInfoPageState extends State<VehicleInfoPage> {
   Widget _buildField({
     required TextEditingController controller,
     required String label,
+    TextInputType keyboardType = TextInputType.text,
+    int maxLines = 1,
   }) {
     return TextFormField(
       controller: controller,
+      keyboardType: keyboardType,
+      maxLines: maxLines,
       style: GoogleFonts.poppins(color: _textPrimary),
       validator: (value) {
         if (value == null || value.trim().isEmpty) {
@@ -373,6 +513,59 @@ class _VehicleInfoPageState extends State<VehicleInfoPage> {
         borderSide: const BorderSide(color: Color(0xFFFF6B6B)),
       ),
       errorStyle: GoogleFonts.poppins(fontSize: 11),
+    );
+  }
+}
+
+class _VehicleTypeChip extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final IconData icon;
+  final VoidCallback onTap;
+
+  const _VehicleTypeChip({
+    required this.label,
+    required this.selected,
+    required this.icon,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+        decoration: BoxDecoration(
+          color: selected ? const Color(0xFF6C63FF) : Colors.transparent,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: selected ? const Color(0xFF6C63FF) : const Color(0xFFC9D6F2),
+          ),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              icon,
+              color: selected ? Colors.white : const Color(0xFF6C63FF),
+              size: 18,
+            ),
+            const SizedBox(width: 8),
+            Flexible(
+              child: Text(
+                label,
+                overflow: TextOverflow.ellipsis,
+                style: GoogleFonts.poppins(
+                  color: selected ? Colors.white : const Color(0xFF0F172A),
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

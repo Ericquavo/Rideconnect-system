@@ -9,6 +9,7 @@ class AuthApiLoginResult {
   final String name;
   final String email;
   final String? token;
+  final String status; // 'approved', 'pending', 'rejected'
 
   const AuthApiLoginResult({
     required this.success,
@@ -17,6 +18,7 @@ class AuthApiLoginResult {
     required this.name,
     required this.email,
     this.token,
+    this.status = 'approved',
   });
 }
 
@@ -27,6 +29,7 @@ class AuthApiRegisterResult {
   final String name;
   final String email;
   final String? token;
+  final String status; // 'approved', 'pending', 'rejected'
 
   const AuthApiRegisterResult({
     required this.success,
@@ -35,6 +38,7 @@ class AuthApiRegisterResult {
     required this.name,
     required this.email,
     this.token,
+    this.status = 'pending',
   });
 }
 
@@ -51,20 +55,23 @@ class AuthApi {
   static const String _validateTokenUrl = '$_baseUrl/auth/token/validate';
 
   static Future<AuthApiRegisterResult> register({
-    required String name,
+    required String fullName,
     required String email,
     required String password,
+    required String passwordConfirmation,
     required String role,
-    String? phone,
+    String? phoneNumber,
   }) async {
     final normalizedRole =
         role.trim().toLowerCase() == 'driver' ? 'driver' : 'passenger';
     final payload = <String, dynamic>{
-      'name': name.trim(),
+      'full_name': fullName.trim(),
       'email': email.trim(),
       'password': password,
+      'password_confirmation': passwordConfirmation,
       'role': normalizedRole,
-      if (phone != null && phone.trim().isNotEmpty) 'phone': phone.trim(),
+      if (phoneNumber != null && phoneNumber.trim().isNotEmpty)
+        'phone_number': phoneNumber.trim(),
     };
 
     final roleSpecificPath = '/api/v1/auth/register/$normalizedRole';
@@ -96,7 +103,7 @@ class AuthApi {
               _asString(data['message']) ??
               'Registration failed. Please try again.',
           role: normalizedRole,
-          name: name.trim(),
+          name: fullName.trim(),
           email: email.trim(),
         );
       }
@@ -111,19 +118,23 @@ class AuthApi {
         name:
             _asString(userMap['name']) ??
             _asString(data['name']) ??
-            name.trim(),
+            fullName.trim(),
         email:
             _asString(userMap['email']) ??
             _asString(data['email']) ??
             email.trim(),
         token: _extractToken(data),
+        status:
+            _asString(userMap['status']) ??
+            _asString(data['status']) ??
+            'pending',
       );
     } catch (_) {
       return AuthApiRegisterResult(
         success: false,
         message: 'Unable to reach server. Please try again.',
         role: normalizedRole,
-        name: name.trim(),
+        name: fullName.trim(),
         email: email.trim(),
       );
     }
@@ -185,6 +196,10 @@ class AuthApi {
         name: userName,
         email: userEmail,
         token: token,
+        status:
+            _asString(userMap['status']) ??
+            _asString(data['status']) ??
+            'approved',
       );
     } catch (_) {
       return AuthApiLoginResult(

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../../services/passenger_language_service.dart';
+import '../../../services/passenger_api.dart';
 import 'settings_theme.dart';
 
 class PaymentMethodsPage extends StatefulWidget {
@@ -11,133 +12,93 @@ class PaymentMethodsPage extends StatefulWidget {
 }
 
 class _PaymentMethodsPageState extends State<PaymentMethodsPage> {
-  final List<_PaymentMethod> _methods = [
-    _PaymentMethod(
-      'Mobile Money',
-      'MTN •••• 2291',
-      Icons.phone_android_rounded,
-      const Color(0xFF10B981),
-    ),
-    _PaymentMethod(
-      'Credit / Debit Card',
-      'VISA •••• 4242',
-      Icons.credit_card_rounded,
-      const Color(0xFF3B82F6),
-    ),
-    _PaymentMethod(
-      'Cash',
-      'Pay directly to driver',
-      Icons.payments_rounded,
-      const Color(0xFF6C63FF),
-    ),
-  ];
+  String _selectedMethod = 'cash';
+  late final TextEditingController _accountNameController;
+  late final TextEditingController _accountNumberController;
+  bool _loading = true;
+  bool _saving = false;
 
-  Future<void> _openMobileMoneyFlow() async {
-    final phoneCtrl = TextEditingController();
-    final amountCtrl = TextEditingController();
-    final result = await showModalBottomSheet<bool>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) {
-        return Padding(
-          padding: EdgeInsets.only(
-            bottom: MediaQuery.of(context).viewInsets.bottom,
-          ),
-          child: Container(
-            padding: const EdgeInsets.all(16),
-            decoration: const BoxDecoration(
-              color: Color(0xFF0F1428),
-              borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Mobile Money Payment',
-                  style: GoogleFonts.poppins(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w700,
-                    fontSize: 18,
-                  ),
-                ),
-                const SizedBox(height: 10),
-                TextField(
-                  controller: phoneCtrl,
-                  keyboardType: TextInputType.phone,
-                  style: GoogleFonts.poppins(color: Colors.white),
-                  decoration: const InputDecoration(
-                    labelText: 'Phone number',
-                    filled: true,
-                    fillColor: Color(0x1FFFFFFF),
-                  ),
-                ),
-                const SizedBox(height: 10),
-                TextField(
-                  controller: amountCtrl,
-                  keyboardType: const TextInputType.numberWithOptions(
-                    decimal: true,
-                  ),
-                  style: GoogleFonts.poppins(color: Colors.white),
-                  decoration: const InputDecoration(
-                    labelText: 'Amount',
-                    prefixText: r'$ ',
-                    filled: true,
-                    fillColor: Color(0x1FFFFFFF),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    Expanded(
-                      child: OutlinedButton(
-                        onPressed: () => Navigator.pop(context, false),
-                        child: const Text('Cancel'),
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: ElevatedButton(
-                        onPressed: () {
-                          final phone = phoneCtrl.text.trim();
-                          final amount =
-                              double.tryParse(amountCtrl.text.trim()) ?? 0;
-                          final validPhone = phone.length >= 10;
-                          if (!validPhone || amount <= 0) {
-                            Navigator.pop(context, false);
-                            return;
-                          }
-                          Navigator.pop(context, true);
-                        },
-                        child: const Text('Pay now'),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
+  @override
+  void initState() {
+    super.initState();
+    _accountNameController = TextEditingController();
+    _accountNumberController = TextEditingController();
+    _loadExisting();
+  }
 
-    phoneCtrl.dispose();
-    amountCtrl.dispose();
+  @override
+  void dispose() {
+    _accountNameController.dispose();
+    _accountNumberController.dispose();
+    super.dispose();
+  }
 
-    if (!mounted || result == null) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          result
-              ? 'Payment request submitted successfully.'
-              : 'Payment failed. Check number and amount then try again.',
-          style: GoogleFonts.poppins(),
+  Future<void> _loadExisting() async {
+    try {
+      final resp = await PassengerApi.instance.getProfile();
+      final data = resp['data'];
+      final profile =
+          data is Map<String, dynamic>
+              ? (data['user'] is Map<String, dynamic>
+                  ? data['user'] as Map<String, dynamic>
+                  : data)
+              : <String, dynamic>{};
+
+      final paymentRaw = profile['payment'];
+      final payment =
+          paymentRaw is Map<String, dynamic> ? paymentRaw : <String, dynamic>{};
+
+      if (!mounted) return;
+      setState(() {
+        _selectedMethod =
+            (payment['method'] ?? payment['type'] ?? 'cash').toString();
+        _accountNameController.text =
+            (payment['account_name'] ?? payment['holder_name'] ?? '')
+                .toString();
+        _accountNumberController.text =
+            (payment['account_number'] ??
+                    payment['number'] ??
+                    payment['mobile_number'] ??
+                    '')
+                .toString();
+        _loading = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _save() async {
+    setState(() => _saving = true);
+    try {
+      await PassengerApi.instance.updateProfile({
+        'payment': {
+          'method': _selectedMethod,
+          'account_name': _accountNameController.text.trim(),
+          'account_number': _accountNumberController.text.trim(),
+        },
+      });
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Payment method saved.'),
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: Color(0xFF10B981),
         ),
-        behavior: SnackBarBehavior.floating,
-        backgroundColor: result ? const Color(0xFF10B981) : null,
-      ),
-    );
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(e.toString().replaceFirst('Exception: ', '')),
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: const Color(0xFFFF5E5B),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
   }
 
   @override
@@ -149,98 +110,126 @@ class _PaymentMethodsPageState extends State<PaymentMethodsPage> {
       icon: Icons.payment_rounded,
       child: Padding(
         padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
-        child: Column(
-          children: [
-            Expanded(
-              child: ListView.builder(
-                itemCount: _methods.length,
-                itemBuilder: (_, i) {
-                  final m = _methods[i];
-                  return Padding(
-                    padding: const EdgeInsets.only(bottom: 12),
-                    child: GestureDetector(
-                      onTap:
-                          m.title.toLowerCase().contains('mobile money')
-                              ? _openMobileMoneyFlow
-                              : null,
-                      child: SettingsCard(
-                        child: Row(
-                          children: [
-                            Container(
-                              width: 40,
-                              height: 40,
-                              decoration: BoxDecoration(
-                                color: m.color.withValues(alpha: 0.16),
-                                borderRadius: BorderRadius.circular(10),
-                              ),
-                              child: Icon(m.icon, color: m.color),
+        child:
+            _loading
+                ? const Center(
+                  child: CircularProgressIndicator(color: Color(0xFF6C63FF)),
+                )
+                : Column(
+                  children: [
+                    _methodCard(palette, lang),
+                    const SizedBox(height: 16),
+                    BrandButton(
+                      text: lang.t('payment.addMethod'),
+                      icon: Icons.add_card_rounded,
+                      onPressed: () {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              'New payment method flow can be connected to backend.',
+                              style: GoogleFonts.poppins(),
                             ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    m.title,
-                                    style: GoogleFonts.poppins(
-                                      color: palette.textPrimary,
-                                      fontWeight: FontWeight.w600,
-                                      fontSize: 14,
-                                    ),
-                                  ),
-                                  Text(
-                                    m.subtitle,
-                                    style: GoogleFonts.poppins(
-                                      color: palette.textSecondary,
-                                      fontSize: 12,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            IconButton(
-                              onPressed:
-                                  () => setState(() => _methods.removeAt(i)),
-                              icon: const Icon(
-                                Icons.delete_outline_rounded,
-                                color: Color(0xFFFF5E5B),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
+                            behavior: SnackBarBehavior.floating,
+                          ),
+                        );
+                      },
                     ),
-                  );
-                },
+                  ],
+                ),
+      ),
+    );
+  }
+
+  Widget _methodCard(SettingsPalette palette, PassengerLanguageService lang) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final textPrimary = palette.textPrimary;
+    return SettingsCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          DropdownButtonFormField<String>(
+            value: _selectedMethod,
+            dropdownColor: isDark ? const Color(0xFF1A1F3A) : Colors.white,
+            iconEnabledColor: const Color(0xFF6C63FF),
+            style: GoogleFonts.poppins(color: textPrimary),
+            decoration: const InputDecoration(
+              isDense: true,
+              border: OutlineInputBorder(),
+            ),
+            items: const [
+              DropdownMenuItem(
+                value: 'mobile_money',
+                child: Text('Mobile Money'),
+              ),
+              DropdownMenuItem(
+                value: 'bank_account',
+                child: Text('Bank Account'),
+              ),
+              DropdownMenuItem(value: 'cash', child: Text('Cash')),
+            ],
+            onChanged: (v) {
+              if (v == null) return;
+              setState(() => _selectedMethod = v);
+            },
+          ),
+          const SizedBox(height: 10),
+          TextFormField(
+            controller: _accountNameController,
+            style: GoogleFonts.poppins(color: textPrimary),
+            decoration: InputDecoration(
+              labelText:
+                  _selectedMethod == 'bank_account'
+                      ? lang.t('payout.accountHolder')
+                      : 'Account / Holder',
+              border: const OutlineInputBorder(),
+              isDense: true,
+            ),
+          ),
+          const SizedBox(height: 10),
+          TextFormField(
+            controller: _accountNumberController,
+            style: GoogleFonts.poppins(color: textPrimary),
+            keyboardType: TextInputType.text,
+            decoration: InputDecoration(
+              labelText:
+                  _selectedMethod == 'mobile_money'
+                      ? lang.t('payout.mobileNumber')
+                      : lang.t('payout.bankAccountNumber'),
+              border: const OutlineInputBorder(),
+              isDense: true,
+            ),
+          ),
+          const SizedBox(height: 12),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: _saving ? null : _save,
+              icon: const Icon(Icons.sync_alt_rounded),
+              label:
+                  _saving
+                      ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                      : Text(
+                        'Save',
+                        style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
+                      ),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: const Color(0xFF6C63FF),
+                side: const BorderSide(color: Color(0xFF6C63FF), width: 1.1),
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
               ),
             ),
-            BrandButton(
-              text: lang.t('payment.addMethod'),
-              icon: Icons.add_card_rounded,
-              onPressed: () {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text(
-                      'New payment method flow can be connected to backend.',
-                      style: GoogleFonts.poppins(),
-                    ),
-                    behavior: SnackBarBehavior.floating,
-                  ),
-                );
-              },
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
 }
 
-class _PaymentMethod {
-  final String title;
-  final String subtitle;
-  final IconData icon;
-  final Color color;
-
-  const _PaymentMethod(this.title, this.subtitle, this.icon, this.color);
-}
+// Payment method helper removed; UI now mirrors driver payout flow.

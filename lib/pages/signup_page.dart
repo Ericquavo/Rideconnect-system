@@ -21,7 +21,6 @@ class _SignupPageState extends State<SignupPage>
   bool _obscurePassword = true;
   bool _obscureConfirm = true;
   bool _isLoading = false;
-  String _selectedRole = 'Passenger';
   late AnimationController _animController;
   late Animation<double> _fadeAnim;
   late Animation<Offset> _slideAnim;
@@ -52,42 +51,103 @@ class _SignupPageState extends State<SignupPage>
     super.dispose();
   }
 
+  void _showError(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        backgroundColor: const Color(0xFF131729),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        content: Text(
+          message,
+          style: GoogleFonts.poppins(color: Colors.white70, fontSize: 13),
+        ),
+      ),
+    );
+  }
+
   void _handleSignup() async {
-    if (_formKey.currentState!.validate()) {
-      setState(() => _isLoading = true);
-      final selectedRole =
-          _selectedRole.trim().toLowerCase() == 'driver'
-              ? 'driver'
-              : 'passenger';
-      final result = await AuthApi.register(
-        name: _nameController.text.trim(),
-        email: _emailController.text.trim(),
-        phone: _phoneController.text.trim(),
-        password: _passwordController.text,
-        role: selectedRole,
-      );
-      setState(() => _isLoading = false);
-      if (!mounted) return;
+    final name = _nameController.text.trim();
+    final email = _emailController.text.trim();
+    final phone = _phoneController.text.trim();
+    final password = _passwordController.text.trim();
+    final confirmPassword = _confirmPasswordController.text.trim();
 
-      if (!result.success) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            backgroundColor: const Color(0xFF131729),
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
-            content: Text(
-              result.message,
-              style: GoogleFonts.poppins(color: Colors.white70, fontSize: 13),
-            ),
-          ),
-        );
-        return;
-      }
-
-      _showSuccessDialog();
+    // Validate all fields
+    if (name.isEmpty) {
+      _showError('Full name is required');
+      return;
     }
+    if (name.length < 3) {
+      _showError('Name must be at least 3 characters');
+      return;
+    }
+    if (email.isEmpty) {
+      _showError('Email is required');
+      return;
+    }
+    if (!RegExp(r'^[\w-.]+@([\w-]+\.)+[\w]{2,4}$').hasMatch(email)) {
+      _showError('Enter a valid email');
+      return;
+    }
+    if (phone.isEmpty) {
+      _showError('Phone number is required');
+      return;
+    }
+    if (phone.replaceAll(RegExp(r'[\s\-\+\(\)]'), '').length < 7) {
+      _showError('Enter a valid phone number');
+      return;
+    }
+    if (password.isEmpty) {
+      _showError('Password is required');
+      return;
+    }
+    if (password.length < 8) {
+      _showError('Password must be at least 8 characters');
+      return;
+    }
+    if (!RegExp(r'[A-Z]').hasMatch(password)) {
+      _showError('Password must contain at least one uppercase letter');
+      return;
+    }
+    if (!RegExp(r'[a-z]').hasMatch(password)) {
+      _showError('Password must contain at least one lowercase letter');
+      return;
+    }
+    if (!RegExp(r'[0-9]').hasMatch(password)) {
+      _showError('Password must contain at least one number');
+      return;
+    }
+    if (!RegExp(r'[!@#$%^&*()_+=\-\[\]{};:<>?/\\|`~]').hasMatch(password)) {
+      _showError('Password must contain a special character (!@#\$%^&*)');
+      return;
+    }
+    if (confirmPassword.isEmpty) {
+      _showError('Please confirm your password');
+      return;
+    }
+    if (password != confirmPassword) {
+      _showError('Passwords do not match');
+      return;
+    }
+
+    setState(() => _isLoading = true);
+    final result = await AuthApi.register(
+      fullName: name,
+      email: email,
+      phoneNumber: phone,
+      password: password,
+      passwordConfirmation: confirmPassword,
+      role: 'passenger',
+    );
+    setState(() => _isLoading = false);
+    if (!mounted) return;
+
+    if (!result.success) {
+      _showError(result.message);
+      return;
+    }
+
+    _showSuccessDialog();
   }
 
   void _showSuccessDialog() {
@@ -102,14 +162,14 @@ class _SignupPageState extends State<SignupPage>
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 36),
               decoration: BoxDecoration(
-                color: const Color(0xFF131729),
+                color: Colors.white,
                 borderRadius: BorderRadius.circular(24),
-                border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+                border: Border.all(color: Colors.black.withValues(alpha: 0.06)),
                 boxShadow: [
                   BoxShadow(
-                    color: const Color(0xFF6C63FF).withValues(alpha: 0.25),
-                    blurRadius: 40,
-                    spreadRadius: 4,
+                    color: Colors.black.withValues(alpha: 0.08),
+                    blurRadius: 24,
+                    spreadRadius: 2,
                   ),
                 ],
               ),
@@ -147,16 +207,16 @@ class _SignupPageState extends State<SignupPage>
                     style: GoogleFonts.poppins(
                       fontSize: 22,
                       fontWeight: FontWeight.w700,
-                      color: Colors.white,
+                      color: const Color(0xFF222222),
                     ),
                   ),
                   const SizedBox(height: 10),
                   Text(
-                    'Welcome to RideConnect 🎉\nYour account has been successfully created.',
+                    'Welcome to RideConnect 🎉\nYour account has been successfully created.\nAwait admin approval to start booking rides.',
                     textAlign: TextAlign.center,
                     style: GoogleFonts.poppins(
                       fontSize: 13,
-                      color: Colors.white54,
+                      color: const Color(0xFF666666),
                       height: 1.6,
                     ),
                   ),
@@ -174,8 +234,8 @@ class _SignupPageState extends State<SignupPage>
                           BoxShadow(
                             color: const Color(
                               0xFF6C63FF,
-                            ).withValues(alpha: 0.45),
-                            blurRadius: 16,
+                            ).withValues(alpha: 0.35),
+                            blurRadius: 12,
                             offset: const Offset(0, 6),
                           ),
                         ],
@@ -198,7 +258,7 @@ class _SignupPageState extends State<SignupPage>
                           size: 18,
                         ),
                         label: Text(
-                          'Go to Login',
+                          'Continue to Login',
                           style: GoogleFonts.poppins(
                             fontSize: 15,
                             fontWeight: FontWeight.w600,
@@ -218,170 +278,368 @@ class _SignupPageState extends State<SignupPage>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            colors: [Color(0xFF0A0E1A), Color(0xFF1A1F3A), Color(0xFF0D1B4B)],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
+      backgroundColor: Colors.white,
+      body: Stack(
+        children: [
+          Positioned.fill(
+            child: IgnorePointer(
+              child: CustomPaint(painter: _SignupBackgroundPainter()),
+            ),
           ),
-        ),
-        child: SafeArea(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 20),
-            child: FadeTransition(
-              opacity: _fadeAnim,
-              child: SlideTransition(
-                position: _slideAnim,
-                child: Form(
-                  key: _formKey,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _buildBackButton(context),
-                      const SizedBox(height: 16),
-                      _buildHeader(),
-                      const SizedBox(height: 32),
-                      _buildRolePicker(),
-                      const SizedBox(height: 22),
-                      _buildNameField(),
-                      const SizedBox(height: 18),
-                      _buildEmailField(),
-                      const SizedBox(height: 18),
-                      _buildPhoneField(),
-                      const SizedBox(height: 18),
-                      _buildPasswordField(),
-                      const SizedBox(height: 18),
-                      _buildConfirmPasswordField(),
-                      const SizedBox(height: 30),
-                      _buildSignupButton(),
-                      const SizedBox(height: 26),
-                      _buildDivider(),
-                      const SizedBox(height: 22),
-                      _buildSocialButtons(),
-                      const SizedBox(height: 32),
-                      _buildLoginRedirect(context),
-                      const SizedBox(height: 20),
-                    ],
+          SafeArea(
+            child: SingleChildScrollView(
+              child: FadeTransition(
+                opacity: _fadeAnim,
+                child: SlideTransition(
+                  position: _slideAnim,
+                  child: Center(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 18,
+                        vertical: 14,
+                      ),
+                      child: Container(
+                        constraints: const BoxConstraints(maxWidth: 520),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.97),
+                          borderRadius: BorderRadius.circular(34),
+                          boxShadow: [
+                            BoxShadow(
+                              color: const Color(
+                                0xFF6C63FF,
+                              ).withValues(alpha: 0.10),
+                              blurRadius: 30,
+                              offset: const Offset(0, 12),
+                            ),
+                          ],
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(24, 18, 24, 24),
+                          child: Form(
+                            key: _formKey,
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.center,
+                              children: [
+                                _buildBackButton(context),
+                                const SizedBox(height: 6),
+                                _buildHeroIllustration(),
+                                const SizedBox(height: 16),
+                                _buildHeader(),
+                                const SizedBox(height: 20),
+                                _buildNameField(),
+                                const SizedBox(height: 12),
+                                _buildEmailField(),
+                                const SizedBox(height: 12),
+                                _buildPhoneField(),
+                                const SizedBox(height: 12),
+                                _buildPasswordField(),
+                                const SizedBox(height: 12),
+                                _buildConfirmPasswordField(),
+                                const SizedBox(height: 18),
+                                _buildSignupButton(),
+                                const SizedBox(height: 18),
+                                _buildDivider(),
+                                const SizedBox(height: 18),
+                                _buildSocialButtons(),
+                                const SizedBox(height: 18),
+                                _buildLoginRedirect(context),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
                   ),
                 ),
               ),
             ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBackButton(BuildContext context) {
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: GestureDetector(
+        onTap: () => Navigator.pop(context),
+        child: Container(
+          width: 38,
+          height: 38,
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.06),
+                blurRadius: 10,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: const Icon(
+            Icons.arrow_back_ios_new_rounded,
+            color: Color(0xFF222222),
+            size: 16,
           ),
         ),
       ),
     );
   }
 
-  Widget _buildBackButton(BuildContext context) {
-    return GestureDetector(
-      onTap: () => Navigator.pop(context),
+  Widget _buildHeroIllustration() {
+    return SizedBox(
+      height: 210,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          Positioned(
+            top: 0,
+            child: Container(
+              width: 160,
+              height: 160,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: const Color(0xFF6C63FF).withValues(alpha: 0.12),
+                  width: 1.2,
+                ),
+              ),
+            ),
+          ),
+          Positioned(right: 26, top: 24, child: _buildPhoneMapIllustration()),
+          Positioned(left: 0, bottom: 28, child: _buildCarIllustration()),
+          Positioned(right: 0, bottom: 10, child: _buildScooterIllustration()),
+          Positioned(
+            left: 28,
+            bottom: 22,
+            child: Container(
+              width: 34,
+              height: 56,
+              decoration: BoxDecoration(
+                color: const Color(0xFF6C63FF).withValues(alpha: 0.10),
+                borderRadius: BorderRadius.circular(18),
+              ),
+              child: const Icon(
+                Icons.spa_rounded,
+                color: Color(0xFF6C63FF),
+                size: 22,
+              ),
+            ),
+          ),
+          Positioned(left: 12, top: 92, child: _buildLocationPin()),
+          Positioned(right: 18, top: 72, child: _buildLocationPin()),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPhoneMapIllustration() {
+    return Container(
+      width: 128,
+      height: 190,
+      decoration: BoxDecoration(
+        color: const Color(0xFF121829),
+        borderRadius: BorderRadius.circular(26),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.12),
+            blurRadius: 18,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      padding: const EdgeInsets.all(8),
       child: Container(
-        width: 44,
-        height: 44,
         decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.07),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+          color: const Color(0xFFF7F7FF),
+          borderRadius: BorderRadius.circular(20),
         ),
-        child: const Icon(
-          Icons.arrow_back_ios_new_rounded,
-          color: Colors.white70,
-          size: 18,
+        child: Stack(
+          children: [
+            Positioned.fill(child: CustomPaint(painter: _MapGridPainter())),
+            Positioned(top: 12, right: 12, child: _buildMapPin(0.0)),
+            Positioned(left: 18, top: 60, child: _buildMapPin(0.0)),
+            Positioned(
+              left: 34,
+              top: 28,
+              child: Container(
+                width: 10,
+                height: 10,
+                decoration: BoxDecoration(
+                  color: const Color(0xFF6C63FF),
+                  borderRadius: BorderRadius.circular(3),
+                ),
+              ),
+            ),
+            Positioned(
+              left: 33,
+              top: 29,
+              child: Container(
+                width: 2,
+                height: 110,
+                color: const Color(0xFF6C63FF).withValues(alpha: 0.55),
+              ),
+            ),
+            Positioned(
+              left: 33,
+              top: 136,
+              child: Container(
+                width: 56,
+                height: 2,
+                color: const Color(0xFF6C63FF).withValues(alpha: 0.55),
+              ),
+            ),
+            Positioned(
+              left: 22,
+              top: 108,
+              child: Container(
+                width: 26,
+                height: 12,
+                decoration: BoxDecoration(
+                  color: const Color(0xFF6C63FF),
+                  borderRadius: BorderRadius.circular(7),
+                ),
+              ),
+            ),
+            Positioned(
+              bottom: 10,
+              left: 14,
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 6,
+                ),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(12),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.08),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: Text(
+                  'Your Ride',
+                  style: GoogleFonts.poppins(
+                    fontSize: 9,
+                    fontWeight: FontWeight.w600,
+                    color: const Color(0xFF333333),
+                  ),
+                ),
+              ),
+            ),
+          ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildMapPin(double rotation) {
+    return Transform.rotate(
+      angle: rotation,
+      child: const Icon(
+        Icons.location_on_rounded,
+        color: Color(0xFF6C63FF),
+        size: 18,
+      ),
+    );
+  }
+
+  Widget _buildCarIllustration() {
+    return Container(
+      width: 96,
+      height: 54,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.08),
+            blurRadius: 14,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: const Icon(
+        Icons.directions_car_rounded,
+        color: Color(0xFF2D8CFF),
+        size: 40,
+      ),
+    );
+  }
+
+  Widget _buildScooterIllustration() {
+    return Container(
+      width: 82,
+      height: 54,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.08),
+            blurRadius: 14,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: const Icon(
+        Icons.two_wheeler_rounded,
+        color: Color(0xFF6C63FF),
+        size: 40,
+      ),
+    );
+  }
+
+  Widget _buildLocationPin() {
+    return Container(
+      width: 26,
+      height: 26,
+      decoration: BoxDecoration(
+        color: const Color(0xFF6C63FF),
+        borderRadius: BorderRadius.circular(13),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF6C63FF).withValues(alpha: 0.24),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: const Icon(
+        Icons.location_on_rounded,
+        color: Colors.white,
+        size: 14,
       ),
     );
   }
 
   Widget _buildHeader() {
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  colors: [Color(0xFF6C63FF), Color(0xFF3B82F6)],
-                ),
-                borderRadius: BorderRadius.circular(10),
-                boxShadow: [
-                  BoxShadow(
-                    color: const Color(0xFF6C63FF).withValues(alpha: 0.4),
-                    blurRadius: 12,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
-              ),
-              child: const Icon(
-                Icons.directions_car_rounded,
-                color: Colors.white,
-                size: 22,
-              ),
-            ),
-            const SizedBox(width: 12),
-            Text(
-              'RideConnect',
-              style: GoogleFonts.poppins(
-                fontSize: 20,
-                fontWeight: FontWeight.w700,
-                foreground:
-                    Paint()
-                      ..shader = const LinearGradient(
-                        colors: [Color(0xFF6C63FF), Color(0xFF3B82F6)],
-                      ).createShader(const Rect.fromLTWH(0, 0, 160, 30)),
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 20),
+        const SizedBox(height: 6),
         Text(
-          'Create Account 🚀',
+          'Create Your Account',
           style: GoogleFonts.poppins(
             fontSize: 26,
             fontWeight: FontWeight.w700,
-            color: Colors.white,
+            color: const Color(0xFF222222),
           ),
         ),
-        const SizedBox(height: 6),
+        const SizedBox(height: 8),
         Text(
-          'Join RideConnect and start your journey',
-          style: GoogleFonts.poppins(fontSize: 14, color: Colors.white54),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildRolePicker() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'I am a...',
+          'Sign up for Rideconnect to enjoy trips and move safely',
+          textAlign: TextAlign.center,
           style: GoogleFonts.poppins(
-            fontSize: 13,
-            fontWeight: FontWeight.w500,
-            color: Colors.white70,
+            fontSize: 14,
+            color: const Color(0xFF666666),
+            height: 1.45,
           ),
-        ),
-        const SizedBox(height: 10),
-        Row(
-          children: [
-            _RoleChip(
-              label: 'Passenger',
-              icon: Icons.person_outline_rounded,
-              isSelected: _selectedRole == 'Passenger',
-              onTap: () => setState(() => _selectedRole = 'Passenger'),
-            ),
-            const SizedBox(width: 14),
-            _RoleChip(
-              label: 'Driver',
-              icon: Icons.drive_eta_outlined,
-              isSelected: _selectedRole == 'Driver',
-              onTap: () => setState(() => _selectedRole = 'Driver'),
-            ),
-          ],
         ),
       ],
     );
@@ -391,13 +649,8 @@ class _SignupPageState extends State<SignupPage>
     return _InputField(
       controller: _nameController,
       label: 'Full Name',
-      hint: 'John Doe',
+      hint: 'Enter your full name',
       prefixIcon: Icons.person_outline_rounded,
-      validator: (v) {
-        if (v == null || v.trim().isEmpty) return 'Full name is required';
-        if (v.trim().length < 3) return 'Name must be at least 3 characters';
-        return null;
-      },
     );
   }
 
@@ -405,16 +658,9 @@ class _SignupPageState extends State<SignupPage>
     return _InputField(
       controller: _emailController,
       label: 'Email Address',
-      hint: 'you@example.com',
+      hint: 'Enter your email address',
       prefixIcon: Icons.email_outlined,
       keyboardType: TextInputType.emailAddress,
-      validator: (v) {
-        if (v == null || v.isEmpty) return 'Email is required';
-        if (!RegExp(r'^[\w-.]+@([\w-]+\.)+[\w]{2,4}$').hasMatch(v)) {
-          return 'Enter a valid email';
-        }
-        return null;
-      },
     );
   }
 
@@ -422,16 +668,9 @@ class _SignupPageState extends State<SignupPage>
     return _InputField(
       controller: _phoneController,
       label: 'Phone Number',
-      hint: '+1 234 567 8900',
+      hint: 'Enter your phone number',
       prefixIcon: Icons.phone_outlined,
       keyboardType: TextInputType.phone,
-      validator: (v) {
-        if (v == null || v.isEmpty) return 'Phone number is required';
-        if (v.replaceAll(RegExp(r'[\s\-\+\(\)]'), '').length < 7) {
-          return 'Enter a valid phone number';
-        }
-        return null;
-      },
     );
   }
 
@@ -439,7 +678,7 @@ class _SignupPageState extends State<SignupPage>
     return _InputField(
       controller: _passwordController,
       label: 'Password',
-      hint: '••••••••',
+      hint: 'Create a password',
       prefixIcon: Icons.lock_outline_rounded,
       obscureText: _obscurePassword,
       suffixIcon: IconButton(
@@ -447,22 +686,11 @@ class _SignupPageState extends State<SignupPage>
           _obscurePassword
               ? Icons.visibility_off_outlined
               : Icons.visibility_outlined,
-          color: Colors.white38,
+          color: const Color(0xFF9A9A9A),
           size: 20,
         ),
         onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
       ),
-      validator: (v) {
-        if (v == null || v.isEmpty) return 'Password is required';
-        if (v.length < 6) return 'Minimum 6 characters';
-        if (!RegExp(r'[A-Z]').hasMatch(v)) {
-          return 'Must contain at least one uppercase letter';
-        }
-        if (!RegExp(r'[0-9]').hasMatch(v)) {
-          return 'Must contain at least one number';
-        }
-        return null;
-      },
     );
   }
 
@@ -470,7 +698,7 @@ class _SignupPageState extends State<SignupPage>
     return _InputField(
       controller: _confirmPasswordController,
       label: 'Confirm Password',
-      hint: '••••••••',
+      hint: 'Confirm your password',
       prefixIcon: Icons.lock_outline_rounded,
       obscureText: _obscureConfirm,
       suffixIcon: IconButton(
@@ -478,34 +706,29 @@ class _SignupPageState extends State<SignupPage>
           _obscureConfirm
               ? Icons.visibility_off_outlined
               : Icons.visibility_outlined,
-          color: Colors.white38,
+          color: const Color(0xFF9A9A9A),
           size: 20,
         ),
         onPressed: () => setState(() => _obscureConfirm = !_obscureConfirm),
       ),
-      validator: (v) {
-        if (v == null || v.isEmpty) return 'Please confirm your password';
-        if (v != _passwordController.text) return 'Passwords do not match';
-        return null;
-      },
     );
   }
 
   Widget _buildSignupButton() {
     return SizedBox(
       width: double.infinity,
-      height: 56,
+      height: 54,
       child: DecoratedBox(
         decoration: BoxDecoration(
           gradient: const LinearGradient(
-            colors: [Color(0xFF6C63FF), Color(0xFF3B82F6)],
+            colors: [Color(0xFF6C63FF), Color(0xFF4C57D6)],
           ),
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(14),
           boxShadow: [
             BoxShadow(
-              color: const Color(0xFF6C63FF).withValues(alpha: 0.45),
-              blurRadius: 20,
-              offset: const Offset(0, 8),
+              color: const Color(0xFF6C63FF).withValues(alpha: 0.28),
+              blurRadius: 16,
+              offset: const Offset(0, 6),
             ),
           ],
         ),
@@ -529,11 +752,12 @@ class _SignupPageState extends State<SignupPage>
                     ),
                   )
                   : Text(
-                    'Create Account',
+                    'SIGN UP',
                     style: GoogleFonts.poppins(
                       fontSize: 16,
-                      fontWeight: FontWeight.w600,
+                      fontWeight: FontWeight.w700,
                       color: Colors.white,
+                      letterSpacing: 0.6,
                     ),
                   ),
         ),
@@ -544,51 +768,40 @@ class _SignupPageState extends State<SignupPage>
   Widget _buildDivider() {
     return Row(
       children: [
-        Expanded(
-          child: Divider(
-            color: Colors.white.withValues(alpha: 0.15),
-            thickness: 1,
-          ),
-        ),
+        Expanded(child: Divider(color: const Color(0xFFE0E0E0), thickness: 1)),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 14),
           child: Text(
-            'or sign up with',
-            style: GoogleFonts.poppins(fontSize: 12, color: Colors.white38),
+            'OR SIGN UP WITH',
+            style: GoogleFonts.poppins(
+              fontSize: 12,
+              fontWeight: FontWeight.w500,
+              color: const Color(0xFF9A9A9A),
+            ),
           ),
         ),
-        Expanded(
-          child: Divider(
-            color: Colors.white.withValues(alpha: 0.15),
-            thickness: 1,
-          ),
-        ),
+        Expanded(child: Divider(color: const Color(0xFFE0E0E0), thickness: 1)),
       ],
     );
   }
 
   Widget _buildSocialButtons() {
     return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
+      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
       children: [
         _SocialButton(
-          icon: FontAwesomeIcons.google,
-          label: 'Google',
+          assetPath: 'assets/icon/google.png',
           color: const Color(0xFFEA4335),
           onTap: () {},
         ),
-        const SizedBox(width: 16),
         _SocialButton(
-          icon: FontAwesomeIcons.facebook,
-          label: 'Facebook',
+          assetPath: 'assets/icon/facebook.png',
           color: const Color(0xFF1877F2),
           onTap: () {},
         ),
-        const SizedBox(width: 16),
         _SocialButton(
-          icon: FontAwesomeIcons.apple,
-          label: 'Apple',
-          color: Colors.white,
+          assetPath: 'assets/icon/X.png',
+          color: const Color(0xFF111111),
           onTap: () {},
         ),
       ],
@@ -602,12 +815,15 @@ class _SignupPageState extends State<SignupPage>
         children: [
           Text(
             'Already have an account? ',
-            style: GoogleFonts.poppins(fontSize: 13, color: Colors.white54),
+            style: GoogleFonts.poppins(
+              fontSize: 13,
+              color: const Color(0xFF666666),
+            ),
           ),
           GestureDetector(
             onTap: () => Navigator.pop(context),
             child: Text(
-              'Sign In',
+              'Login',
               style: GoogleFonts.poppins(
                 fontSize: 13,
                 color: const Color(0xFF6C63FF),
@@ -616,77 +832,6 @@ class _SignupPageState extends State<SignupPage>
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-// ─── Role Chip ───────────────────────────────────────────────────────────────
-
-class _RoleChip extends StatelessWidget {
-  final String label;
-  final IconData icon;
-  final bool isSelected;
-  final VoidCallback onTap;
-
-  const _RoleChip({
-    required this.label,
-    required this.icon,
-    required this.isSelected,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 250),
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-        decoration: BoxDecoration(
-          gradient:
-              isSelected
-                  ? const LinearGradient(
-                    colors: [Color(0xFF6C63FF), Color(0xFF3B82F6)],
-                  )
-                  : null,
-          color: isSelected ? null : Colors.white.withValues(alpha: 0.06),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color:
-                isSelected
-                    ? Colors.transparent
-                    : Colors.white.withValues(alpha: 0.12),
-          ),
-          boxShadow:
-              isSelected
-                  ? [
-                    BoxShadow(
-                      color: const Color(0xFF6C63FF).withValues(alpha: 0.35),
-                      blurRadius: 12,
-                      offset: const Offset(0, 4),
-                    ),
-                  ]
-                  : [],
-        ),
-        child: Row(
-          children: [
-            Icon(
-              icon,
-              color: isSelected ? Colors.white : Colors.white38,
-              size: 18,
-            ),
-            const SizedBox(width: 8),
-            Text(
-              label,
-              style: GoogleFonts.poppins(
-                fontSize: 13,
-                fontWeight: FontWeight.w500,
-                color: isSelected ? Colors.white : Colors.white54,
-              ),
-            ),
-          ],
-        ),
       ),
     );
   }
@@ -702,7 +847,6 @@ class _InputField extends StatelessWidget {
   final bool obscureText;
   final Widget? suffixIcon;
   final TextInputType keyboardType;
-  final String? Function(String?)? validator;
 
   const _InputField({
     required this.controller,
@@ -712,7 +856,6 @@ class _InputField extends StatelessWidget {
     this.obscureText = false,
     this.suffixIcon,
     this.keyboardType = TextInputType.text,
-    this.validator,
   });
 
   @override
@@ -725,7 +868,7 @@ class _InputField extends StatelessWidget {
           style: GoogleFonts.poppins(
             fontSize: 13,
             fontWeight: FontWeight.w500,
-            color: Colors.white70,
+            color: const Color(0xFF333333),
           ),
         ),
         const SizedBox(height: 8),
@@ -733,43 +876,49 @@ class _InputField extends StatelessWidget {
           controller: controller,
           obscureText: obscureText,
           keyboardType: keyboardType,
-          validator: validator,
-          style: GoogleFonts.poppins(color: Colors.white, fontSize: 14),
+          style: GoogleFonts.poppins(
+            color: const Color(0xFF1A1A1A),
+            fontSize: 14,
+          ),
           decoration: InputDecoration(
             hintText: hint,
-            hintStyle: GoogleFonts.poppins(color: Colors.white24, fontSize: 14),
-            prefixIcon: Icon(prefixIcon, color: Colors.white38, size: 20),
+            hintStyle: GoogleFonts.poppins(
+              color: const Color(0xFFBBBBBB),
+              fontSize: 14,
+            ),
+            prefixIcon: Icon(
+              prefixIcon,
+              color: const Color(0xFF999999),
+              size: 20,
+            ),
             suffixIcon: suffixIcon,
             filled: true,
-            fillColor: Colors.white.withValues(alpha: 0.07),
+            fillColor: const Color(0xFFF8F8F8),
             contentPadding: const EdgeInsets.symmetric(
-              horizontal: 20,
-              vertical: 18,
+              horizontal: 16,
+              vertical: 14,
             ),
             border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(14),
+              borderRadius: BorderRadius.circular(10),
               borderSide: BorderSide.none,
             ),
             enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(14),
-              borderSide: BorderSide(
-                color: Colors.white.withValues(alpha: 0.1),
-                width: 1,
-              ),
+              borderRadius: BorderRadius.circular(10),
+              borderSide: const BorderSide(color: Color(0xFFE0E0E0), width: 1),
             ),
             focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(14),
+              borderRadius: BorderRadius.circular(10),
               borderSide: const BorderSide(
                 color: Color(0xFF6C63FF),
                 width: 1.5,
               ),
             ),
             errorBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(14),
+              borderRadius: BorderRadius.circular(10),
               borderSide: const BorderSide(color: Color(0xFFFF5E5B), width: 1),
             ),
             focusedErrorBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(14),
+              borderRadius: BorderRadius.circular(10),
               borderSide: const BorderSide(
                 color: Color(0xFFFF5E5B),
                 width: 1.5,
@@ -789,14 +938,14 @@ class _InputField extends StatelessWidget {
 // ─── Social Login Button ─────────────────────────────────────────────────────
 
 class _SocialButton extends StatelessWidget {
-  final IconData icon;
-  final String label;
+  final IconData? icon;
+  final String? assetPath;
   final Color color;
   final VoidCallback onTap;
 
   const _SocialButton({
-    required this.icon,
-    required this.label,
+    this.icon,
+    this.assetPath,
     required this.color,
     required this.onTap,
   });
@@ -806,29 +955,73 @@ class _SocialButton extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        width: 90,
-        height: 52,
+        width: 56,
+        height: 56,
         decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.06),
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            FaIcon(icon, color: color, size: 18),
-            const SizedBox(width: 6),
-            Text(
-              label,
-              style: GoogleFonts.poppins(
-                fontSize: 11,
-                color: Colors.white70,
-                fontWeight: FontWeight.w500,
-              ),
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: const Color(0xFFE9E9E9), width: 1),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.08),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
             ),
           ],
+        ),
+        child: Center(
+          child:
+              assetPath != null
+                  ? Image.asset(
+                    assetPath!,
+                    width: 24,
+                    height: 24,
+                    fit: BoxFit.contain,
+                  )
+                  : (icon != null
+                      ? FaIcon(icon, color: color, size: 20)
+                      : const SizedBox.shrink()),
         ),
       ),
     );
   }
+}
+
+class _SignupBackgroundPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()..style = PaintingStyle.fill;
+
+    // Left large circle (like login background)
+    paint.color = const Color(0xFF4C57D6).withValues(alpha: 0.15);
+    // draw partially off-canvas to achieve the same look
+    canvas.drawCircle(Offset(-50, size.height), 300, paint);
+
+    // Right large circle (like login background)
+    paint.color = const Color(0xFF2D8CFF).withValues(alpha: 0.10);
+    canvas.drawCircle(Offset(size.width + 80, -50), 400, paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+class _MapGridPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final gridPaint =
+        Paint()
+          ..color = const Color(0xFFD6D9FF).withValues(alpha: 0.40)
+          ..strokeWidth = 1;
+
+    for (double x = 16; x < size.width; x += 18) {
+      canvas.drawLine(Offset(x, 0), Offset(x, size.height), gridPaint);
+    }
+    for (double y = 16; y < size.height; y += 18) {
+      canvas.drawLine(Offset(0, y), Offset(size.width, y), gridPaint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

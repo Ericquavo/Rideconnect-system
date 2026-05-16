@@ -331,6 +331,13 @@ class _ProfilePageState extends State<ProfilePage> {
                   gradient: const LinearGradient(
                     colors: [Color(0xFF6C63FF), Color(0xFF3B82F6)],
                   ),
+                  border: Border.all(
+                    color:
+                        isDark
+                            ? Colors.white.withValues(alpha: 0.2)
+                            : const Color(0xFF6C63FF).withValues(alpha: 0.4),
+                    width: isDark ? 1 : 2.5,
+                  ),
                   boxShadow: [
                     BoxShadow(
                       color: const Color(0xFF6C63FF).withValues(alpha: 0.4),
@@ -362,15 +369,22 @@ class _ProfilePageState extends State<ProfilePage> {
                 bottom: 2,
                 right: 2,
                 child: Container(
-                  width: 16,
-                  height: 16,
+                  width: 18,
+                  height: 18,
                   decoration: BoxDecoration(
                     color: const Color(0xFF10B981),
                     shape: BoxShape.circle,
                     border: Border.all(
-                      color: const Color(0xFF131729),
-                      width: 2,
+                      color: isDark ? const Color(0xFF131729) : Colors.white,
+                      width: 2.5,
                     ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: const Color(0xFF10B981).withValues(alpha: 0.4),
+                        blurRadius: 6,
+                        spreadRadius: 0,
+                      ),
+                    ],
                   ),
                 ),
               ),
@@ -865,13 +879,23 @@ class _MiniStat extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     return Expanded(
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 10),
         decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.05),
+          color:
+              isDark
+                  ? Colors.white.withValues(alpha: 0.05)
+                  : Colors.black.withValues(alpha: 0.05),
           borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+          border: Border.all(
+            color:
+                isDark
+                    ? Colors.white.withValues(alpha: 0.08)
+                    : Colors.black.withValues(alpha: 0.08),
+          ),
         ),
         child: Column(
           children: [
@@ -880,14 +904,17 @@ class _MiniStat extends StatelessWidget {
             Text(
               value,
               style: GoogleFonts.poppins(
-                color: Colors.white,
+                color: isDark ? Colors.white : const Color(0xFF0F172A),
                 fontWeight: FontWeight.w700,
                 fontSize: 13,
               ),
             ),
             Text(
               label,
-              style: GoogleFonts.poppins(color: Colors.white38, fontSize: 10),
+              style: GoogleFonts.poppins(
+                color: isDark ? Colors.white38 : Colors.black54,
+                fontSize: 10,
+              ),
               textAlign: TextAlign.center,
             ),
           ],
@@ -916,6 +943,8 @@ class _ToggleRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     return Row(
       children: [
         Container(
@@ -931,7 +960,10 @@ class _ToggleRow extends StatelessWidget {
         Expanded(
           child: Text(
             label,
-            style: GoogleFonts.poppins(color: Colors.white70, fontSize: 14),
+            style: GoogleFonts.poppins(
+              color: isDark ? Colors.white70 : const Color(0xFF334155),
+              fontSize: 14,
+            ),
           ),
         ),
         Switch(
@@ -939,8 +971,9 @@ class _ToggleRow extends StatelessWidget {
           onChanged: onChanged,
           activeColor: color,
           activeTrackColor: color.withValues(alpha: 0.3),
-          inactiveThumbColor: Colors.white38,
-          inactiveTrackColor: Colors.white12,
+          inactiveThumbColor: isDark ? Colors.white38 : Colors.black38,
+          inactiveTrackColor:
+              isDark ? Colors.white12 : Colors.black.withValues(alpha: 0.12),
         ),
       ],
     );

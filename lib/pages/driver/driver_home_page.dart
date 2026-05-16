@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'dart:convert';
+import 'dart:typed_data';
 
 import '../../services/driver_api.dart';
 import '../../services/driver_language_service.dart';
@@ -10,14 +13,29 @@ import '../../services/driver_sync_service.dart';
 /// Driver home page: online toggle, map preview, request preview, and daily stats.
 class DriverHomePage extends StatefulWidget {
   final String driverName;
+  final String driverEmail;
+  final Uint8List? driverAvatarBytes;
   final bool isOnline;
+  final int unreadNotificationCount;
   final ValueChanged<bool> onStatusChanged;
+  final VoidCallback onNotificationsTap;
+  final void Function({
+    required String name,
+    required String email,
+    Uint8List? avatarBytes,
+  })?
+  onProfileUpdated;
 
   const DriverHomePage({
     super.key,
     required this.driverName,
+    required this.driverEmail,
+    this.driverAvatarBytes,
     required this.isOnline,
+    this.unreadNotificationCount = 0,
     required this.onStatusChanged,
+    required this.onNotificationsTap,
+    this.onProfileUpdated,
   });
 
   @override
@@ -35,6 +53,7 @@ class _DriverHomePageState extends State<DriverHomePage> {
   bool _hasLocationPermission = false;
   bool _isLocating = false;
   double _mapZoom = 14;
+  final ImagePicker _imagePicker = ImagePicker();
 
   bool get _isDarkMode => Theme.of(context).brightness == Brightness.dark;
   Color get _bgTop =>
@@ -196,6 +215,319 @@ class _DriverHomePageState extends State<DriverHomePage> {
   void _onActiveTripChanged() {
     if (!mounted) return;
     setState(() {});
+  }
+
+  String _initialOf(String value) {
+    final trimmed = value.trim();
+    if (trimmed.isEmpty) return 'D';
+    return trimmed[0].toUpperCase();
+  }
+
+  Uint8List? _decodeAvatarBytes(Map<String, dynamic> profile) {
+    final candidates = <dynamic>[
+      profile['avatar_base64'],
+      profile['profile_photo_base64'],
+      profile['avatar'],
+      profile['photo'],
+    ];
+
+    for (final candidate in candidates) {
+      if (candidate is String) {
+        final text = candidate.trim();
+        if (text.isEmpty) continue;
+        final cleaned =
+            text.startsWith('data:image')
+                ? text.substring(text.indexOf(',') + 1)
+                : text;
+        try {
+          return base64Decode(cleaned);
+        } catch (_) {
+          continue;
+        }
+      }
+    }
+
+    return null;
+  }
+
+  Future<void> _openQuickProfileEditor() async {
+    final api = DriverApi.instance;
+    Map<String, dynamic> profile = <String, dynamic>{};
+    try {
+      final response = await api.getProfile();
+      profile = api.extractDataMap(response);
+    } catch (_) {
+      profile = <String, dynamic>{};
+    }
+
+    if (!mounted) return;
+
+    final nameController = TextEditingController(
+      text: api.readString(profile, const [
+        'name',
+        'full_name',
+      ], fallback: widget.driverName),
+    );
+    final phoneController = TextEditingController(
+      text: api.readString(profile, const [
+        'phone',
+        'phone_number',
+      ], fallback: ''),
+    );
+    final emailController = TextEditingController(
+      text: api.readString(profile, const [
+        'email',
+      ], fallback: widget.driverEmail),
+    );
+    Uint8List? photoBytes = _decodeAvatarBytes(profile);
+    bool saving = false;
+
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: !saving,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            Future<void> pickPhoto() async {
+              final file = await _imagePicker.pickImage(
+                source: ImageSource.gallery,
+                imageQuality: 75,
+                maxWidth: 1080,
+              );
+              if (file == null) return;
+              final bytes = await file.readAsBytes();
+              if (!mounted) return;
+              setDialogState(() => photoBytes = bytes);
+            }
+
+            Future<void> saveProfile() async {
+              final name = nameController.text.trim();
+              final phone = phoneController.text.trim();
+              final email = emailController.text.trim();
+              if (name.isEmpty || email.isEmpty) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Name and email are required.'),
+                    behavior: SnackBarBehavior.floating,
+                    backgroundColor: Color(0xFFFF5E5B),
+                  ),
+                );
+                return;
+              }
+
+              setDialogState(() => saving = true);
+              try {
+                final payload = <String, dynamic>{
+                  'name': name,
+                  'phone': phone,
+                  'email': email,
+                  if (photoBytes != null)
+                    'avatar_base64': base64Encode(photoBytes!),
+                };
+                await api.updateProfile(payload);
+                DriverSyncService.instance.bumpDataVersion();
+                widget.onProfileUpdated?.call(
+                  name: name,
+                  email: email,
+                  avatarBytes: photoBytes,
+                );
+                if (!dialogContext.mounted) return;
+                Navigator.of(dialogContext).pop();
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(_lang.t('edit.profileUpdated')),
+                    behavior: SnackBarBehavior.floating,
+                    backgroundColor: const Color(0xFF10B981),
+                  ),
+                );
+              } catch (e) {
+                if (!mounted) return;
+                setDialogState(() => saving = false);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(e.toString().replaceFirst('Exception: ', '')),
+                    behavior: SnackBarBehavior.floating,
+                    backgroundColor: const Color(0xFFFF5E5B),
+                  ),
+                );
+              }
+            }
+
+            return Dialog(
+              insetPadding: const EdgeInsets.symmetric(
+                horizontal: 20,
+                vertical: 24,
+              ),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 360),
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.all(18),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Text(
+                            'Edit profile',
+                            style: GoogleFonts.poppins(
+                              fontSize: 17,
+                              fontWeight: FontWeight.w700,
+                              color: _textPrimary,
+                            ),
+                          ),
+                          const Spacer(),
+                          IconButton(
+                            onPressed:
+                                saving
+                                    ? null
+                                    : () => Navigator.of(dialogContext).pop(),
+                            icon: const Icon(Icons.close_rounded),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      Center(
+                        child: Stack(
+                          children: [
+                            GestureDetector(
+                              onTap: saving ? null : pickPhoto,
+                              child: Container(
+                                width: 72,
+                                height: 72,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  gradient: const LinearGradient(
+                                    colors: [
+                                      Color(0xFF6C63FF),
+                                      Color(0xFF3B82F6),
+                                    ],
+                                  ),
+                                  image:
+                                      photoBytes != null
+                                          ? DecorationImage(
+                                            image: MemoryImage(photoBytes!),
+                                            fit: BoxFit.cover,
+                                          )
+                                          : null,
+                                ),
+                                child:
+                                    photoBytes == null
+                                        ? Center(
+                                          child: Text(
+                                            _initialOf(nameController.text),
+                                            style: GoogleFonts.poppins(
+                                              color: Colors.white,
+                                              fontSize: 28,
+                                              fontWeight: FontWeight.w700,
+                                            ),
+                                          ),
+                                        )
+                                        : null,
+                              ),
+                            ),
+                            Positioned(
+                              right: 0,
+                              bottom: 0,
+                              child: Container(
+                                padding: const EdgeInsets.all(5),
+                                decoration: const BoxDecoration(
+                                  color: Colors.white,
+                                  shape: BoxShape.circle,
+                                ),
+                                child: const Icon(
+                                  Icons.edit_rounded,
+                                  size: 14,
+                                  color: Color(0xFF3B82F6),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 18),
+                      TextField(
+                        controller: nameController,
+                        enabled: !saving,
+                        decoration: const InputDecoration(
+                          labelText: 'Full name',
+                          border: OutlineInputBorder(),
+                          isDense: true,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: phoneController,
+                        enabled: !saving,
+                        keyboardType: TextInputType.phone,
+                        decoration: const InputDecoration(
+                          labelText: 'Phone number',
+                          border: OutlineInputBorder(),
+                          isDense: true,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: emailController,
+                        enabled: !saving,
+                        keyboardType: TextInputType.emailAddress,
+                        decoration: const InputDecoration(
+                          labelText: 'Email',
+                          border: OutlineInputBorder(),
+                          isDense: true,
+                        ),
+                      ),
+                      const SizedBox(height: 18),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton(
+                              onPressed:
+                                  saving
+                                      ? null
+                                      : () => Navigator.of(dialogContext).pop(),
+                              child: const Text('Cancel'),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: ElevatedButton(
+                              onPressed: saving ? null : saveProfile,
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFF6C63FF),
+                                foregroundColor: Colors.white,
+                              ),
+                              child:
+                                  saving
+                                      ? const SizedBox(
+                                        width: 16,
+                                        height: 16,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                          color: Colors.white,
+                                        ),
+                                      )
+                                      : const Text('Save'),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+
+    nameController.dispose();
+    phoneController.dispose();
+    emailController.dispose();
   }
 
   Future<void> _refresh() async {
@@ -431,33 +763,55 @@ class _DriverHomePageState extends State<DriverHomePage> {
             ],
           ),
         ),
-        Container(
-          width: 52,
-          height: 52,
-          decoration: BoxDecoration(
-            gradient: const LinearGradient(
-              colors: [Color(0xFF6C63FF), Color(0xFF3B82F6)],
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _NotificationBell(
+              unreadCount: widget.unreadNotificationCount,
+              onTap: widget.onNotificationsTap,
             ),
-            shape: BoxShape.circle,
-            boxShadow: [
-              BoxShadow(
-                color: const Color(0xFF6C63FF).withValues(alpha: 0.35),
-                blurRadius: 12,
-              ),
-            ],
-          ),
-          child: Center(
-            child: Text(
-              widget.driverName.isNotEmpty
-                  ? widget.driverName[0].toUpperCase()
-                  : 'D',
-              style: GoogleFonts.poppins(
-                color: Colors.white,
-                fontWeight: FontWeight.w700,
-                fontSize: 22,
+            const SizedBox(width: 10),
+            GestureDetector(
+              onTap: _openQuickProfileEditor,
+              child: Container(
+                width: 52,
+                height: 52,
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFF6C63FF), Color(0xFF3B82F6)],
+                  ),
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: const Color(0xFF6C63FF).withValues(alpha: 0.35),
+                      blurRadius: 12,
+                    ),
+                  ],
+                ),
+                child:
+                    widget.driverAvatarBytes != null &&
+                            widget.driverAvatarBytes!.isNotEmpty
+                        ? ClipOval(
+                          child: Image.memory(
+                            widget.driverAvatarBytes!,
+                            fit: BoxFit.cover,
+                            width: 52,
+                            height: 52,
+                          ),
+                        )
+                        : Center(
+                          child: Text(
+                            _initialOf(widget.driverName),
+                            style: GoogleFonts.poppins(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w700,
+                              fontSize: 22,
+                            ),
+                          ),
+                        ),
               ),
             ),
-          ),
+          ],
         ),
       ],
     );
@@ -1088,6 +1442,76 @@ class _DriverHomePageState extends State<DriverHomePage> {
           fontSize: 12,
         ),
       ),
+    );
+  }
+}
+
+class _NotificationBell extends StatelessWidget {
+  final int unreadCount;
+  final VoidCallback onTap;
+
+  const _NotificationBell({required this.unreadCount, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final hasUnread = unreadCount > 0;
+
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: onTap,
+            borderRadius: BorderRadius.circular(16),
+            child: Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: const Color(0xFFD9E1F2)),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.05),
+                    blurRadius: 10,
+                    offset: const Offset(0, 3),
+                  ),
+                ],
+              ),
+              child: const Icon(
+                Icons.notifications_none_rounded,
+                color: Color(0xFF3B82F6),
+                size: 22,
+              ),
+            ),
+          ),
+        ),
+        if (hasUnread)
+          Positioned(
+            right: -2,
+            top: -2,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(minWidth: 18, minHeight: 18),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 4),
+                decoration: const BoxDecoration(
+                  color: Color(0xFFFF5E5B),
+                  shape: BoxShape.circle,
+                ),
+                alignment: Alignment.center,
+                child: Text(
+                  unreadCount > 99 ? '99+' : '$unreadCount',
+                  style: GoogleFonts.poppins(
+                    color: Colors.white,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ),
+          ),
+      ],
     );
   }
 }

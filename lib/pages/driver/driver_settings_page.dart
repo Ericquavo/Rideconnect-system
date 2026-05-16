@@ -5,6 +5,10 @@ import '../../auth/auth_api.dart';
 import '../../auth/auth_session.dart';
 import '../../services/app_theme_service.dart';
 import '../../services/driver_language_service.dart';
+import '../../services/driver_preferences_service.dart';
+import 'driver_booking_queue_page.dart';
+import 'driver_notifications_page.dart';
+import 'driver_vehicle_info_page.dart';
 
 class DriverSettingsPage extends StatefulWidget {
   const DriverSettingsPage({super.key});
@@ -16,6 +20,10 @@ class DriverSettingsPage extends StatefulWidget {
 class _DriverSettingsPageState extends State<DriverSettingsPage> {
   bool _notificationsEnabled = true;
   bool _locationServicesEnabled = true;
+  bool _rideRequestAlerts = true;
+  bool _autoRefreshRequests = true;
+  bool _liveLocationSharing = true;
+  bool _dataSaverMode = false;
   bool _updatingPassword = false;
 
   final TextEditingController _currentPasswordCtrl = TextEditingController();
@@ -29,6 +37,7 @@ class _DriverSettingsPageState extends State<DriverSettingsPage> {
     super.initState();
     _lang.ensureInitialized();
     _lang.languageNotifier.addListener(_onLangChange);
+    _loadPreferences();
   }
 
   @override
@@ -43,6 +52,18 @@ class _DriverSettingsPageState extends State<DriverSettingsPage> {
   void _onLangChange() {
     if (!mounted) return;
     setState(() {});
+  }
+
+  Future<void> _loadPreferences() async {
+    await DriverPreferencesService.init();
+    if (!mounted) return;
+    setState(() {
+      _notificationsEnabled = DriverPreferencesService.appNotifications;
+      _rideRequestAlerts = DriverPreferencesService.rideRequestAlerts;
+      _autoRefreshRequests = DriverPreferencesService.autoRefreshRequests;
+      _liveLocationSharing = DriverPreferencesService.liveLocationSharing;
+      _dataSaverMode = DriverPreferencesService.dataSaverMode;
+    });
   }
 
   @override
@@ -119,7 +140,9 @@ class _DriverSettingsPageState extends State<DriverSettingsPage> {
                     icon: Icons.notifications_active_rounded,
                     title: _lang.t('settings.notifications'),
                     value: _notificationsEnabled,
-                    onChanged: (value) {
+                    onChanged: (value) async {
+                      await DriverPreferencesService.setAppNotifications(value);
+                      if (!mounted) return;
                       setState(() => _notificationsEnabled = value);
                     },
                   ),
@@ -182,6 +205,102 @@ class _DriverSettingsPageState extends State<DriverSettingsPage> {
                         },
                       ),
                     ),
+                  ),
+                  _divider(),
+                  _sectionHeader(_lang.t('settings.ridePreferences')),
+                  const SizedBox(height: 4),
+                  _switchTile(
+                    isDark: isDark,
+                    bodyColor: bodyColor,
+                    icon: Icons.notifications_active_rounded,
+                    title: _lang.t('settings.rideRequestAlerts'),
+                    value: _rideRequestAlerts,
+                    onChanged: (value) async {
+                      await DriverPreferencesService.setRideRequestAlerts(
+                        value,
+                      );
+                      if (!mounted) return;
+                      setState(() => _rideRequestAlerts = value);
+                    },
+                  ),
+                  _divider(),
+                  _switchTile(
+                    isDark: isDark,
+                    bodyColor: bodyColor,
+                    icon: Icons.autorenew_rounded,
+                    title: _lang.t('settings.autoRefreshRequests'),
+                    value: _autoRefreshRequests,
+                    onChanged: (value) async {
+                      await DriverPreferencesService.setAutoRefreshRequests(
+                        value,
+                      );
+                      if (!mounted) return;
+                      setState(() => _autoRefreshRequests = value);
+                    },
+                  ),
+                  _divider(),
+                  _switchTile(
+                    isDark: isDark,
+                    bodyColor: bodyColor,
+                    icon: Icons.gps_fixed_rounded,
+                    title: _lang.t('settings.liveLocationSharing'),
+                    value: _liveLocationSharing,
+                    onChanged: (value) async {
+                      await DriverPreferencesService.setLiveLocationSharing(
+                        value,
+                      );
+                      if (!mounted) return;
+                      setState(() => _liveLocationSharing = value);
+                    },
+                  ),
+                  _divider(),
+                  _switchTile(
+                    isDark: isDark,
+                    bodyColor: bodyColor,
+                    icon: Icons.data_saver_on_rounded,
+                    title: _lang.t('settings.dataSaverMode'),
+                    value: _dataSaverMode,
+                    onChanged: (value) async {
+                      await DriverPreferencesService.setDataSaverMode(value);
+                      if (!mounted) return;
+                      setState(() => _dataSaverMode = value);
+                    },
+                  ),
+                  _divider(),
+                  _sectionHeader(_lang.t('settings.quickAccess')),
+                  const SizedBox(height: 4),
+                  _actionTile(
+                    icon: Icons.directions_car_rounded,
+                    title: _lang.t('profile.vehicleMenu'),
+                    subtitle: 'Update car or motorcycle details',
+                    onTap:
+                        () => Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => const VehicleInfoPage(),
+                          ),
+                        ),
+                  ),
+                  _actionTile(
+                    icon: Icons.book_online_rounded,
+                    title: _lang.t('profile.bookings'),
+                    subtitle: 'Open the booking queue',
+                    onTap:
+                        () => Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => const DriverBookingQueuePage(),
+                          ),
+                        ),
+                  ),
+                  _actionTile(
+                    icon: Icons.notifications_rounded,
+                    title: _lang.t('profile.notifications'),
+                    subtitle: 'See incoming ride notifications',
+                    onTap:
+                        () => Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => const DriverNotificationsPage(),
+                          ),
+                        ),
                   ),
                   _divider(),
                   _switchTile(
@@ -312,6 +431,60 @@ class _DriverSettingsPageState extends State<DriverSettingsPage> {
       height: 1,
       indent: 16,
       endIndent: 16,
+    );
+  }
+
+  Widget _sectionHeader(String title) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 6),
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: Text(
+          title,
+          style: GoogleFonts.poppins(
+            fontSize: 13,
+            fontWeight: FontWeight.w700,
+            color: const Color(0xFF6C63FF),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _actionTile({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required VoidCallback onTap,
+  }) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final titleColor = isDark ? Colors.white : const Color(0xFF0F172A);
+    final subtitleColor = isDark ? Colors.white54 : const Color(0xFF64748B);
+
+    return ListTile(
+      leading: Container(
+        width: 38,
+        height: 38,
+        decoration: BoxDecoration(
+          color: const Color(0xFF6C63FF).withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Icon(icon, color: const Color(0xFF6C63FF), size: 20),
+      ),
+      title: Text(
+        title,
+        style: GoogleFonts.poppins(
+          color: titleColor,
+          fontSize: 13,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+      subtitle: Text(
+        subtitle,
+        style: GoogleFonts.poppins(color: subtitleColor, fontSize: 11),
+      ),
+      trailing: const Icon(Icons.chevron_right_rounded),
+      onTap: onTap,
     );
   }
 

@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'dart:convert';
+import 'dart:typed_data';
 
 import '../../services/driver_api.dart';
 import '../../services/driver_language_service.dart';
@@ -115,10 +117,6 @@ class _DriverProfilePageState extends State<DriverProfilePage> {
     final profile = api.extractDataMap(profileResponse);
     final stats = api.extractDataMap(statsResponse);
 
-    final vehicleRaw = profile['vehicle'];
-    final vehicle =
-        vehicleRaw is Map<String, dynamic> ? vehicleRaw : <String, dynamic>{};
-
     return _DriverProfileData(
       name: api.readString(profile, const [
         'name',
@@ -136,37 +134,35 @@ class _DriverProfilePageState extends State<DriverProfilePage> {
         'driver_rating',
         'avg_rating',
       ]),
-      vehicleName: api.readString(
-        vehicle,
-        const ['name', 'model', 'vehicle_name'],
-        fallback: api.readString(profile, const [
-          'vehicle_name',
-          'vehicle_model',
-        ], fallback: '--'),
-      ),
-      vehiclePlate: api.readString(
-        vehicle,
-        const ['plate_number', 'plate', 'license_plate'],
-        fallback: api.readString(profile, const [
-          'plate_number',
-          'plate',
-        ], fallback: '--'),
-      ),
-      vehicleColor: api.readString(
-        vehicle,
-        const ['color', 'vehicle_color'],
-        fallback: api.readString(profile, const [
-          'vehicle_color',
-        ], fallback: '--'),
-      ),
-      vehicleCategory: api.readString(
-        vehicle,
-        const ['category', 'type', 'vehicle_category'],
-        fallback: api.readString(profile, const [
-          'vehicle_category',
-        ], fallback: '--'),
-      ),
+      avatarBytes: _decodeAvatarBytes(profile),
     );
+  }
+
+  Uint8List? _decodeAvatarBytes(Map<String, dynamic> profile) {
+    final candidates = <dynamic>[
+      profile['avatar_base64'],
+      profile['profile_photo_base64'],
+      profile['avatar'],
+      profile['photo'],
+    ];
+
+    for (final candidate in candidates) {
+      if (candidate is String) {
+        final text = candidate.trim();
+        if (text.isEmpty) continue;
+        final cleaned =
+            text.startsWith('data:image')
+                ? text.substring(text.indexOf(',') + 1)
+                : text;
+        try {
+          return base64Decode(cleaned);
+        } catch (_) {
+          continue;
+        }
+      }
+    }
+
+    return null;
   }
 
   @override
@@ -219,8 +215,6 @@ class _DriverProfilePageState extends State<DriverProfilePage> {
                       )
                     else ...[
                       _buildProfileCard(data!),
-                      const SizedBox(height: 16),
-                      _buildVehicleCard(data),
                     ],
                     const SizedBox(height: 16),
                     _buildStatusCard(),
@@ -285,15 +279,22 @@ class _DriverProfilePageState extends State<DriverProfilePage> {
                 colors: [Color(0xFF6C63FF), Color(0xFF3B82F6)],
               ),
             ),
-            child: Center(
-              child: Text(
-                data.name.isNotEmpty ? data.name[0].toUpperCase() : 'D',
-                style: GoogleFonts.poppins(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w700,
-                  fontSize: 24,
-                ),
-              ),
+            child: ClipOval(
+              child:
+                  data.avatarBytes != null && data.avatarBytes!.isNotEmpty
+                      ? Image.memory(data.avatarBytes!, fit: BoxFit.cover)
+                      : Center(
+                        child: Text(
+                          data.name.isNotEmpty
+                              ? data.name[0].toUpperCase()
+                              : 'D',
+                          style: GoogleFonts.poppins(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 24,
+                          ),
+                        ),
+                      ),
             ),
           ),
           const SizedBox(width: 12),
@@ -359,60 +360,9 @@ class _DriverProfilePageState extends State<DriverProfilePage> {
     );
   }
 
-  Widget _buildVehicleCard(_DriverProfileData data) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: _cardBg,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: _cardBorder),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            _lang.t('profile.vehicle'),
-            style: GoogleFonts.poppins(
-              color: _textPrimary,
-              fontWeight: FontWeight.w600,
-              fontSize: 14,
-            ),
-          ),
-          const SizedBox(height: 10),
-          _vehicleRow(_lang.t('profile.vehicleLabel'), data.vehicleName),
-          _vehicleRow(_lang.t('profile.plateNumber'), data.vehiclePlate),
-          _vehicleRow(_lang.t('profile.color'), data.vehicleColor),
-          _vehicleRow(_lang.t('profile.category'), data.vehicleCategory),
-        ],
-      ),
-    );
-  }
+  // Vehicle card removed per user request
 
-  Widget _vehicleRow(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(
-            label,
-            style: GoogleFonts.poppins(color: _textSecondary, fontSize: 12),
-          ),
-          Flexible(
-            child: Text(
-              value,
-              textAlign: TextAlign.right,
-              style: GoogleFonts.poppins(
-                color: _textMuted,
-                fontSize: 12,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+  // vehicleRow helper removed
 
   Widget _buildStatusCard() {
     final statusColor =
@@ -693,19 +643,15 @@ class _DriverProfileData {
   final String email;
   final String phone;
   final double rating;
-  final String vehicleName;
-  final String vehiclePlate;
-  final String vehicleColor;
-  final String vehicleCategory;
+  // vehicle fields removed per request
+  final Uint8List? avatarBytes;
 
   const _DriverProfileData({
     required this.name,
     required this.email,
     required this.phone,
     required this.rating,
-    required this.vehicleName,
-    required this.vehiclePlate,
-    required this.vehicleColor,
-    required this.vehicleCategory,
+
+    required this.avatarBytes,
   });
 }

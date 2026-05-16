@@ -49,10 +49,15 @@ class _DriverBookingQueuePageState extends State<DriverBookingQueuePage> {
   @override
   void initState() {
     super.initState();
-    _updateThemeColors();
     _lang.ensureInitialized();
     _lang.languageNotifier.addListener(_onLanguageChanged);
     _loadBookings();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _updateThemeColors();
   }
 
   @override
@@ -224,6 +229,23 @@ class _DriverBookingQueuePageState extends State<DriverBookingQueuePage> {
   Widget _header() {
     return Row(
       children: <Widget>[
+        InkWell(
+          onTap: () => Navigator.of(context).pop(),
+          borderRadius: BorderRadius.circular(12),
+          child: Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: const Color(0xFF6C63FF).withValues(alpha: 0.15),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: const Icon(
+              Icons.arrow_back_ios_new_rounded,
+              color: Color(0xFF6C63FF),
+              size: 20,
+            ),
+          ),
+        ),
+        const SizedBox(width: 12),
         Container(
           padding: const EdgeInsets.all(10),
           decoration: BoxDecoration(

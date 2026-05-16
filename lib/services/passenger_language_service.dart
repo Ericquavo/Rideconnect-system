@@ -38,11 +38,11 @@ class PassengerLanguageService {
       PassengerLanguage.spanish: 'Inicio',
     },
     'nav.book': {
-      PassengerLanguage.english: 'Book',
-      PassengerLanguage.french: 'Réserver',
-      PassengerLanguage.kinyarwanda: 'Tegura',
-      PassengerLanguage.swahili: 'Agiza',
-      PassengerLanguage.spanish: 'Reservar',
+      PassengerLanguage.english: 'Request',
+      PassengerLanguage.french: 'Demander',
+      PassengerLanguage.kinyarwanda: 'Gaida',
+      PassengerLanguage.swahili: 'Omba',
+      PassengerLanguage.spanish: 'Solicitar',
     },
     'nav.trips': {
       PassengerLanguage.english: 'Trips',
@@ -94,7 +94,7 @@ class PassengerLanguageService {
       PassengerLanguage.spanish: 'Calificacion Promedio',
     },
     'profile.darkMode': {
-      PassengerLanguage.english: 'Dark Mode',
+      PassengerLanguage.english: 'Dark mode',
       PassengerLanguage.french: 'Mode Sombre',
       PassengerLanguage.kinyarwanda: 'Uburyo Bwijimye',
       PassengerLanguage.swahili: 'Hali ya Giza',
@@ -347,6 +347,20 @@ class PassengerLanguageService {
       PassengerLanguage.kinyarwanda: 'Gabanya kandi eza',
       PassengerLanguage.swahili: 'Shiriki na kuokoa',
       PassengerLanguage.spanish: 'Comparte y ahorra',
+    },
+    'home.motorcycle': {
+      PassengerLanguage.english: 'Motorcycle',
+      PassengerLanguage.french: 'Motocyclette',
+      PassengerLanguage.kinyarwanda: 'Moto',
+      PassengerLanguage.swahili: 'Pikipiki',
+      PassengerLanguage.spanish: 'Motocicleta',
+    },
+    'home.motorcycleDesc': {
+      PassengerLanguage.english: 'Fast & affordable',
+      PassengerLanguage.french: 'Rapide et abordable',
+      PassengerLanguage.kinyarwanda: 'Vuba kandi yikunze',
+      PassengerLanguage.swahili: 'Haraka na nafuu',
+      PassengerLanguage.spanish: 'Rapido y asequible',
     },
     'home.nearbyDrivers': {
       PassengerLanguage.english: 'Nearby Drivers',
@@ -614,6 +628,164 @@ class PassengerLanguageService {
       PassengerLanguage.kinyarwanda: 'Nta booking iraboneka yo kwishyura ubu.',
       PassengerLanguage.swahili: 'Hakuna booking ya kulipia kwa sasa.',
       PassengerLanguage.spanish: 'Aun no hay reserva para pagar.',
+    },
+    'book.noDriverSelected': {
+      PassengerLanguage.english: 'No driver selected',
+      PassengerLanguage.french: 'Aucun chauffeur selectionne',
+      PassengerLanguage.kinyarwanda: 'Nta mushoferi watoranijwe',
+      PassengerLanguage.swahili: 'Hakuna dereva amechaguliwa',
+      PassengerLanguage.spanish: 'Ningun conductor seleccionado',
+    },
+    'book.selectDriver': {
+      PassengerLanguage.english: 'Select driver',
+      PassengerLanguage.french: 'Selectionner chauffeur',
+      PassengerLanguage.kinyarwanda: 'Hitamo umushoferi',
+      PassengerLanguage.swahili: 'Chagua dereva',
+      PassengerLanguage.spanish: 'Seleccionar conductor',
+    },
+    'book.tapSelectDriver': {
+      PassengerLanguage.english:
+          'Tap Select driver to choose from online drivers.',
+      PassengerLanguage.french:
+          'Touchez Selectionner chauffeur pour choisir parmi les chauffeurs en ligne.',
+      PassengerLanguage.kinyarwanda:
+          'Kanda Hitamo umushoferi kugirango uhitemo muri abashoferi bari ku murongo.',
+      PassengerLanguage.swahili:
+          'Gusa Chagua dereva kuchagua miongoni mwa madereva mtandaoni.',
+      PassengerLanguage.spanish:
+          'Toca Seleccionar conductor para elegir entre los conductores en linea.',
+    },
+    'common.enterAddress': {
+      PassengerLanguage.english: 'Enter address',
+      PassengerLanguage.french: 'Entrez l adresse',
+      PassengerLanguage.kinyarwanda: 'Andika aderesi',
+      PassengerLanguage.swahili: 'Weka anwani',
+      PassengerLanguage.spanish: 'Ingresa direccion',
+    },
+    'common.locationPinnedOnMap': {
+      PassengerLanguage.english: 'Location pinned on map',
+      PassengerLanguage.french: 'Emplacement epingle sur la carte',
+      PassengerLanguage.kinyarwanda:
+          'Aho hantu hashyizwe ikimenyetso kuri karita',
+      PassengerLanguage.swahili: 'Eneo limewekwa kwenye ramani',
+      PassengerLanguage.spanish: 'Ubicacion fijada en el mapa',
+    },
+    'common.noMapPinSelected': {
+      PassengerLanguage.english: 'No map pin selected yet',
+      PassengerLanguage.french: 'Aucun repere sur la carte selectionne',
+      PassengerLanguage.kinyarwanda:
+          'Nta kimenyetso kuri karita cyatoranijwe kugeza ubu',
+      PassengerLanguage.swahili: 'Hakuna pini ya ramani iliyochaguliwa bado',
+      PassengerLanguage.spanish: 'No hay pin en el mapa seleccionado aun',
+    },
+    'common.selectedLocation': {
+      PassengerLanguage.english: 'Select location',
+      PassengerLanguage.french: 'S\u00e9lectionner l\'emplacement',
+      PassengerLanguage.kinyarwanda: 'Hitamo ahantu',
+      PassengerLanguage.swahili: 'Chagua eneo',
+      PassengerLanguage.spanish: 'Seleccionar ubicaci\u00f3n',
+    },
+    'book.driverRequired': {
+      PassengerLanguage.english: 'Driver is required.',
+      PassengerLanguage.french: 'Le chauffeur est requis.',
+      PassengerLanguage.kinyarwanda: 'Umushoferi arasabwa.',
+      PassengerLanguage.swahili: 'Dereva anahitajika.',
+      PassengerLanguage.spanish: 'Se requiere conductor.',
+    },
+    'validation.pickupInvalidCoordinates': {
+      PassengerLanguage.english: 'Pickup coordinates are invalid.',
+      PassengerLanguage.french:
+          'Les coordonnees de prise en charge sont invalides.',
+      PassengerLanguage.kinyarwanda: 'Aderesi za pickup ntizizewe.',
+      PassengerLanguage.swahili: 'Kuridhi za kuchukua si sahihi.',
+      PassengerLanguage.spanish: 'Coordenadas de recogida no validas.',
+    },
+    'validation.dropoffInvalidCoordinates': {
+      PassengerLanguage.english: 'Dropoff coordinates are invalid.',
+      PassengerLanguage.french:
+          'Les coordonnees de debarquement sont invalides.',
+      PassengerLanguage.kinyarwanda: 'Aderesi za dropoff ntizizewe.',
+      PassengerLanguage.swahili: 'Kuridhi za kuacha si sahihi.',
+      PassengerLanguage.spanish: 'Coordenadas de entrega no validas.',
+    },
+    'validation.fareNonNegative': {
+      PassengerLanguage.english: 'Fare must be greater than or equal to 0.',
+      PassengerLanguage.french: 'Le tarif doit etre superieur ou egal a 0.',
+      PassengerLanguage.kinyarwanda:
+          'Amafaranga agomba kuba menshi cyangwa angana na 0.',
+      PassengerLanguage.swahili: 'Nauli lazima iwe zaidi au sawa na 0.',
+      PassengerLanguage.spanish: 'La tarifa debe ser mayor o igual a 0.',
+    },
+    'book.systemEstimate': {
+      PassengerLanguage.english: 'System estimate',
+      PassengerLanguage.french: 'Estimation du systeme',
+      PassengerLanguage.kinyarwanda: 'Igipimo cya sisitemu',
+      PassengerLanguage.swahili: 'Makadirio ya mfumo',
+      PassengerLanguage.spanish: 'Estimacion del sistema',
+    },
+    'book.viewDriverTrack': {
+      PassengerLanguage.english: 'View Driver and Track Trip',
+      PassengerLanguage.french: 'Voir le chauffeur et suivre le trajet',
+      PassengerLanguage.kinyarwanda:
+          'Reba umushoferi kandi ukurikirane urugendo',
+      PassengerLanguage.swahili: 'Angalia dereva na fuatilia safari',
+      PassengerLanguage.spanish: 'Ver conductor y seguir viaje',
+    },
+    'book.liveTripView': {
+      PassengerLanguage.english: 'Live Trip View',
+      PassengerLanguage.french: 'Vue de trajet en direct',
+      PassengerLanguage.kinyarwanda: 'Reba urugendo mu gihe nyacyo',
+      PassengerLanguage.swahili: 'Muhtasari wa safari moja kwa moja',
+      PassengerLanguage.spanish: 'Vista de viaje en vivo',
+    },
+    'book.rateTrip': {
+      PassengerLanguage.english: 'Rate Trip',
+      PassengerLanguage.french: 'Noter le trajet',
+      PassengerLanguage.kinyarwanda: 'Tanga amanota ku rugendo',
+      PassengerLanguage.swahili: 'Kadiria safari',
+      PassengerLanguage.spanish: 'Calificar viaje',
+    },
+    'book.requestAgain': {
+      PassengerLanguage.english: 'Request Again',
+      PassengerLanguage.french: 'Demander encore',
+      PassengerLanguage.kinyarwanda: 'Saba kandi',
+      PassengerLanguage.swahili: 'Omba tena',
+      PassengerLanguage.spanish: 'Solicitar de nuevo',
+    },
+    'book.bookNow': {
+      PassengerLanguage.english: 'Book Now',
+      PassengerLanguage.french: 'Reserver maintenant',
+      PassengerLanguage.kinyarwanda: 'Tegura ubu',
+      PassengerLanguage.swahili: 'Weka sasa',
+      PassengerLanguage.spanish: 'Reservar ahora',
+    },
+    'book.editBooking': {
+      PassengerLanguage.english: 'Edit Booking',
+      PassengerLanguage.french: 'Modifier la reservation',
+      PassengerLanguage.kinyarwanda: 'Hindura booking',
+      PassengerLanguage.swahili: 'Hariri booking',
+      PassengerLanguage.spanish: 'Editar reserva',
+    },
+    'book.viewTicket': {
+      PassengerLanguage.english: 'View Ticket',
+      PassengerLanguage.french: 'Voir le billet',
+      PassengerLanguage.kinyarwanda: 'Reba itike',
+      PassengerLanguage.swahili: 'Tazama tiketi',
+      PassengerLanguage.spanish: 'Ver boleto',
+    },
+    'book.receipt': {
+      PassengerLanguage.english: 'Receipt',
+      PassengerLanguage.french: 'Recu',
+      PassengerLanguage.kinyarwanda: 'Icyemezo cyishyuwe',
+      PassengerLanguage.swahili: 'Risiti',
+      PassengerLanguage.spanish: 'Recibo',
+    },
+    'book.rebook': {
+      PassengerLanguage.english: 'Rebook',
+      PassengerLanguage.french: 'Re-reserver',
+      PassengerLanguage.kinyarwanda: 'Soma booking',
+      PassengerLanguage.swahili: 'Weka tena',
+      PassengerLanguage.spanish: 'Volver a reservar',
     },
     'book.invalidBookingAmount': {
       PassengerLanguage.english: 'The booking amount is invalid for payment.',

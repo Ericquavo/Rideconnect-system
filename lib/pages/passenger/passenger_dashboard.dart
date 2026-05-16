@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'dart:async';
+import 'dart:typed_data';
 import 'home_page.dart';
 import 'passenger_booking_flow_page.dart';
 import 'trips_page.dart';
 import 'notifications_page.dart';
 import 'profile_page.dart';
 import '../../services/passenger_language_service.dart';
+import '../../services/passenger_preferences_service.dart';
 import '../../features/mobile/data/mobile_flow_api_service.dart';
 
 /// Main Passenger Dashboard — hosts the bottom navigation and all sub-pages.
@@ -26,6 +28,8 @@ class PassengerDashboard extends StatefulWidget {
 
 class _PassengerDashboardState extends State<PassengerDashboard> {
   int _currentIndex = 0;
+  late String _passengerName;
+  late String _passengerEmail;
   int _tripsRefreshToken = 0;
   int _bookingSuccessNonce = 0;
   bool _showNotificationsPage = false;
@@ -39,16 +43,33 @@ class _PassengerDashboardState extends State<PassengerDashboard> {
   void initState() {
     super.initState();
     _lang.languageNotifier.addListener(_onLanguageChanged);
-    _refreshUnreadCount();
-    _notificationTimer = Timer.periodic(
-      const Duration(seconds: 20),
-      (_) => _refreshUnreadCount(),
+    _passengerName = widget.passengerName;
+    _passengerEmail = widget.passengerEmail;
+    PassengerPreferencesService.pushNotificationsNotifier.addListener(
+      _onNotificationPreferencesChanged,
     );
+    PassengerPreferencesService.rideRequestAlertsNotifier.addListener(
+      _onNotificationPreferencesChanged,
+    );
+    PassengerPreferencesService.autoRefreshDashboardNotifier.addListener(
+      _onNotificationPreferencesChanged,
+    );
+    _refreshUnreadCount();
+    _syncNotificationTimer();
   }
 
   @override
   void dispose() {
     _lang.languageNotifier.removeListener(_onLanguageChanged);
+    PassengerPreferencesService.pushNotificationsNotifier.removeListener(
+      _onNotificationPreferencesChanged,
+    );
+    PassengerPreferencesService.rideRequestAlertsNotifier.removeListener(
+      _onNotificationPreferencesChanged,
+    );
+    PassengerPreferencesService.autoRefreshDashboardNotifier.removeListener(
+      _onNotificationPreferencesChanged,
+    );
     _notificationTimer?.cancel();
     super.dispose();
   }
@@ -58,10 +79,35 @@ class _PassengerDashboardState extends State<PassengerDashboard> {
     setState(() {});
   }
 
+  void _onNotificationPreferencesChanged() {
+    if (!mounted) return;
+    _syncNotificationTimer();
+    setState(() {});
+  }
+
+  bool get _canAutoRefreshBadge =>
+      PassengerPreferencesService.pushNotifications &&
+      PassengerPreferencesService.rideRequestAlerts &&
+      PassengerPreferencesService.autoRefreshDashboard;
+
+  void _syncNotificationTimer() {
+    if (_canAutoRefreshBadge) {
+      _notificationTimer ??= Timer.periodic(
+        const Duration(seconds: 20),
+        (_) => _refreshUnreadCount(),
+      );
+      return;
+    }
+
+    _notificationTimer?.cancel();
+    _notificationTimer = null;
+  }
+
   List<Widget> _buildPages() {
     return [
       HomePage(
-        passengerName: widget.passengerName,
+        passengerName: _passengerName,
+        onProfileUpdated: _updatePassengerProfile,
         onGoToBookRide: () => setState(() => _currentIndex = 1),
         notifCount: _notifCount,
         onOpenNotifications: _openNotifications,
@@ -72,8 +118,27 @@ class _PassengerDashboardState extends State<PassengerDashboard> {
         key: ValueKey(_tripsRefreshToken),
         bookingSuccessNonce: _bookingSuccessNonce,
       ),
-      ProfilePage(name: widget.passengerName, email: widget.passengerEmail),
+      ProfilePage(name: _passengerName, email: _passengerEmail),
     ];
+  }
+
+  void _updatePassengerProfile({
+    required String name,
+    required String email,
+    Uint8List? avatarBytes,
+  }) {
+    if (!mounted) return;
+    setState(() {
+      _passengerName = name.trim().isEmpty ? _passengerName : name.trim();
+      _passengerEmail = email.trim().isEmpty ? _passengerEmail : email.trim();
+    });
+    if (avatarBytes != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        PassengerPreferencesService.setProfilePhotoBytes(
+          avatarBytes,
+        ).catchError((_) {});
+      });
+    }
   }
 
   void _onBookingCompleted() {
@@ -97,6 +162,7 @@ class _PassengerDashboardState extends State<PassengerDashboard> {
   }
 
   Future<void> _refreshUnreadCount() async {
+    if (!_canAutoRefreshBadge) return;
     try {
       final count = await mobileFlowApi.getUnreadCount();
       if (!mounted) return;

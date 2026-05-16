@@ -2,7 +2,10 @@
 import 'package:geolocator/geolocator.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+// image picker and base64 encoding removed with quick-profile editor
+import 'dart:typed_data';
 
+import '../../models/ride_type_model.dart';
 import '../../services/passenger_api.dart';
 import '../../services/passenger_language_service.dart';
 import '../../services/passenger_preferences_service.dart';
@@ -27,6 +30,12 @@ class HomePage extends StatefulWidget {
 
   /// Opens profile from avatar tap.
   final VoidCallback? onOpenProfile;
+  final void Function({
+    required String name,
+    required String email,
+    Uint8List? avatarBytes,
+  })?
+  onProfileUpdated;
 
   const HomePage({
     super.key,
@@ -35,6 +44,7 @@ class HomePage extends StatefulWidget {
     this.notifCount = 0,
     this.onOpenNotifications,
     this.onOpenProfile,
+    this.onProfileUpdated,
   });
 
   @override
@@ -73,32 +83,13 @@ class _HomePageState extends State<HomePage> {
   bool _isLoading = true;
   String? _error;
   Map<String, dynamic> _stats = <String, dynamic>{};
-  // List<RideSummary> _availableRides = <RideSummary>[]; // Legacy code, not used after removing quick ride options
 
-  // ── Static fallback driver data ────────────────────────────────────────────
-  static const _nearbyDrivers = [
-    {
-      'name': 'Ahmed K.',
-      'rating': '4.9',
-      'dist': '0.8 km',
-      'car': 'Toyota Corolla',
-      'trips': '1.2k',
-    },
-    {
-      'name': 'Sara M.',
-      'rating': '4.7',
-      'dist': '1.2 km',
-      'car': 'Honda Civic',
-      'trips': '876',
-    },
-    {
-      'name': 'James O.',
-      'rating': '4.8',
-      'dist': '1.5 km',
-      'car': 'Hyundai Elantra',
-      'trips': '2.1k',
-    },
-  ];
+  // ── Ride types state (for dynamic ride type loading) ───────────────────────
+  List<Ride> _carRides = [];
+  List<Ride> _motorcycleRides = [];
+  bool _isLoadingRideTypes = true;
+  String? _rideTypeError;
+  // List<RideSummary> _availableRides = <RideSummary>[]; // Legacy code, not used after removing quick ride options
 
   // ── Static ride options (Legacy - not used after removing quick ride options) ─
   // static const _staticRideOpts = [
@@ -177,6 +168,7 @@ class _HomePageState extends State<HomePage> {
     _lang.languageNotifier.addListener(_onLanguageChanged);
     _initCurrentLocation();
     _loadDashboardData();
+    _loadAvailableRideTypes();
   }
 
   void _onLanguageChanged() {
@@ -288,6 +280,44 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
+  /// Load available ride types (CAR and MOTORCYCLE) from API
+  Future<void> _loadAvailableRideTypes() async {
+    setState(() {
+      _isLoadingRideTypes = true;
+      _rideTypeError = null;
+    });
+    try {
+      // Fetch CAR on-demand rides
+      final carRidesRaw = await PassengerApi.instance.getRidesByType(
+        transportType: 'CAR',
+        travelMode: 'ON_DEMAND',
+        availableOnly: true,
+      );
+
+      // Fetch MOTORCYCLE on-demand rides
+      final motorcycleRidesRaw = await PassengerApi.instance.getRidesByType(
+        transportType: 'MOTORCYCLE',
+        travelMode: 'ON_DEMAND',
+        availableOnly: true,
+      );
+
+      if (!mounted) return;
+
+      setState(() {
+        _carRides = carRidesRaw.map((r) => Ride.fromJson(r)).toList();
+        _motorcycleRides =
+            motorcycleRidesRaw.map((r) => Ride.fromJson(r)).toList();
+        _isLoadingRideTypes = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _rideTypeError = e.toString().replaceFirst('Exception: ', '');
+        _isLoadingRideTypes = false;
+      });
+    }
+  }
+
   Map<String, dynamic> _extractDataMap(Map<String, dynamic> raw) {
     final data = raw['data'];
     if (data is Map<String, dynamic>) return data;
@@ -301,24 +331,6 @@ class _HomePageState extends State<HomePage> {
         markerId: const MarkerId('you'),
         position: center,
         infoWindow: const InfoWindow(title: 'You'),
-      ),
-      Marker(
-        markerId: const MarkerId('driver_1'),
-        position: LatLng(center.latitude + 0.0032, center.longitude - 0.0040),
-        infoWindow: InfoWindow(title: _lang.t('home.driversNearby')),
-        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
-      ),
-      Marker(
-        markerId: const MarkerId('driver_2'),
-        position: LatLng(center.latitude - 0.0044, center.longitude + 0.0036),
-        infoWindow: InfoWindow(title: _lang.t('home.driversNearby')),
-        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
-      ),
-      Marker(
-        markerId: const MarkerId('driver_3'),
-        position: LatLng(center.latitude - 0.0021, center.longitude + 0.0065),
-        infoWindow: InfoWindow(title: _lang.t('home.driversNearby')),
-        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
       ),
     };
   }
@@ -402,23 +414,7 @@ class _HomePageState extends State<HomePage> {
 
                 const SizedBox(height: 24),
 
-                // 6 – Nearby drivers
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 20),
-                  child: _buildSectionHeader(
-                    _lang.t('home.nearbyDrivers'),
-                    _lang.t('home.seeAll'),
-                  ),
-                ),
-                const SizedBox(height: 14),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 20),
-                  child: _buildNearbyDrivers(),
-                ),
-
-                const SizedBox(height: 24),
-
-                // 7 – Promo banner
+                // 6 – Promo banner
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 20),
                   child: _buildPromoBanner(),
@@ -426,7 +422,7 @@ class _HomePageState extends State<HomePage> {
 
                 const SizedBox(height: 24),
 
-                // 8 – Book a Ride CTA
+                // 7 – Book a Ride CTA
                 Padding(
                   padding: const EdgeInsets.fromLTRB(20, 0, 20, 32),
                   child: _buildBookRideCTA(),
@@ -538,8 +534,7 @@ class _HomePageState extends State<HomePage> {
   }
 
   Widget _buildAvatar() {
-    return GestureDetector(
-      onTap: widget.onOpenProfile,
+    return Container(
       child: Container(
         width: 44,
         height: 44,
@@ -1087,32 +1082,156 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  // ── 6. Ride type options (Private/Public) ──────────────────────────────────
+  // ── 6. Ride type options (Private/Public/Motorcycle) ──────────────────────────────────
   Widget _buildRideTypeOptions() {
+    // Show loading state
+    if (_isLoadingRideTypes) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 0),
+        child: Row(
+          children: [
+            Expanded(
+              child: Container(
+                height: 120,
+                decoration: BoxDecoration(
+                  color: _cardBg,
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: _cardBorder),
+                ),
+                child: const Center(
+                  child: SizedBox(
+                    height: 24,
+                    width: 24,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Container(
+                height: 120,
+                decoration: BoxDecoration(
+                  color: _cardBg,
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: _cardBorder),
+                ),
+                child: const Center(
+                  child: SizedBox(
+                    height: 24,
+                    width: 24,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Container(
+                height: 120,
+                decoration: BoxDecoration(
+                  color: _cardBg,
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: _cardBorder),
+                ),
+                child: const Center(
+                  child: SizedBox(
+                    height: 24,
+                    width: 24,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    // Show error state
+    if (_rideTypeError != null &&
+        _carRides.isEmpty &&
+        _motorcycleRides.isEmpty) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 0),
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.red.withValues(alpha: 0.1),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.red.withValues(alpha: 0.3)),
+          ),
+          child: Column(
+            children: [
+              const Icon(Icons.error_outline, color: Colors.red),
+              const SizedBox(height: 8),
+              Text(
+                _rideTypeError ?? 'Failed to load ride types',
+                textAlign: TextAlign.center,
+                style: GoogleFonts.poppins(color: Colors.red, fontSize: 12),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    // Build ride type cards - display 3 options: Private (CAR), Public (shared), Motorcycle
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 0),
-      child: Row(
-        children: [
-          Expanded(
-            child: _buildRideTypeCard(
-              label: _lang.t('home.private'),
-              description: _lang.t('home.privateDesc'),
-              icon: Icons.person_rounded,
-              color: const Color(0xFF6C63FF),
-              onTap: widget.onGoToBookRide ?? () {},
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: [
+            // ── Private Ride (CAR - Individual) ─────────────────────────────
+            SizedBox(
+              width: 120,
+              child: _buildRideTypeCard(
+                label: _lang.t('home.private'),
+                description: _lang.t('home.privateDesc'),
+                icon: Icons.person_rounded,
+                color: const Color(0xFF6C63FF),
+                isAvailable: _carRides.isNotEmpty,
+                onTap:
+                    _carRides.isNotEmpty
+                        ? () => _handleRideTypeSelected('CAR', 'PRIVATE')
+                        : null,
+              ),
             ),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: _buildRideTypeCard(
-              label: _lang.t('home.public'),
-              description: _lang.t('home.publicDesc'),
-              icon: Icons.people_rounded,
-              color: const Color(0xFF3B82F6),
-              onTap: widget.onGoToBookRide ?? () {},
+            const SizedBox(width: 12),
+
+            // ── Public Ride (Shared rides) ──────────────────────────────────
+            SizedBox(
+              width: 120,
+              child: _buildRideTypeCard(
+                label: _lang.t('home.public'),
+                description: _lang.t('home.publicDesc'),
+                icon: Icons.people_rounded,
+                color: const Color(0xFF3B82F6),
+                isAvailable: true, // Placeholder for shared rides
+                onTap: () => _handleRideTypeSelected('CAR', 'SHARED'),
+              ),
             ),
-          ),
-        ],
+            const SizedBox(width: 12),
+
+            // ── Motorcycle (ON_DEMAND only) ─────────────────────────────────
+            SizedBox(
+              width: 120,
+              child: _buildRideTypeCard(
+                label: _lang.t('home.motorcycle'),
+                description: _lang.t('home.motorcycleDesc'),
+                icon: Icons.two_wheeler_rounded,
+                color: const Color(0xFFEA580C),
+                isAvailable: _motorcycleRides.isNotEmpty,
+                onTap:
+                    _motorcycleRides.isNotEmpty
+                        ? () =>
+                            _handleRideTypeSelected('MOTORCYCLE', 'ON_DEMAND')
+                        : null,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1122,272 +1241,99 @@ class _HomePageState extends State<HomePage> {
     required String description,
     required IconData icon,
     required Color color,
-    required VoidCallback onTap,
+    required bool isAvailable,
+    VoidCallback? onTap,
   }) {
     return GestureDetector(
-      onTap: onTap,
+      onTap: isAvailable ? (onTap ?? () {}) : null,
       child: Container(
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
           color: _cardBg,
           borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: _cardBorder),
-          boxShadow: [
-            BoxShadow(
-              color:
-                  _isDarkMode
-                      ? color.withValues(alpha: 0.12)
-                      : const Color(0xFF334155).withValues(alpha: 0.08),
-              blurRadius: 18,
-              offset: const Offset(0, 6),
-            ),
-          ],
+          border: Border.all(
+            color:
+                isAvailable ? _cardBorder : _cardBorder.withValues(alpha: 0.4),
+          ),
+          boxShadow:
+              isAvailable
+                  ? [
+                    BoxShadow(
+                      color:
+                          _isDarkMode
+                              ? color.withValues(alpha: 0.12)
+                              : const Color(0xFF334155).withValues(alpha: 0.08),
+                      blurRadius: 18,
+                      offset: const Offset(0, 6),
+                    ),
+                  ]
+                  : [],
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Container(
-              padding: const EdgeInsets.all(12),
+              padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
-                color: color.withValues(alpha: 0.18),
-                borderRadius: BorderRadius.circular(14),
+                color:
+                    isAvailable
+                        ? color.withValues(alpha: 0.18)
+                        : Colors.grey.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(12),
               ),
-              child: Icon(icon, color: color, size: 24),
+              child: Icon(
+                icon,
+                color: isAvailable ? color : _textMuted,
+                size: 20,
+              ),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 12),
             Text(
               label,
               style: GoogleFonts.poppins(
-                color: _textPrimary,
-                fontWeight: FontWeight.w700,
-                fontSize: 16,
+                color: isAvailable ? _textPrimary : _textMuted,
+                fontWeight: FontWeight.w600,
+                fontSize: 14,
               ),
             ),
-            const SizedBox(height: 4),
+            const SizedBox(height: 2),
             Text(
               description,
-              style: GoogleFonts.poppins(color: _textMuted, fontSize: 12),
+              style: GoogleFonts.poppins(
+                color:
+                    isAvailable
+                        ? _textMuted
+                        : _textMuted.withValues(alpha: 0.6),
+                fontSize: 11,
+              ),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
             ),
+            if (!isAvailable) ...[
+              const SizedBox(height: 8),
+              Text(
+                'Unavailable',
+                style: GoogleFonts.poppins(
+                  color: Colors.red.shade400,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
           ],
         ),
       ),
     );
   }
 
-  // ── 7. Nearby drivers ─────────────────────────────────────────────────────
-  Widget _buildNearbyDrivers() {
-    // RideSummary carries no driver info; always use static fallback data.
-    const source = _nearbyDrivers;
-
-    return Column(
-      children: List.generate(source.length, (i) {
-        final d = source[i];
-        return Container(
-          margin: const EdgeInsets.only(bottom: 12),
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: _cardBg,
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: _cardBorder),
-            boxShadow: [
-              BoxShadow(
-                color:
-                    _isDarkMode
-                        ? Colors.black.withValues(alpha: 0.2)
-                        : const Color(0xFF334155).withValues(alpha: 0.08),
-                blurRadius: 12,
-                offset: const Offset(0, 4),
-              ),
-            ],
-          ),
-          child: Row(
-            children: [
-              // Avatar with online dot
-              Stack(
-                children: [
-                  Container(
-                    width: 52,
-                    height: 52,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      gradient: LinearGradient(
-                        colors: [
-                          const Color(0xFF6C63FF).withValues(alpha: 0.3),
-                          const Color(0xFF3B82F6).withValues(alpha: 0.3),
-                        ],
-                      ),
-                      border: Border.all(
-                        color: const Color(0xFF6C63FF).withValues(alpha: 0.4),
-                        width: 2,
-                      ),
-                    ),
-                    child: Center(
-                      child: Text(
-                        (d['name'] as String)[0],
-                        style: GoogleFonts.poppins(
-                          color: _textPrimary,
-                          fontWeight: FontWeight.w700,
-                          fontSize: 20,
-                        ),
-                      ),
-                    ),
-                  ),
-                  Positioned(
-                    bottom: 2,
-                    right: 2,
-                    child: Container(
-                      width: 13,
-                      height: 13,
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF10B981),
-                        shape: BoxShape.circle,
-                        border: Border.all(
-                          color: const Color(0xFF1A1F3A),
-                          width: 2,
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(width: 14),
-
-              // Name + car + trip count
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      d['name'] as String,
-                      style: GoogleFonts.poppins(
-                        color: _textPrimary,
-                        fontWeight: FontWeight.w600,
-                        fontSize: 15,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      d['car'] as String,
-                      style: GoogleFonts.poppins(
-                        color: _textSecondary,
-                        fontSize: 12,
-                      ),
-                    ),
-                    const SizedBox(height: 5),
-                    Row(
-                      children: [
-                        const Icon(
-                          Icons.route_rounded,
-                          color: Color(0xFF6C63FF),
-                          size: 12,
-                        ),
-                        const SizedBox(width: 3),
-                        Text(
-                          '${d['trips']} trips',
-                          style: GoogleFonts.poppins(
-                            color: _textMuted,
-                            fontSize: 11,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-
-              // Rating + distance + Book button
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 5,
-                    ),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFFBBF24).withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Row(
-                      children: [
-                        const Icon(
-                          Icons.star_rounded,
-                          color: Color(0xFFFBBF24),
-                          size: 13,
-                        ),
-                        const SizedBox(width: 3),
-                        Text(
-                          d['rating'] as String,
-                          style: GoogleFonts.poppins(
-                            color: const Color(0xFFFBBF24),
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 5),
-                  Row(
-                    children: [
-                      const Icon(
-                        Icons.near_me_rounded,
-                        color: Color(0xFF3B82F6),
-                        size: 12,
-                      ),
-                      const SizedBox(width: 3),
-                      Text(
-                        d['dist'] as String,
-                        style: GoogleFonts.poppins(
-                          color: _textSecondary,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  GestureDetector(
-                    onTap: widget.onGoToBookRide,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 7,
-                      ),
-                      decoration: BoxDecoration(
-                        gradient: const LinearGradient(
-                          colors: [Color(0xFF6C63FF), Color(0xFF3B82F6)],
-                        ),
-                        borderRadius: BorderRadius.circular(9),
-                        boxShadow: [
-                          BoxShadow(
-                            color: const Color(
-                              0xFF6C63FF,
-                            ).withValues(alpha: 0.35),
-                            blurRadius: 8,
-                            offset: const Offset(0, 3),
-                          ),
-                        ],
-                      ),
-                      child: Text(
-                        'Book',
-                        style: GoogleFonts.poppins(
-                          color: Colors.white,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        );
-      }),
-    );
+  /// Handle ride type selection and navigate to booking
+  void _handleRideTypeSelected(String transportType, String rideMode) {
+    // For now, navigate to book ride
+    widget.onGoToBookRide?.call();
+    // TODO: In the future, pass ride type info to booking screen
   }
 
-  // ── 8. Promo banner ───────────────────────────────────────────────────────
+  // ── 7. Promo banner ───────────────────────────────────────────────────────
   Widget _buildPromoBanner() {
     return Container(
       padding: const EdgeInsets.all(22),

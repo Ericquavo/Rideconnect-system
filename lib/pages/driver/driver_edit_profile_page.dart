@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:image_picker/image_picker.dart';
+import 'dart:convert';
+import 'dart:typed_data';
 
 import '../../auth/auth_api.dart';
 import '../../auth/auth_session.dart';
@@ -28,6 +31,8 @@ class _DriverEditProfilePageState extends State<DriverEditProfilePage> {
   late final TextEditingController _nameController;
   late final TextEditingController _phoneController;
   late final TextEditingController _emailController;
+  final ImagePicker _picker = ImagePicker();
+  Uint8List? _photoBytes;
 
   final List<Color> _avatarColors = const [
     Color(0xFF6C63FF),
@@ -129,6 +134,7 @@ class _DriverEditProfilePageState extends State<DriverEditProfilePage> {
         _nameController.text = name;
         _phoneController.text = phone;
         _emailController.text = email;
+        _photoBytes = _decodeAvatarBytes(profile);
         _loading = false;
       });
     } catch (_) {
@@ -150,6 +156,7 @@ class _DriverEditProfilePageState extends State<DriverEditProfilePage> {
         'name': _nameController.text.trim(),
         'phone': _phoneController.text.trim(),
         'email': _emailController.text.trim(),
+        if (_photoBytes != null) 'avatar_base64': base64Encode(_photoBytes!),
       };
 
       if (token != null && token.trim().isNotEmpty) {
@@ -185,6 +192,45 @@ class _DriverEditProfilePageState extends State<DriverEditProfilePage> {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       ),
     );
+  }
+
+  Future<void> _pickPhoto() async {
+    final file = await _picker.pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 75,
+      maxWidth: 1080,
+    );
+    if (file == null) return;
+    final bytes = await file.readAsBytes();
+    if (!mounted) return;
+    setState(() => _photoBytes = bytes);
+  }
+
+  Uint8List? _decodeAvatarBytes(Map<String, dynamic> profile) {
+    final candidates = <dynamic>[
+      profile['avatar_base64'],
+      profile['profile_photo_base64'],
+      profile['avatar'],
+      profile['photo'],
+    ];
+
+    for (final candidate in candidates) {
+      if (candidate is String) {
+        final text = candidate.trim();
+        if (text.isEmpty) continue;
+        final cleaned =
+            text.startsWith('data:image')
+                ? text.substring(text.indexOf(',') + 1)
+                : text;
+        try {
+          return base64Decode(cleaned);
+        } catch (_) {
+          continue;
+        }
+      }
+    }
+
+    return null;
   }
 
   @override
@@ -229,44 +275,58 @@ class _DriverEditProfilePageState extends State<DriverEditProfilePage> {
                           Center(
                             child: Column(
                               children: [
-                                Container(
-                                  width: 92,
-                                  height: 92,
-                                  decoration: BoxDecoration(
-                                    shape: BoxShape.circle,
-                                    gradient: LinearGradient(
-                                      colors: [
-                                        avatarColor,
-                                        const Color(0xFF3B82F6),
+                                GestureDetector(
+                                  onTap: _pickPhoto,
+                                  child: Container(
+                                    width: 100,
+                                    height: 100,
+                                    decoration: BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      gradient: LinearGradient(
+                                        colors: [
+                                          avatarColor,
+                                          const Color(0xFF3B82F6),
+                                        ],
+                                      ),
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: avatarColor.withValues(
+                                            alpha: 0.35,
+                                          ),
+                                          blurRadius: 18,
+                                        ),
                                       ],
                                     ),
-                                    boxShadow: [
-                                      BoxShadow(
-                                        color: avatarColor.withValues(
-                                          alpha: 0.35,
-                                        ),
-                                        blurRadius: 18,
-                                      ),
-                                    ],
-                                  ),
-                                  child: Center(
-                                    child: Text(
-                                      _nameController.text.trim().isNotEmpty
-                                          ? _nameController.text
-                                              .trim()[0]
-                                              .toUpperCase()
-                                          : 'D',
-                                      style: GoogleFonts.poppins(
-                                        color: Colors.white,
-                                        fontWeight: FontWeight.w700,
-                                        fontSize: 34,
-                                      ),
+                                    child: ClipOval(
+                                      child:
+                                          _photoBytes != null &&
+                                                  _photoBytes!.isNotEmpty
+                                              ? Image.memory(
+                                                _photoBytes!,
+                                                fit: BoxFit.cover,
+                                              )
+                                              : Center(
+                                                child: Text(
+                                                  _nameController.text
+                                                          .trim()
+                                                          .isNotEmpty
+                                                      ? _nameController.text
+                                                          .trim()[0]
+                                                          .toUpperCase()
+                                                      : 'D',
+                                                  style: GoogleFonts.poppins(
+                                                    color: Colors.white,
+                                                    fontWeight: FontWeight.w700,
+                                                    fontSize: 34,
+                                                  ),
+                                                ),
+                                              ),
                                     ),
                                   ),
                                 ),
                                 const SizedBox(height: 12),
                                 TextButton.icon(
-                                  onPressed: _changeAvatarColor,
+                                  onPressed: _pickPhoto,
                                   icon: const Icon(Icons.photo_camera_outlined),
                                   label: Text(_lang.t('edit.updatePicture')),
                                   style: TextButton.styleFrom(

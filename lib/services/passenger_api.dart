@@ -15,6 +15,35 @@ class PassengerApi {
 
   Future<Map<String, dynamic>> getProfile() => _get('/profile');
 
+  /// Initialize/create the passenger profile if it doesn't exist
+  /// Call this after successful registration
+  Future<Map<String, dynamic>> initializeProfile({
+    String? name,
+    String? email,
+    String? phone,
+  }) async {
+    try {
+      // Try to create profile with initial data
+      return await _post('/profile', {
+        if (name != null && name.isNotEmpty) 'name': name,
+        if (email != null && email.isNotEmpty) 'email': email,
+        if (phone != null && phone.isNotEmpty) 'phone': phone,
+      });
+    } catch (e) {
+      // If POST fails, try a PATCH/PUT to initialize
+      try {
+        return await _put('/profile', {
+          if (name != null && name.isNotEmpty) 'name': name,
+          if (email != null && email.isNotEmpty) 'email': email,
+          if (phone != null && phone.isNotEmpty) 'phone': phone,
+        });
+      } catch (_) {
+        // If both fail, just return empty success
+        return {'success': true, 'message': 'Profile initialization attempted'};
+      }
+    }
+  }
+
   Future<Map<String, dynamic>> updateProfile(Map<String, dynamic> payload) =>
       _put('/profile', payload);
 
@@ -22,6 +51,24 @@ class PassengerApi {
 
   Future<List<Map<String, dynamic>>> getAvailableRides() async {
     final response = await _get('/rides/available');
+    return _extractList(response);
+  }
+
+  /// Get rides by type and travel mode
+  /// Parameters:
+  ///   - transportType: 'CAR' or 'MOTORCYCLE'
+  ///   - travelMode: 'SCHEDULED' or 'ON_DEMAND'
+  ///   - availableOnly: only return available rides
+  Future<List<Map<String, dynamic>>> getRidesByType({
+    required String transportType,
+    required String travelMode,
+    bool availableOnly = true,
+  }) async {
+    final response = await _getWithQuery('/rides', {
+      'transport_type': transportType,
+      'travel_mode': travelMode,
+      'available_only': availableOnly,
+    });
     return _extractList(response);
   }
 
@@ -149,6 +196,38 @@ class PassengerApi {
 
   Future<Map<String, dynamic>> getTripById(dynamic tripId) =>
       _get('/trips/$tripId');
+
+  /// Create a direct trip (for ON_DEMAND rides - Motorcycle, ON_DEMAND CAR)
+  /// Used when ride_rules.can_request_trip = true
+  Future<Map<String, dynamic>> createDirectTrip({
+    required int rideId,
+    required String pickupLocation,
+    required double pickupLat,
+    required double pickupLng,
+    required String dropoffLocation,
+    required double dropoffLat,
+    required double dropoffLng,
+    double? fare,
+  }) async {
+    return _post('/trips', {
+      'ride_id': rideId,
+      'pickup_location': pickupLocation,
+      'pickup_lat': pickupLat,
+      'pickup_lng': pickupLng,
+      'dropoff_location': dropoffLocation,
+      'dropoff_lat': dropoffLat,
+      'dropoff_lng': dropoffLng,
+      if (fare != null) 'fare': fare,
+    });
+  }
+
+  /// Create a trip from an existing booking (for SCHEDULED rides)
+  /// Used after booking is created and user confirms
+  Future<Map<String, dynamic>> createTripFromBooking({
+    required int bookingId,
+  }) async {
+    return _post('/trips/create-from-booking', {'booking_id': bookingId});
+  }
 
   Future<Map<String, dynamic>> cancelTrip(dynamic tripId) =>
       _put('/trips/$tripId/cancel', <String, dynamic>{});

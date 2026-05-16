@@ -358,7 +358,10 @@ class _DriverRequestsPageState extends State<DriverRequestsPage> {
     try {
       var stage = DriverTripStage.accepted;
       if (req.id.isNotEmpty) {
-        final acceptResponse = await DriverApi.instance.acceptRequest(req.id);
+        final acceptResponse = await DriverApi.instance.acceptRequest(
+          req.id,
+          requestId: req.id,
+        );
         final status = DriverApi.instance.readString(
           DriverApi.instance.extractDataMap(acceptResponse),
           const ['status', 'trip_status', 'request_status'],
@@ -408,7 +411,7 @@ class _DriverRequestsPageState extends State<DriverRequestsPage> {
     final req = _requests[index];
     try {
       if (req.id.isNotEmpty) {
-        await DriverApi.instance.rejectRequest(req.id);
+        await DriverApi.instance.rejectRequest(req.id, requestId: req.id);
       }
       await DriverApi.instance.notifyPassengerDecision(
         passengerId: req.passengerId,
