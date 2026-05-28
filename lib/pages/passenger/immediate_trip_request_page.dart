@@ -1,9 +1,12 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../features/mobile/data/mobile_flow_api_service.dart';
+import '../../services/passenger_api.dart';
+import '../../services/passenger_location_helper.dart';
 import '../../services/passenger_language_service.dart';
 
 class ImmediateTripRequestPage extends StatefulWidget {
@@ -33,9 +36,11 @@ class _ImmediateTripRequestPageState extends State<ImmediateTripRequestPage> {
   String? _error;
 
   int? _selectedDriverId;
-  String _selectedRideType = 'Economy';
+  String _selectedRideType = 'CAR';
   int? _activeTripId;
   PassengerTripSnapshot? _activeTrip;
+  LatLng? _pickupLatLng;
+  final LatLng _dropoffLatLng = const LatLng(-1.9411, 30.1098);
   Timer? _pollTimer;
 
   @override
@@ -71,11 +76,37 @@ class _ImmediateTripRequestPageState extends State<ImmediateTripRequestPage> {
     });
 
     try {
-      final drivers = await mobileFlowApi.getOnlineDrivers();
+      final pickupPoint = await _ensurePickupPoint();
+      if (pickupPoint == null) {
+        if (!mounted) return;
+        setState(() => _loadingDrivers = false);
+        return;
+      }
+
+      final driversRaw = await PassengerApi.instance.getMatchedDrivers(
+        transportType: _selectedRideType,
+        pickupLat: pickupPoint.latitude,
+        pickupLng: pickupPoint.longitude,
+        dropoffLat: _dropoffLatLng.latitude,
+        dropoffLng: _dropoffLatLng.longitude,
+      );
       if (!mounted) return;
       setState(() {
-        _drivers = drivers;
-        _selectedDriverId = drivers.isNotEmpty ? drivers.first.id : null;
+        _drivers =
+            driversRaw.map((driver) {
+              return OnlineDriver(
+                id: _readInt(driver, <String>['id', 'driver_id']) ?? 0,
+                name:
+                    _readString(driver, <String>['name', 'driver_name']) ??
+                    'Driver',
+                rating:
+                    _readDouble(driver, <String>['rating', 'avg_rating']) ?? 0,
+                vehicle:
+                    _readString(driver, <String>['vehicle', 'vehicle_name']) ??
+                    'Vehicle',
+              );
+            }).toList();
+        _selectedDriverId = _drivers.isNotEmpty ? _drivers.first.id : null;
         _loadingDrivers = false;
       });
     } catch (e) {
@@ -113,6 +144,9 @@ class _ImmediateTripRequestPageState extends State<ImmediateTripRequestPage> {
       return;
     }
 
+    final pickupPoint = await _ensurePickupPoint();
+    if (pickupPoint == null) return;
+
     setState(() {
       _submitting = true;
       _error = null;
@@ -123,14 +157,14 @@ class _ImmediateTripRequestPageState extends State<ImmediateTripRequestPage> {
         RideRequestPayload(
           driverId: driverId,
           pickupLocation: pickup,
-          pickupLat: -1.9441,
-          pickupLng: 30.0619,
+          pickupLat: pickupPoint.latitude,
+          pickupLng: pickupPoint.longitude,
           dropoffLocation: dropoff,
-          dropoffLat: -1.9411,
-          dropoffLng: 30.1098,
+          dropoffLat: _dropoffLatLng.latitude,
+          dropoffLng: _dropoffLatLng.longitude,
           fare: fare,
           seats: seats,
-          rideType: _selectedRideType,
+          transportType: _selectedRideType,
         ),
       );
 
@@ -153,8 +187,25 @@ class _ImmediateTripRequestPageState extends State<ImmediateTripRequestPage> {
         _submitting = false;
         _error = e.toString().replaceFirst('Exception: ', '');
       });
+      if (PassengerLocationHelper.isLocationValidationError(e)) {
+        await PassengerLocationHelper.showLocationSettingsPrompt(
+          context,
+          message: passengerLocationValidationMessage,
+        );
+        return;
+      }
       _showSnack(_error!);
     }
+  }
+
+  Future<LatLng?> _ensurePickupPoint() async {
+    if (_pickupLatLng != null) return _pickupLatLng;
+
+    final resolved = await PassengerLocationHelper.resolveRideLocation(context);
+    if (!mounted || resolved == null) return null;
+
+    setState(() => _pickupLatLng = resolved.point);
+    return resolved.point;
   }
 
   void _startPolling() {
@@ -351,7 +402,7 @@ class _ImmediateTripRequestPageState extends State<ImmediateTripRequestPage> {
                     ),
                   ),
                   items:
-                      const <String>['Economy', 'Premium', 'Bike'].map((type) {
+                      const <String>['BUS', 'CAR', 'MOTORCYCLE'].map((type) {
                         return DropdownMenuItem<String>(
                           value: type,
                           child: Text(_rideTypeLabel(type)),
@@ -630,8 +681,44 @@ class _ImmediateTripRequestPageState extends State<ImmediateTripRequestPage> {
 
   String _rideTypeLabel(String value) {
     final lower = value.toLowerCase();
-    if (lower.contains('premium')) return _lang.t('rideType.premium');
-    if (lower.contains('bike')) return _lang.t('rideType.bike');
-    return _lang.t('rideType.economy');
+    if (lower.contains('bus')) return _lang.t('transportType.public');
+    if (lower.contains('motor')) return _lang.t('transportType.motorVehicle');
+    return _lang.t('transportType.private');
+  }
+
+  int? _readInt(Map<String, dynamic> json, List<String> keys) {
+    for (final key in keys) {
+      final value = json[key];
+      if (value is int) return value;
+      if (value is num) return value.toInt();
+      if (value is String) {
+        final parsed = int.tryParse(value);
+        if (parsed != null) return parsed;
+      }
+    }
+    return null;
+  }
+
+  double? _readDouble(Map<String, dynamic> json, List<String> keys) {
+    for (final key in keys) {
+      final value = json[key];
+      if (value is double) return value;
+      if (value is num) return value.toDouble();
+      if (value is String) {
+        final parsed = double.tryParse(value);
+        if (parsed != null) return parsed;
+      }
+    }
+    return null;
+  }
+
+  String? _readString(Map<String, dynamic> json, List<String> keys) {
+    for (final key in keys) {
+      final value = json[key];
+      if (value == null) continue;
+      final text = value.toString().trim();
+      if (text.isNotEmpty) return text;
+    }
+    return null;
   }
 }

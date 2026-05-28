@@ -3,13 +3,13 @@ import 'package:google_fonts/google_fonts.dart';
 import 'dart:async';
 import 'dart:typed_data';
 import 'home_page.dart';
-import 'passenger_booking_flow_page.dart';
-import 'trips_page.dart';
 import 'notifications_page.dart';
 import 'profile_page.dart';
 import '../../services/passenger_language_service.dart';
 import '../../services/passenger_preferences_service.dart';
 import '../../features/mobile/data/mobile_flow_api_service.dart';
+import '../../features/trips/presentation/pages/create_trip_page.dart';
+import '../../features/trips/presentation/pages/trip_history_page.dart';
 
 /// Main Passenger Dashboard — hosts the bottom navigation and all sub-pages.
 class PassengerDashboard extends StatefulWidget {
@@ -113,8 +113,8 @@ class _PassengerDashboardState extends State<PassengerDashboard> {
         onOpenNotifications: _openNotifications,
         onOpenProfile: _openProfileFromHome,
       ),
-      PassengerBookingFlowPage(onBookingCompleted: _onBookingCompleted),
-      TripsPage(
+      CreateTripPage(onTripCreated: _onBookingCompleted),
+      TripHistoryPage(
         key: ValueKey(_tripsRefreshToken),
         bookingSuccessNonce: _bookingSuccessNonce,
       ),
@@ -248,7 +248,7 @@ class _PassengerDashboardState extends State<PassengerDashboard> {
                 index: 1,
                 currentIndex: _currentIndex,
                 icon: Icons.directions_car_rounded,
-                label: _lang.t('nav.book'),
+                label: 'Trip',
                 activeColor: activeColor,
                 inactiveColor: inactiveColor,
                 onTap:
@@ -261,7 +261,7 @@ class _PassengerDashboardState extends State<PassengerDashboard> {
                 index: 2,
                 currentIndex: _currentIndex,
                 icon: Icons.receipt_long_rounded,
-                label: _lang.t('nav.trips'),
+                label: 'Trip History',
                 activeColor: activeColor,
                 inactiveColor: inactiveColor,
                 onTap:

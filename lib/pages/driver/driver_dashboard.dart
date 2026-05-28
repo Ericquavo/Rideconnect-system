@@ -10,9 +10,6 @@ import '../../services/driver_language_service.dart';
 import '../../services/driver_preferences_service.dart';
 import '../login_page.dart';
 import 'driver_home_page.dart';
-import 'driver_requests_page.dart';
-import 'driver_trips_page.dart';
-import 'driver_earnings_page.dart';
 import 'driver_profile_page.dart';
 import 'driver_edit_profile_page.dart';
 import 'driver_help_page.dart';
@@ -21,6 +18,7 @@ import 'driver_settings_page.dart';
 import 'driver_vehicle_info_page.dart';
 import 'driver_booking_queue_page.dart';
 import 'driver_notifications_page.dart';
+import '../../features/trips/presentation/pages/driver_trip_pages.dart';
 
 class DriverDashboard extends StatefulWidget {
   final String driverName;
@@ -241,9 +239,9 @@ class _DriverDashboardState extends State<DriverDashboard> {
         onNotificationsTap: _openNotifications,
         onProfileUpdated: _updateDriverProfile,
       ),
-      DriverRequestsPage(isOnline: _isOnline),
-      const DriverEarningsPage(),
-      const DriverTripsPage(),
+      IncomingTripRequestPage(isOnline: _isOnline),
+      const EarningsPage(),
+      const DriverTripHistoryPage(),
       DriverProfilePage(
         driverName: _driverName,
         driverEmail: _driverEmail,

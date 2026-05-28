@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import '../auth/auth_session.dart';
@@ -64,8 +65,9 @@ class PassengerApi {
     required String travelMode,
     bool availableOnly = true,
   }) async {
+    final normalizedTransportType = _normalizeTransportType(transportType);
     final response = await _getWithQuery('/rides', {
-      'transport_type': transportType,
+      'transport_type': normalizedTransportType,
       'travel_mode': travelMode,
       'available_only': availableOnly,
     });
@@ -185,9 +187,87 @@ class PassengerApi {
     return _extractList(response);
   }
 
+  Future<List<Map<String, dynamic>>> getMatchedDrivers({
+    required String transportType,
+    required double pickupLat,
+    required double pickupLng,
+    required double dropoffLat,
+    required double dropoffLng,
+  }) async {
+    final normalizedTransportType = _normalizeTransportType(transportType);
+    final response = await _getWithQuery('/drivers/match', {
+      'transport_type': normalizedTransportType,
+      'pickup_lat': pickupLat,
+      'pickup_lng': pickupLng,
+      'dropoff_lat': dropoffLat,
+      'dropoff_lng': dropoffLng,
+    });
+    return _extractList(response);
+  }
+
   Future<Map<String, dynamic>> createRideRequest(
     Map<String, dynamic> payload,
   ) => _post('/ride-requests', payload);
+
+  Future<Map<String, dynamic>> bookPublicBusSeat({
+    required int corridorId,
+    required int boardingStopId,
+    required int destinationStopId,
+    int? busRouteAssignmentId,
+    int seatsReserved = 1,
+  }) {
+    return _post('/public-bus/book-seat', {
+      'corridor_id': corridorId,
+      'boarding_stop_id': boardingStopId,
+      'destination_stop_id': destinationStopId,
+      'seats_reserved': seatsReserved,
+      if (busRouteAssignmentId != null)
+        'bus_route_assignment_id': busRouteAssignmentId,
+    });
+  }
+
+  Future<List<Map<String, dynamic>>> getPublicBusCorridors() async {
+    final response = await _get('/public-bus/corridors');
+    return _extractList(response);
+  }
+
+  Future<List<Map<String, dynamic>>> getPublicBusStops(int corridorId) async {
+    final response = await _get('/public-bus/corridors/$corridorId/stops');
+    return _extractList(response);
+  }
+
+  Future<List<Map<String, dynamic>>> getPublicBusActiveBuses(
+    int corridorId, {
+    int? boardingStopId,
+    int? destinationStopId,
+  }) async {
+    final response = await _getWithQuery(
+      '/public-bus/corridors/$corridorId/active-buses',
+      {
+        'boarding_stop_id': boardingStopId,
+        'destination_stop_id': destinationStopId,
+      },
+    );
+    return _extractList(response);
+  }
+
+  Future<Map<String, dynamic>> getCurrentPublicBusTrip() =>
+      _get('/public-bus/trips/current');
+
+  Future<Map<String, dynamic>> getPublicBusTicket(String ticketCode) =>
+      _get('/public-bus/tickets/$ticketCode');
+
+  String _normalizeTransportType(String value) {
+    final lower = value.trim().toLowerCase();
+    if (lower == 'bus') return 'BUS';
+    if (lower == 'car' || lower == 'private' || lower == 'private_car') {
+      return 'CAR';
+    }
+    if (lower == 'motorcycle' || lower == 'motor_vehicle' || lower == 'moto') {
+      return 'MOTORCYCLE';
+    }
+    return value.trim();
+  }
 
   Future<List<Map<String, dynamic>>> getTrips() async {
     final response = await _get('/trips');
@@ -214,9 +294,11 @@ class PassengerApi {
       'pickup_location': pickupLocation,
       'pickup_lat': pickupLat,
       'pickup_lng': pickupLng,
+      'pickup': {'lat': pickupLat, 'lng': pickupLng},
       'dropoff_location': dropoffLocation,
       'dropoff_lat': dropoffLat,
       'dropoff_lng': dropoffLng,
+      'dropoff': {'lat': dropoffLat, 'lng': dropoffLng},
       if (fare != null) 'fare': fare,
     });
   }
@@ -303,6 +385,8 @@ class PassengerApi {
       'Content-Type': 'application/json',
     };
 
+    _logRequest(method, uri, body: body);
+
     late http.Response response;
     if (method == 'GET') {
       response = await http.get(uri, headers: headers).timeout(_timeout);
@@ -326,6 +410,8 @@ class PassengerApi {
       throw Exception('Unsupported HTTP method: $method');
     }
 
+    _logResponse(method, uri, response);
+
     final parsed = _decodeObject(response.body);
     final success = _asBool(parsed['success']);
     final ok = response.statusCode >= 200 && response.statusCode < 300;
@@ -336,21 +422,47 @@ class PassengerApi {
           errorMap is Map<String, dynamic>
               ? _asString(errorMap['description'])
               : null;
+      final nestedErrorCode =
+          errorMap is Map<String, dynamic> ? _asString(errorMap['code']) : null;
       final fieldErrors = _extractFieldErrors(parsed);
       final message =
           _asString(parsed['message']) ??
           nestedError ??
           _asString(parsed['error']) ??
           'Request failed (${response.statusCode})';
+      final errorCode =
+          _asString(parsed['error_code']) ??
+          nestedErrorCode ??
+          _asString(parsed['code']);
+      final safeMessage =
+          response.statusCode >= 500
+              ? 'Server error (${response.statusCode}). Please try again later.'
+              : message;
+
       throw PassengerApiException(
-        message: message,
+        message: safeMessage,
         statusCode: response.statusCode,
         raw: parsed,
         fieldErrors: fieldErrors,
+        errorCode: errorCode,
       );
     }
 
     return parsed;
+  }
+
+  void _logRequest(String method, Uri uri, {Map<String, dynamic>? body}) {
+    if (!kDebugMode) return;
+    debugPrint('[PassengerApi] --> $method $uri');
+    if (body != null) {
+      debugPrint('[PassengerApi] request body: ${jsonEncode(body)}');
+    }
+  }
+
+  void _logResponse(String method, Uri uri, http.Response response) {
+    if (!kDebugMode) return;
+    debugPrint('[PassengerApi] <-- ${response.statusCode} $method $uri');
+    debugPrint('[PassengerApi] response body: ${response.body}');
   }
 
   Map<String, dynamic> _extractDataMap(Map<String, dynamic> response) {
@@ -407,6 +519,11 @@ class PassengerApi {
     if (directData is Map<String, dynamic>) {
       final values = [
         directData['items'],
+        directData['corridors'],
+        directData['stops'],
+        directData['active_buses'],
+        directData['buses'],
+        directData['assignments'],
         directData['rides'],
         directData['bookings'],
         directData['payments'],
@@ -467,12 +584,14 @@ class PassengerApiException implements Exception {
     required this.statusCode,
     required this.raw,
     Map<String, String>? fieldErrors,
+    this.errorCode,
   }) : fieldErrors = fieldErrors ?? const <String, String>{};
 
   final String message;
   final int statusCode;
   final Map<String, dynamic> raw;
   final Map<String, String> fieldErrors;
+  final String? errorCode;
 
   bool get isForbidden => statusCode == 403;
   bool get isValidationError => statusCode == 422;

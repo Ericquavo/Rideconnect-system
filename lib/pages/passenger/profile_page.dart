@@ -10,7 +10,7 @@ import '../login_page.dart';
 import 'settings/settings_theme.dart';
 import 'settings/edit_profile_page.dart';
 import 'settings/payment_methods_page.dart';
-import 'settings/ride_preferences_page.dart';
+import 'settings/trip_preferences_page.dart';
 import 'settings/app_settings_page.dart';
 import 'settings/help_support_page.dart';
 import 'settings/privacy_policy_page.dart';
@@ -30,7 +30,7 @@ class ProfilePage extends StatefulWidget {
 class _ProfilePageState extends State<ProfilePage> {
   static const String _idEditProfile = 'editProfile';
   static const String _idPaymentMethods = 'paymentMethods';
-  static const String _idRidePreferences = 'ridePreferences';
+  static const String _idTripPreferences = 'tripPreferences';
   static const String _idAppSettings = 'appSettings';
   static const String _idHelpSupport = 'helpSupport';
   static const String _idPrivacyPolicy = 'privacyPolicy';
@@ -43,7 +43,7 @@ class _ProfilePageState extends State<ProfilePage> {
   String _profileName = '';
   String _profileEmail = '';
   bool _isSummaryLoading = true;
-  int _totalRides = 0;
+  int _totalTrips = 0;
   double _totalSpent = 0;
   double _avgRating = 0;
   final PassengerLanguageService _lang = PassengerLanguageService.instance;
@@ -62,9 +62,9 @@ class _ProfilePageState extends State<ProfilePage> {
       'color': 0xFF3B82F6,
     },
     {
-      'id': _idRidePreferences,
+      'id': _idTripPreferences,
       'icon': Icons.tune_rounded,
-      'labelKey': 'settings.ridePreferences',
+      'label': 'Trip preferences',
       'color': 0xFF10B981,
     },
     {
@@ -210,7 +210,7 @@ class _ProfilePageState extends State<ProfilePage> {
 
       if (!mounted) return;
       setState(() {
-        _totalRides = bookings.length;
+        _totalTrips = bookings.length;
         _totalSpent = totalSpent;
         _avgRating = ratingCount == 0 ? 0 : ratingSum / ratingCount;
         _isSummaryLoading = false;
@@ -455,7 +455,7 @@ class _ProfilePageState extends State<ProfilePage> {
   }
 
   Widget _buildStatsRow() {
-    final ridesValue = _isSummaryLoading ? '...' : '$_totalRides';
+    final tripsValue = _isSummaryLoading ? '...' : '$_totalTrips';
     final spentValue =
         _isSummaryLoading ? '...' : '\$${_totalSpent.toStringAsFixed(2)}';
     final ratingValue =
@@ -466,8 +466,8 @@ class _ProfilePageState extends State<ProfilePage> {
     return Row(
       children: [
         _MiniStat(
-          label: _lang.t('profile.totalRides'),
-          value: ridesValue,
+          label: 'Total trips',
+          value: tripsValue,
           icon: Icons.directions_car_rounded,
         ),
         const SizedBox(width: 12),
@@ -593,7 +593,8 @@ class _ProfilePageState extends State<ProfilePage> {
                   child: Icon(item['icon'] as IconData, color: color, size: 18),
                 ),
                 title: Text(
-                  _lang.t(item['labelKey'] as String),
+                  item['label'] as String? ??
+                      _lang.t(item['labelKey'] as String),
                   style: GoogleFonts.poppins(
                     color: isDark ? Colors.white70 : const Color(0xFF334155),
                     fontSize: 14,
@@ -648,8 +649,8 @@ class _ProfilePageState extends State<ProfilePage> {
       return;
     }
 
-    if (id == _idRidePreferences) {
-      await Navigator.push(context, settingsRoute(const RidePreferencesPage()));
+    if (id == _idTripPreferences) {
+      await Navigator.push(context, settingsRoute(const TripPreferencesPage()));
       return;
     }
 

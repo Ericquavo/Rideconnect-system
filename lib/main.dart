@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'auth/auth_api.dart';
 import 'auth/auth_session.dart';
 import 'pages/driver/driver_dashboard.dart';
@@ -10,6 +11,7 @@ import 'services/driver_preferences_service.dart';
 import 'services/passenger_preferences_service.dart';
 import 'services/passenger_language_service.dart';
 import 'services/driver_language_service.dart';
+import 'services/fcm_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -18,12 +20,13 @@ Future<void> main() async {
   await PassengerPreferencesService.init();
   await PassengerLanguageService.instance.init();
   await DriverLanguageService.instance.ensureInitialized();
+  await FcmService.instance.initialize();
   assert(() {
     // Ensure debug baseline overlays are off in dev mode.
     debugPaintBaselinesEnabled = false;
     return true;
   }());
-  runApp(const RideConnectApp());
+  runApp(const ProviderScope(child: RideConnectApp()));
 }
 
 class RideConnectApp extends StatefulWidget {

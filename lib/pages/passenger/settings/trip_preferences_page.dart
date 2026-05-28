@@ -1,17 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import '../../../services/passenger_language_service.dart';
 import 'settings_theme.dart';
 
-class RidePreferencesPage extends StatefulWidget {
-  const RidePreferencesPage({super.key});
+class TripPreferencesPage extends StatefulWidget {
+  const TripPreferencesPage({super.key});
 
   @override
-  State<RidePreferencesPage> createState() => _RidePreferencesPageState();
+  State<TripPreferencesPage> createState() => _TripPreferencesPageState();
 }
 
-class _RidePreferencesPageState extends State<RidePreferencesPage> {
-  String _rideType = 'Economy';
+class _TripPreferencesPageState extends State<TripPreferencesPage> {
+  String _tripType = 'Economy';
   String _preferredPayment = 'Mobile Money';
   int _maxWaitMinutes = 8;
   bool _notifyPromo = true;
@@ -24,9 +23,8 @@ class _RidePreferencesPageState extends State<RidePreferencesPage> {
   @override
   Widget build(BuildContext context) {
     final palette = SettingsPalette.of(context);
-    final lang = PassengerLanguageService.instance;
     return SettingsPageLayout(
-      title: lang.t('settings.ridePreferences'),
+      title: 'Trip preferences',
       icon: Icons.tune_rounded,
       child: SingleChildScrollView(
         padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
@@ -37,7 +35,7 @@ class _RidePreferencesPageState extends State<RidePreferencesPage> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    lang.t('ride.prefRideType'),
+                    'Preferred trip type',
                     style: GoogleFonts.poppins(
                       color: palette.textPrimary,
                       fontWeight: FontWeight.w600,
@@ -46,7 +44,7 @@ class _RidePreferencesPageState extends State<RidePreferencesPage> {
                   ),
                   const SizedBox(height: 10),
                   DropdownButtonFormField<String>(
-                    value: _rideType,
+                    value: _tripType,
                     decoration: _inputDecoration(context),
                     dropdownColor:
                         palette.isDark ? const Color(0xFF1D2342) : Colors.white,
@@ -62,7 +60,7 @@ class _RidePreferencesPageState extends State<RidePreferencesPage> {
                       DropdownMenuItem(value: 'Bike', child: Text('Bike')),
                     ],
                     onChanged:
-                        (v) => setState(() => _rideType = v ?? _rideType),
+                        (v) => setState(() => _tripType = v ?? _tripType),
                   ),
                 ],
               ),
@@ -126,28 +124,28 @@ class _RidePreferencesPageState extends State<RidePreferencesPage> {
                 children: [
                   _switchTile(
                     context,
-                    lang.t('ride.tripUpdates'),
+                    'Trip updates',
                     _notifyTrip,
                     (v) => setState(() => _notifyTrip = v),
                   ),
                   Divider(color: palette.border),
                   _switchTile(
                     context,
-                    lang.t('ride.promoNotifications'),
+                    'Promotional notifications',
                     _notifyPromo,
                     (v) => setState(() => _notifyPromo = v),
                   ),
                   Divider(color: palette.border),
                   _switchTile(
                     context,
-                    lang.t('ride.quietMode'),
+                    'Quiet mode',
                     _quietMode,
                     (v) => setState(() => _quietMode = v),
                   ),
                   Divider(color: palette.border),
                   _switchTile(
                     context,
-                    'Allow pooled rides',
+                    'Allow pooled trips',
                     _allowPooling,
                     (v) => setState(() => _allowPooling = v),
                   ),
@@ -167,7 +165,7 @@ class _RidePreferencesPageState extends State<RidePreferencesPage> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    lang.t('ride.defaultPickup'),
+                    'Default pickup',
                     style: GoogleFonts.poppins(
                       color: palette.textPrimary,
                       fontWeight: FontWeight.w600,
@@ -198,7 +196,7 @@ class _RidePreferencesPageState extends State<RidePreferencesPage> {
             ),
             const SizedBox(height: 18),
             BrandButton(
-              text: lang.t('ride.savePreferences'),
+              text: 'Save trip preferences',
               icon: Icons.check_rounded,
               onPressed: () => Navigator.pop(context),
             ),

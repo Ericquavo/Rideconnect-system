@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
@@ -10,7 +10,6 @@ import '../../services/passenger_api.dart';
 import '../../services/passenger_language_service.dart';
 import '../../services/passenger_preferences_service.dart';
 import '../../services/currency_formatter.dart';
-import '../../features/trips/data/passenger_trips_api_service.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Passenger Home Page  –  RideConnect Main Dashboard
@@ -54,6 +53,17 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage> {
   final PassengerLanguageService _lang = PassengerLanguageService.instance;
   static const LatLng _kigaliCenter = LatLng(-1.9441, 30.0619);
+
+  // Rwanda geographical boundaries
+  static const double _rwandaNorthLat = -1.04;
+  static const double _rwandaSouthLat = -2.84;
+  static const double _rwandaWestLng = 28.84;
+  static const double _rwandaEastLng = 30.90;
+  static final LatLngBounds _rwandaBounds = LatLngBounds(
+    southwest: const LatLng(_rwandaSouthLat, _rwandaWestLng),
+    northeast: const LatLng(_rwandaNorthLat, _rwandaEastLng),
+  );
+
   GoogleMapController? _homeMapController;
   LatLng? _currentLatLng;
   bool _hasLocationPermission = false;
@@ -89,9 +99,8 @@ class _HomePageState extends State<HomePage> {
   List<Ride> _motorcycleRides = [];
   bool _isLoadingRideTypes = true;
   String? _rideTypeError;
-  // List<RideSummary> _availableRides = <RideSummary>[]; // Legacy code, not used after removing quick ride options
-
-  // ── Static ride options (Legacy - not used after removing quick ride options) ─
+  bool _rideTypeFallbackMode = false;
+  // ── Static transport options retained for the dashboard visual summary. ─
   // static const _staticRideOpts = [
   //   {
   //     'label': 'Economy',
@@ -259,20 +268,16 @@ class _HomePageState extends State<HomePage> {
     });
     try {
       final stats = await PassengerApi.instance.getStats();
-      // final rides = await passengerTripsApi.fetchAvailableRides(); // Legacy code, not used after removing quick ride options
-      await passengerTripsApi
-          .fetchAvailableRides(); // Trigger API call for consistency
       if (!mounted) return;
       setState(() {
         _stats = _extractDataMap(stats);
-        // _availableRides = rides; // Legacy code, not used after removing quick ride options
         _isLoading = false;
       });
     } catch (e) {
       if (!mounted) return;
       setState(() {
         _error =
-            e is ApiException
+            e is PassengerApiException
                 ? e.message
                 : e.toString().replaceFirst('Exception: ', '');
         _isLoading = false;
@@ -285,6 +290,7 @@ class _HomePageState extends State<HomePage> {
     setState(() {
       _isLoadingRideTypes = true;
       _rideTypeError = null;
+      _rideTypeFallbackMode = false;
     });
     try {
       // Fetch CAR on-demand rides
@@ -312,7 +318,15 @@ class _HomePageState extends State<HomePage> {
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _rideTypeError = e.toString().replaceFirst('Exception: ', '');
+        // Keep transport selection usable even when the availability API is unstable.
+        _rideTypeFallbackMode = true;
+        if (e is PassengerApiException && e.statusCode >= 500) {
+          _rideTypeError = 'Transport availability is temporarily unavailable.';
+        } else if (e is PassengerApiException) {
+          _rideTypeError = e.message;
+        } else {
+          _rideTypeError = 'Unable to load transport availability right now.';
+        }
         _isLoadingRideTypes = false;
       });
     }
@@ -330,7 +344,18 @@ class _HomePageState extends State<HomePage> {
       Marker(
         markerId: const MarkerId('you'),
         position: center,
-        infoWindow: const InfoWindow(title: 'You'),
+        infoWindow: InfoWindow(
+          title: 'Your Location',
+          snippet:
+              _currentLatLng != null
+                  ? '${_currentLatLng!.latitude.toStringAsFixed(4)}, ${_currentLatLng!.longitude.toStringAsFixed(4)}'
+                  : 'Default location',
+        ),
+        icon: BitmapDescriptor.defaultMarkerWithHue(
+          _currentLatLng != null
+              ? BitmapDescriptor.hueBlue
+              : BitmapDescriptor.hueRed,
+        ),
       ),
     };
   }
@@ -860,6 +885,8 @@ class _HomePageState extends State<HomePage> {
                     tiltGesturesEnabled: true,
                     compassEnabled: true,
                     mapToolbarEnabled: false,
+                    cameraTargetBounds: CameraTargetBounds(_rwandaBounds),
+                    minMaxZoomPreference: const MinMaxZoomPreference(8, 20),
                     markers: _homeMapMarkers(),
                     onMapCreated: (controller) {
                       _homeMapController = controller;
@@ -1148,8 +1175,9 @@ class _HomePageState extends State<HomePage> {
       );
     }
 
-    // Show error state
+    // Show error state only when fallback mode is not available.
     if (_rideTypeError != null &&
+        !_rideTypeFallbackMode &&
         _carRides.isEmpty &&
         _motorcycleRides.isEmpty) {
       return Padding(
@@ -1191,9 +1219,9 @@ class _HomePageState extends State<HomePage> {
                 description: _lang.t('home.privateDesc'),
                 icon: Icons.person_rounded,
                 color: const Color(0xFF6C63FF),
-                isAvailable: _carRides.isNotEmpty,
+                isAvailable: _rideTypeFallbackMode || _carRides.isNotEmpty,
                 onTap:
-                    _carRides.isNotEmpty
+                    (_rideTypeFallbackMode || _carRides.isNotEmpty)
                         ? () => _handleRideTypeSelected('CAR', 'PRIVATE')
                         : null,
               ),
@@ -1222,9 +1250,10 @@ class _HomePageState extends State<HomePage> {
                 description: _lang.t('home.motorcycleDesc'),
                 icon: Icons.two_wheeler_rounded,
                 color: const Color(0xFFEA580C),
-                isAvailable: _motorcycleRides.isNotEmpty,
+                isAvailable:
+                    _rideTypeFallbackMode || _motorcycleRides.isNotEmpty,
                 onTap:
-                    _motorcycleRides.isNotEmpty
+                    (_rideTypeFallbackMode || _motorcycleRides.isNotEmpty)
                         ? () =>
                             _handleRideTypeSelected('MOTORCYCLE', 'ON_DEMAND')
                         : null,

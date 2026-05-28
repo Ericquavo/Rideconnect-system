@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import '../../../auth/auth_session.dart';
@@ -213,13 +214,25 @@ class MobileFlowApiService {
   Future<RideRequestResult> createRideRequest(
     RideRequestPayload payload,
   ) async {
+    final uri = _uri('/passenger/ride-requests');
+    final requestBody = payload.toJson();
+
+    if (kDebugMode) {
+      debugPrint('[MobileFlowApiService] --> POST $uri');
+      debugPrint(
+        '[MobileFlowApiService] request body: ${jsonEncode(requestBody)}',
+      );
+    }
+
     final res = await _client
-        .post(
-          _uri('/passenger/ride-requests'),
-          headers: await _headers(),
-          body: jsonEncode(payload.toJson()),
-        )
+        .post(uri, headers: await _headers(), body: jsonEncode(requestBody))
         .timeout(const Duration(seconds: 20));
+
+    if (kDebugMode) {
+      debugPrint('[MobileFlowApiService] <-- ${res.statusCode} POST $uri');
+      debugPrint('[MobileFlowApiService] response body: ${res.body}');
+    }
+
     final envelope = _decodeMap(res);
     _ensureSuccess(res, envelope);
     final data = _envelopeData(envelope);
@@ -421,7 +434,7 @@ class RideRequestPayload {
     required this.dropoffLng,
     required this.fare,
     this.seats = 1,
-    this.rideType,
+    this.transportType,
     this.notes,
     this.scheduledAt,
   });
@@ -435,7 +448,7 @@ class RideRequestPayload {
   final double dropoffLng;
   final double fare;
   final int seats;
-  final String? rideType;
+  final String? transportType;
   final String? notes;
   final DateTime? scheduledAt;
 
@@ -447,10 +460,12 @@ class RideRequestPayload {
     'seats': seats,
     'pickup_lat': pickupLat,
     'pickup_lng': pickupLng,
+    'pickup': {'lat': pickupLat, 'lng': pickupLng},
     'dropoff_lat': dropoffLat,
     'dropoff_lng': dropoffLng,
-    if (rideType != null && rideType!.trim().isNotEmpty)
-      'ride_type': rideType!.trim(),
+    'dropoff': {'lat': dropoffLat, 'lng': dropoffLng},
+    if (transportType != null && transportType!.trim().isNotEmpty)
+      'transport_type': transportType!.trim(),
     if (notes != null && notes!.trim().isNotEmpty) 'notes': notes!.trim(),
     if (scheduledAt != null) 'scheduled_at': scheduledAt!.toIso8601String(),
   };
