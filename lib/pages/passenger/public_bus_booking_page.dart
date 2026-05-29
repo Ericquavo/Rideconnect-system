@@ -116,6 +116,40 @@ class _PublicBusBookingPageState extends State<PublicBusBookingPage> {
     return null;
   }
 
+  int? _firstOtherStop(int stopId) {
+    for (final stop in _boardingStops) {
+      final id = _readId(stop);
+      if (id != null && id != stopId) return id;
+    }
+    return null;
+  }
+
+  int _stopIndexInCorridor(int stopId) {
+    for (var i = 0; i < _boardingStops.length; i++) {
+      if (_readId(_boardingStops[i]) == stopId) return i;
+    }
+    return -1;
+  }
+
+  ({int boarding, int destination}) _normalizeStopOrder(
+    int boardingStopId,
+    int destinationStopId,
+  ) {
+    final boardingIndex = _stopIndexInCorridor(boardingStopId);
+    final destinationIndex = _stopIndexInCorridor(destinationStopId);
+    if (boardingIndex > destinationIndex) {
+      return (boarding: destinationStopId, destination: boardingStopId);
+    }
+    return (boarding: boardingStopId, destination: destinationStopId);
+  }
+
+  bool _isValidBoardingDestinationPair() {
+    final boardingStopId = _selectedBoardingStopId;
+    final destinationStopId = _selectedDestinationStopId;
+    if (boardingStopId == null || destinationStopId == null) return false;
+    return boardingStopId != destinationStopId;
+  }
+
   Future<void> _initializePage() async {
     await Future.wait([_loadLocation(), _loadCorridors()]);
   }
@@ -215,7 +249,6 @@ class _PublicBusBookingPageState extends State<PublicBusBookingPage> {
         _selectedDestinationStopId =
             stops.length > 1 ? _readId(stops[1]) : _selectedBoardingStopId;
       });
-
       await _reloadActiveBuses();
     } catch (e) {
       if (!mounted) return;
@@ -281,6 +314,10 @@ class _PublicBusBookingPageState extends State<PublicBusBookingPage> {
       _showSnack(_lang.t('bus.selectRequired'));
       return;
     }
+    if (!_isValidBoardingDestinationPair()) {
+      _showSnack('Please select a different boarding and destination stop.');
+      return;
+    }
     if (seats < 1) {
       _showSnack(_lang.t('bus.minSeats'));
       return;
@@ -288,10 +325,14 @@ class _PublicBusBookingPageState extends State<PublicBusBookingPage> {
 
     setState(() => _booking = true);
     try {
+      final normalizedStops = _normalizeStopOrder(
+        boardingStopId,
+        destinationStopId,
+      );
       final result = await PassengerApi.instance.bookPublicBusSeat(
         corridorId: corridorId,
-        boardingStopId: boardingStopId,
-        destinationStopId: destinationStopId,
+        boardingStopId: normalizedStops.boarding,
+        destinationStopId: normalizedStops.destination,
         seatsReserved: seats,
         busRouteAssignmentId:
             allowWithoutSelectedBus ? null : _selectedBus?.assignmentId,
@@ -599,7 +640,15 @@ class _PublicBusBookingPageState extends State<PublicBusBookingPage> {
                       value: _selectedBoardingStopId,
                       items: _boardingStops,
                       onChanged: (value) {
-                        setState(() => _selectedBoardingStopId = value);
+                        setState(() {
+                          _selectedBoardingStopId = value;
+                          if (value != null &&
+                              value == _selectedDestinationStopId) {
+                            _selectedDestinationStopId =
+                                _firstOtherStop(value) ??
+                                _selectedDestinationStopId;
+                          }
+                        });
                         unawaited(_reloadActiveBuses());
                       },
                     ),
@@ -611,7 +660,15 @@ class _PublicBusBookingPageState extends State<PublicBusBookingPage> {
                       value: _selectedDestinationStopId,
                       items: _destinationStops,
                       onChanged: (value) {
-                        setState(() => _selectedDestinationStopId = value);
+                        setState(() {
+                          _selectedDestinationStopId = value;
+                          if (value != null &&
+                              value == _selectedBoardingStopId) {
+                            _selectedBoardingStopId =
+                                _firstOtherStop(value) ??
+                                _selectedBoardingStopId;
+                          }
+                        });
                         unawaited(_reloadActiveBuses());
                       },
                     ),

@@ -91,11 +91,11 @@ class TripLocation {
 
   LatLng? get latLng => lat == null || lng == null ? null : LatLng(lat!, lng!);
 
-  /// Convert to JSON with field name mapping for API compatibility
-  /// Uses 'pickup_name'/'dropoff_name' for address labels (as expected by backend)
+  /// Convert to JSON with field name mapping for API compatibility.
+  /// Includes both legacy and current payload keys for backend compatibility.
   Map<String, dynamic> toJson(String prefix) => {
-    '${prefix}_name':
-        label, // Changed from '${prefix}_location' to '${prefix}_name'
+    '${prefix}_name': label,
+    '${prefix}_location': label,
     if (lat != null) '${prefix}_lat': lat,
     if (lng != null) '${prefix}_lng': lng,
     if (lat != null && lng != null) prefix: {'lat': lat, 'lng': lng},

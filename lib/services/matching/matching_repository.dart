@@ -105,9 +105,11 @@ class MatchingRepository {
         'matching_session_id': matchingSessionId,
         'transport_type': 'MOTORCYCLE',
         'pickup_name': pickupName,
+        'pickup_location': pickupName,
         'pickup_lat': pickupLat,
         'pickup_lng': pickupLng,
         'dropoff_name': dropoffName,
+        'dropoff_location': dropoffName,
         'dropoff_lat': dropoffLat,
         'dropoff_lng': dropoffLng,
       };
@@ -171,9 +173,11 @@ class MatchingRepository {
         'transport_type': 'CAR',
         'seats': seats,
         'pickup_name': pickupName,
+        'pickup_location': pickupName,
         'pickup_lat': pickupLat,
         'pickup_lng': pickupLng,
         'dropoff_name': dropoffName,
+        'dropoff_location': dropoffName,
         'dropoff_lat': dropoffLat,
         'dropoff_lng': dropoffLng,
       };

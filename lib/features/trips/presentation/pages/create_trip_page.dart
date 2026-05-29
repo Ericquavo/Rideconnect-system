@@ -1,15 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:geocoding/geocoding.dart' as geocoding;
 import 'package:google_fonts/google_fonts.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
-import '../../domain/trip_models.dart';
-import '../providers/trip_providers.dart';
 import 'matching_lifecycle_pages.dart';
-import 'trip_searching_page.dart';
 import 'location_picker_page.dart';
 import '../../../../pages/passenger/public_bus_booking_page.dart';
+import '../../../../services/matching/matching_repository.dart';
 
 class CreateTripPage extends ConsumerStatefulWidget {
   const CreateTripPage({super.key, this.onTripCreated});
@@ -124,6 +123,37 @@ class _CreateTripPageState extends ConsumerState<CreateTripPage> {
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
 
+    // If the user has entered/selected an address but coordinates are missing,
+    // attempt to geocode the provided address as a fallback before rejecting.
+    if (_pickupLatLng == null && _pickupController.text.trim().isNotEmpty) {
+      try {
+        final locs = await geocoding.locationFromAddress(
+          _pickupController.text.trim(),
+        );
+        if (locs.isNotEmpty) {
+          final p = locs.first;
+          setState(() => _pickupLatLng = LatLng(p.latitude, p.longitude));
+        }
+      } catch (_) {
+        // ignore and fall through to error handling below
+      }
+    }
+
+    if (_destinationLatLng == null &&
+        _destinationController.text.trim().isNotEmpty) {
+      try {
+        final locs = await geocoding.locationFromAddress(
+          _destinationController.text.trim(),
+        );
+        if (locs.isNotEmpty) {
+          final p = locs.first;
+          setState(() => _destinationLatLng = LatLng(p.latitude, p.longitude));
+        }
+      } catch (_) {
+        // ignore and fall through to error handling below
+      }
+    }
+
     // Validate that coordinates are actually set
     if (_pickupLatLng == null) {
       setState(
@@ -144,81 +174,89 @@ class _CreateTripPageState extends ConsumerState<CreateTripPage> {
       _error = null;
     });
 
+    final matchingRepo = MatchingRepository();
+
     try {
       // Step 1: Find available drivers first
-      print('[CreateTripPage] Step 1: Matching drivers...');
-      final matchingSession = await ref
-          .read(tripRepositoryProvider)
-          .matchPassengerDrivers(
-            transportType: _vehicleType,
-            pickupLat: _pickupLatLng!.latitude,
-            pickupLng: _pickupLatLng!.longitude,
-            dropoffLat: _destinationLatLng!.latitude,
-            dropoffLng: _destinationLatLng!.longitude,
-          );
+      debugPrint('[CreateTripPage] Step 1: Matching drivers...');
+      final matchingSession = await matchingRepo.getAvailableDrivers(
+        transportType: _vehicleType,
+        pickupLat: _pickupLatLng!.latitude,
+        pickupLng: _pickupLatLng!.longitude,
+        dropoffLat: _destinationLatLng!.latitude,
+        dropoffLng: _destinationLatLng!.longitude,
+      );
 
       if (matchingSession.drivers.isEmpty) {
         setState(
           () =>
               _error =
-                  'No available drivers found for this route. Please try again.',
+                  _vehicleType == 'MOTORCYCLE'
+                      ? 'No motorcycle drivers are currently available nearby. Please try again later or choose a car ride.'
+                      : 'No available drivers found for this route. Please try again.',
         );
         return;
       }
 
-      print('[CreateTripPage] Found ${matchingSession.drivers.length} drivers');
+      debugPrint(
+        '[CreateTripPage] Found ${matchingSession.drivers.length} drivers',
+      );
 
-      // Step 2: Create trip request with first available driver
+      // Step 2: Request trip with first available driver using MatchingRepository
       final firstDriver = matchingSession.drivers.first;
-      final request = TripRequest(
-        pickup: TripLocation(
-          label: _pickupController.text.trim(),
-          lat: _pickupLatLng?.latitude,
-          lng: _pickupLatLng?.longitude,
-        ),
-        destination: TripLocation(
-          label: _destinationController.text.trim(),
-          lat: _destinationLatLng?.latitude,
-          lng: _destinationLatLng?.longitude,
-        ),
-        vehicleType: _vehicleType,
-        seatCount: _seatCount,
-        tripType: _tripType,
-        scheduleMode: _scheduleMode,
-        paymentMethod: _paymentMethod,
-        departureTime: _scheduleMode == 'scheduled' ? _departureTime : null,
-        notes: _notesController.text,
-        estimatedFare: _estimateFare(),
-        driverId: firstDriver.driverId,
-        matchingSessionId: matchingSession.matchingSessionId,
+      final pickupAddress = _pickupController.text.trim();
+      final dropoffAddress = _destinationController.text.trim();
+
+      debugPrint(
+        '[CreateTripPage] Step 2: Requesting $_vehicleType trip with driver ${firstDriver.driverId}',
       );
 
-      print(
-        '[CreateTripPage] Step 2: Requesting trip with driver ${firstDriver.driverId}',
-      );
-      final snapshot = await ref
-          .read(tripRepositoryProvider)
-          .requestMatchedTrip(request);
-      final trip = snapshot.trip;
+      if (_vehicleType == 'MOTORCYCLE') {
+        await matchingRepo.requestMotoTrip(
+          driverId: firstDriver.driverId,
+          matchingSessionId: matchingSession.matchingSessionId,
+          pickupName: pickupAddress,
+          pickupLat: _pickupLatLng!.latitude,
+          pickupLng: _pickupLatLng!.longitude,
+          dropoffName: dropoffAddress,
+          dropoffLat: _destinationLatLng!.latitude,
+          dropoffLng: _destinationLatLng!.longitude,
+        );
+      } else {
+        // CAR or default
+        await matchingRepo.requestPrivateCarBooking(
+          driverId: firstDriver.driverId,
+          matchingSessionId: matchingSession.matchingSessionId,
+          seats: _seatCount,
+          pickupName: pickupAddress,
+          pickupLat: _pickupLatLng!.latitude,
+          pickupLng: _pickupLatLng!.longitude,
+          dropoffName: dropoffAddress,
+          dropoffLat: _destinationLatLng!.latitude,
+          dropoffLng: _destinationLatLng!.longitude,
+          scheduleTime: _scheduleMode == 'scheduled' ? _departureTime : null,
+        );
+      }
+
+      debugPrint('[CreateTripPage] Trip request succeeded');
       widget.onTripCreated?.call();
       if (!mounted) return;
+
+      // Navigate to trip status page
       await Navigator.of(context).push(
-        MaterialPageRoute(
-          builder:
-              (_) =>
-                  trip == null
-                      ? const TripSearchingPage(tripId: 0)
-                      : MatchingInProgressPage(tripId: trip.id),
-        ),
+        MaterialPageRoute(builder: (_) => MatchingInProgressPage(tripId: 0)),
       );
     } catch (e) {
-      print('[CreateTripPage] Error: $e');
-      print('[CreateTripPage] Error type: ${e.runtimeType}');
+      debugPrint('[CreateTripPage] Error: $e');
+      debugPrint('[CreateTripPage] Error type: ${e.runtimeType}');
 
       // Provide more specific error messages
       String errorMessage = e.toString();
       if (errorMessage.contains('No available drivers')) {
-        errorMessage = 'No available drivers found. Please try again later.';
+        errorMessage =
+            _vehicleType == 'MOTORCYCLE'
+                ? 'No motorcycle drivers are currently available nearby. Please try again later or choose a car ride.'
+                : 'No available drivers found. Please try again later.';
       } else if (errorMessage.contains('Pickup and dropoff')) {
         errorMessage = 'Pickup and dropoff locations are required.';
       } else if (errorMessage.contains('timeout') ||
@@ -436,18 +474,6 @@ class _CreateTripPageState extends ConsumerState<CreateTripPage> {
                   ? '$label is required.'
                   : null,
       onTap: onMapTap,
-    );
-  }
-
-  Widget _field(TextEditingController controller, String label, IconData icon) {
-    return TextFormField(
-      controller: controller,
-      decoration: InputDecoration(labelText: label, prefixIcon: Icon(icon)),
-      validator:
-          (value) =>
-              value == null || value.trim().isEmpty
-                  ? '$label is required.'
-                  : null,
     );
   }
 }

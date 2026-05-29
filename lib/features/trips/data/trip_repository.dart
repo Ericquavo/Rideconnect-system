@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 import '../../../core/api/api_client.dart';
@@ -23,12 +24,20 @@ class TripRepository {
   ) async {
     final body = request.toJson();
     print('[TripRepository] Sending request to /mobile/trips/request');
-    print('[TripRepository] Request body: $body');
+    print('[TripRepository] Request body: ${jsonEncode(body)}');
+    print(
+      '[TripRepository] Pickup fields: ${body.keys.where((k) => k.contains("pickup"))}',
+    );
+    print(
+      '[TripRepository] Dropoff fields: ${body.keys.where((k) => k.contains("dropoff"))}',
+    );
 
     try {
       final response = await _api.post('/mobile/trips/request', body: body);
       print('[TripRepository] Response status: ${response.statusCode}');
-      print('[TripRepository] Response envelope: ${response.envelope}');
+      print(
+        '[TripRepository] Response envelope: ${jsonEncode(response.envelope)}',
+      );
 
       // Check if the response indicates an error
       if (response.envelope['success'] == false) {
