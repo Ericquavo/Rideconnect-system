@@ -3,14 +3,32 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/api/api_client.dart';
+import '../../data/trip_lifecycle_service.dart';
 import '../../data/trip_repository.dart';
 import '../../domain/matching_lifecycle_models.dart';
+import '../../domain/trip_lifecycle_state.dart';
 import '../../domain/trip_models.dart';
+import '../../services/trip_matching_service.dart';
 
 final apiClientProvider = Provider<ApiClient>((ref) => ApiClient());
 
 final tripRepositoryProvider = Provider<TripRepository>(
   (ref) => TripRepository(ref.read(apiClientProvider)),
+);
+
+final tripLifecycleServiceProvider = Provider<TripLifecycleService>(
+  (ref) => TripLifecycleService(ref.read(tripRepositoryProvider)),
+);
+
+final motorVehicleTripMatchingServiceProvider = Provider<TripMatchingService>(
+  (ref) => TripMatchingService(),
+);
+
+final motorVehicleTripMatchingProvider = AutoDisposeAsyncNotifierProviderFamily<
+    MotorVehicleTripMatchingNotifier,
+    TripLifecycleState,
+    int>(
+  MotorVehicleTripMatchingNotifier.new,
 );
 
 final passengerTripsProvider = FutureProvider.autoDispose<List<Trip>>((ref) {
@@ -89,13 +107,59 @@ class TripMatchingNotifier
   @override
   Future<MatchingLifecycleSnapshot> build(int arg) async {
     ref.onDispose(() => _timer?.cancel());
-    _timer = Timer.periodic(const Duration(seconds: 6), (_) => refresh());
-    return ref.read(tripRepositoryProvider).matchingSnapshotForTrip(arg);
+    _timer = Timer.periodic(const Duration(seconds: 3), (_) => refresh());
+    return ref.read(tripLifecycleServiceProvider).snapshot(arg);
   }
 
   Future<void> refresh() async {
-    state = await AsyncValue.guard(
-      () => ref.read(tripRepositoryProvider).matchingSnapshotForTrip(arg),
+    final previous = state.valueOrNull;
+    final result = await AsyncValue.guard(
+      () => ref
+          .read(tripLifecycleServiceProvider)
+          .snapshot(arg, previous: previous),
     );
+    if (result.hasError && previous != null) {
+      state = AsyncValue.data(previous);
+      return;
+    }
+    state = result;
+    final snapshot = result.valueOrNull;
+    if (snapshot != null && snapshot.status.isTerminal) {
+      _timer?.cancel();
+    }
+  }
+}
+
+class MotorVehicleTripMatchingNotifier
+    extends AutoDisposeFamilyAsyncNotifier<TripLifecycleState, int> {
+  StreamSubscription<TripLifecycleState>? _subscription;
+
+  TripMatchingService get _service =>
+      ref.read(motorVehicleTripMatchingServiceProvider);
+
+  @override
+  Future<TripLifecycleState> build(int tripId) async {
+    ref.onDispose(() {
+      _subscription?.cancel();
+      _service.dispose();
+    });
+
+    _service.startPolling(tripId);
+    _subscription = _service.stream.listen((nextState) {
+      state = AsyncValue.data(nextState);
+      if (nextState.isTerminal) {
+        _subscription?.cancel();
+      }
+    });
+
+    return _service.latest ?? TripLifecycleState.initial(tripId: tripId);
+  }
+
+  void pause() {
+    _service.pause();
+  }
+
+  void resume() {
+    _service.resume();
   }
 }
