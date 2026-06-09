@@ -6,6 +6,8 @@ import 'auth/auth_session.dart';
 import 'pages/driver/driver_dashboard.dart';
 import 'pages/login_page.dart';
 import 'pages/passenger/passenger_dashboard.dart';
+import 'features/trips/presentation/pages/trip_matching_page.dart';
+import 'features/trips/services/trip_lifecycle_manager.dart';
 import 'services/app_theme_service.dart';
 import 'services/driver_preferences_service.dart';
 import 'services/passenger_preferences_service.dart';
@@ -155,7 +157,7 @@ class _AppEntryPageState extends State<AppEntryPage> {
         final isDriver = normalizedRole == 'driver';
 
         if (isPassenger) {
-          return PassengerDashboard(
+          return PassengerStartupGate(
             passengerName: session.name,
             passengerEmail: session.email,
           );
@@ -169,6 +171,62 @@ class _AppEntryPageState extends State<AppEntryPage> {
         }
 
         return const LoginPage();
+      },
+    );
+  }
+}
+
+class PassengerStartupGate extends StatefulWidget {
+  const PassengerStartupGate({
+    super.key,
+    required this.passengerName,
+    required this.passengerEmail,
+  });
+
+  final String passengerName;
+  final String passengerEmail;
+
+  @override
+  State<PassengerStartupGate> createState() => _PassengerStartupGateState();
+}
+
+class _PassengerStartupGateState extends State<PassengerStartupGate> {
+  late final Future<int?> _activeTripFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _activeTripFuture = _restoreActiveTripId();
+  }
+
+  Future<int?> _restoreActiveTripId() async {
+    final restored = await TripLifecycleManager.restoreSnapshot();
+    if (restored == null || restored.isTerminal) return null;
+    return restored.tripId;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<int?>(
+      future: _activeTripFuture,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState != ConnectionState.done) {
+          return const Scaffold(
+            body: Center(
+              child: CircularProgressIndicator(color: Color(0xFF6C63FF)),
+            ),
+          );
+        }
+
+        final tripId = snapshot.data;
+        if (tripId != null && tripId > 0) {
+          return TripMatchingPage(tripId: tripId);
+        }
+
+        return PassengerDashboard(
+          passengerName: widget.passengerName,
+          passengerEmail: widget.passengerEmail,
+        );
       },
     );
   }

@@ -65,21 +65,65 @@ extension MatchingLifecycleStatusX on MatchingLifecycleStatus {
       this == MatchingLifecycleStatus.cancelled ||
       this == MatchingLifecycleStatus.noDriversAvailable;
 
+  static int progressRank(MatchingLifecycleStatus status) {
+    switch (status) {
+      case MatchingLifecycleStatus.tripRequested:
+        return 0;
+      case MatchingLifecycleStatus.searchingCandidates:
+        return 1;
+      case MatchingLifecycleStatus.mlMatching:
+        return 2;
+      case MatchingLifecycleStatus.driverSelected:
+        return 3;
+      case MatchingLifecycleStatus.driverNotified:
+        return 4;
+      case MatchingLifecycleStatus.driverAcknowledged:
+        return 5;
+      case MatchingLifecycleStatus.driverArriving:
+        return 6;
+      case MatchingLifecycleStatus.pickedUp:
+        return 7;
+      case MatchingLifecycleStatus.inProgress:
+        return 8;
+      case MatchingLifecycleStatus.completed:
+        return 9;
+      case MatchingLifecycleStatus.driverRejected:
+      case MatchingLifecycleStatus.reassigningDriver:
+        return 2;
+      case MatchingLifecycleStatus.noDriversAvailable:
+      case MatchingLifecycleStatus.cancelled:
+        return 99;
+    }
+  }
+
   static MatchingLifecycleStatus parse(dynamic value) {
     final raw = (value ?? '').toString().trim().toUpperCase();
-    if (raw.contains('SEARCH')) return MatchingLifecycleStatus.searchingCandidates;
+    if (raw == 'PASSENGER_WAITING' ||
+        raw.contains('ACCEPT') ||
+        raw.contains('ACK') ||
+        raw.contains('CONFIRM')) {
+      return MatchingLifecycleStatus.driverAcknowledged;
+    }
+    if (raw == 'DRIVER_ARRIVED' || raw == 'ARRIVED') {
+      return MatchingLifecycleStatus.pickedUp;
+    }
+    if (raw.contains('SEARCH')) {
+      return MatchingLifecycleStatus.searchingCandidates;
+    }
     if (raw.contains('ML') || raw.contains('MATCHING')) {
       return MatchingLifecycleStatus.mlMatching;
     }
-    if (raw.contains('SELECTED') || raw == 'MATCHED') {
+    if (raw.contains('SELECTED') ||
+        raw == 'MATCHED' ||
+        raw == 'ASSIGNED' ||
+        raw == 'DRIVER_ASSIGNED') {
       return MatchingLifecycleStatus.driverSelected;
     }
     if (raw.contains('NOTIFIED')) return MatchingLifecycleStatus.driverNotified;
-    if (raw.contains('ACK') || raw.contains('CONFIRM')) {
-      return MatchingLifecycleStatus.driverAcknowledged;
-    }
     if (raw.contains('REJECT')) return MatchingLifecycleStatus.driverRejected;
-    if (raw.contains('REASSIGN')) return MatchingLifecycleStatus.reassigningDriver;
+    if (raw.contains('REASSIGN')) {
+      return MatchingLifecycleStatus.reassigningDriver;
+    }
     if (raw.contains('NO_DRIVER') || raw.contains('NO DRIVERS')) {
       return MatchingLifecycleStatus.noDriversAvailable;
     }
@@ -224,9 +268,10 @@ class MatchingLifecycleSnapshot {
   }
 
   factory MatchingLifecycleSnapshot.fromJson(Map<String, dynamic> json) {
-    final data = json['data'] is Map<String, dynamic>
-        ? json['data'] as Map<String, dynamic>
-        : json;
+    final data =
+        json['data'] is Map<String, dynamic>
+            ? json['data'] as Map<String, dynamic>
+            : json;
     final tripRaw = data['trip'];
     final sessionRaw = data['matching_session'] ?? data['session'];
     final selectedRaw = data['selected_driver'] ?? data['driver'];
@@ -236,11 +281,13 @@ class MatchingLifecycleSnapshot {
         data['drivers'] ??
         data['matched_drivers'];
     final attemptsRaw = data['assignment_attempts'] ?? data['attempts'];
+    final trip =
+        tripRaw is Map<String, dynamic>
+            ? Trip.fromJson(tripRaw)
+            : _tripFromTopLevelResponse(data);
     return MatchingLifecycleSnapshot(
-      status: MatchingLifecycleStatusX.parse(
-        data['matching_status'] ?? data['status'] ?? data['trip_status'],
-      ),
-      trip: tripRaw is Map<String, dynamic> ? Trip.fromJson(tripRaw) : null,
+      status: _readLifecycleStatus(data),
+      trip: trip,
       session:
           sessionRaw is Map<String, dynamic>
               ? MatchingSession.fromJson(sessionRaw)
@@ -261,13 +308,106 @@ class MatchingLifecycleSnapshot {
               ? attemptsRaw
                   .whereType<Map<String, dynamic>>()
                   .indexed
-                  .map((entry) => AssignmentAttempt.fromJson(entry.$2, entry.$1 + 1))
+                  .map(
+                    (entry) =>
+                        AssignmentAttempt.fromJson(entry.$2, entry.$1 + 1),
+                  )
                   .toList()
               : const [],
       message: _readString(data, const ['message', 'status_message']) ?? '',
       lastUpdated: DateTime.now(),
     );
   }
+
+  factory MatchingLifecycleSnapshot.fromTrackingEnvelope(
+    Map<String, dynamic> json,
+  ) {
+    final data =
+        json['data'] is Map<String, dynamic>
+            ? json['data'] as Map<String, dynamic>
+            : json;
+    final tripRaw = data['trip'];
+    final tripMap =
+        tripRaw is Map<String, dynamic>
+            ? <String, dynamic>{...tripRaw}
+            : <String, dynamic>{...data};
+
+    final driverRaw =
+        data['driver'] ?? data['assigned_driver'] ?? tripMap['driver'];
+    if (driverRaw is Map<String, dynamic>) {
+      tripMap['driver'] = driverRaw;
+    }
+
+    final vehicleRaw =
+        data['vehicle'] ??
+        data['motorcycle'] ??
+        data['bike'] ??
+        tripMap['vehicle'];
+    if (vehicleRaw is Map<String, dynamic>) {
+      tripMap['vehicle'] = vehicleRaw;
+    }
+
+    final status =
+        data['status'] ??
+        data['trip_status'] ??
+        tripMap['status'] ??
+        data['matching_status'];
+    if (status != null) {
+      tripMap['status'] = status;
+    }
+
+    final trip = Trip.fromJson(tripMap);
+    return MatchingLifecycleSnapshot(
+      status: _readLifecycleStatus({...data, ...tripMap}),
+      trip: trip,
+      selectedDriver:
+          trip.driver == null
+              ? null
+              : DriverMatch(
+                driverId: trip.driver!.id,
+                driverName: trip.driver!.name,
+                profilePhotoUrl: trip.driver!.photoUrl,
+                rating: trip.driver!.rating,
+                estimatedArrivalMinutes:
+                    _readInt(data, const ['eta_minutes', 'eta']) ?? 0,
+                estimatedFare: trip.fare,
+                distanceKm: _readDouble(data, const ['distance_km']) ?? 0,
+                onlineStatus: 'online',
+                assignmentState: 'assigned',
+                acceptingRequests: true,
+                availabilityLocked: true,
+              ),
+      message: _readString(data, const ['message', 'status_message']) ?? '',
+      lastUpdated: DateTime.now(),
+    );
+  }
+}
+
+MatchingLifecycleStatus _readLifecycleStatus(Map<String, dynamic> data) {
+  final status = data['status'] ?? data['trip_status'];
+  final matchingStatus = data['matching_status'];
+  final parsedStatus = MatchingLifecycleStatusX.parse(status);
+  final parsedMatching = MatchingLifecycleStatusX.parse(matchingStatus);
+  if (status != null &&
+      parsedStatus != MatchingLifecycleStatus.tripRequested &&
+      parsedStatus != MatchingLifecycleStatus.mlMatching) {
+    return parsedStatus;
+  }
+  if (matchingStatus != null) return parsedMatching;
+  return parsedStatus;
+}
+
+Trip? _tripFromTopLevelResponse(Map<String, dynamic> data) {
+  final tripId = _readInt(data, const ['trip_id', 'tripId', 'id']);
+  if (tripId == null || tripId <= 0) return null;
+
+  return Trip(
+    id: tripId,
+    status: TripStatusX.parse(data['status'] ?? data['trip_status']),
+    pickup: const TripLocation(label: '--'),
+    destination: const TripLocation(label: '--'),
+    fare: _readDouble(data, const ['estimated_fare', 'fare', 'total']) ?? 0,
+  );
 }
 
 int? _readInt(Map<String, dynamic> source, List<String> keys) {
@@ -286,6 +426,15 @@ String? _readString(Map<String, dynamic> source, List<String> keys) {
     if (value == null) continue;
     final text = value.toString().trim();
     if (text.isNotEmpty) return text;
+  }
+  return null;
+}
+
+double? _readDouble(Map<String, dynamic> source, List<String> keys) {
+  for (final key in keys) {
+    final value = source[key];
+    if (value is num) return value.toDouble();
+    if (value is String) return double.tryParse(value.trim());
   }
   return null;
 }

@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:flutter/foundation.dart';
 
 import '../models/motor_vehicle_trip_status.dart' as model;
@@ -142,6 +144,8 @@ class TripLifecycleState {
     this.driverPhone,
     this.driverPhotoUrl,
     this.vehiclePlate,
+    this.distanceToPickupKm,
+    this.offline = false,
     this.realtimeConnected = false,
     this.polling = false,
     this.raw = const {},
@@ -163,6 +167,8 @@ class TripLifecycleState {
   final String? driverPhone;
   final String? driverPhotoUrl;
   final String? vehiclePlate;
+  final double? distanceToPickupKm;
+  final bool offline;
   final bool realtimeConnected;
   final bool polling;
   final Map<String, dynamic> raw;
@@ -220,6 +226,7 @@ class TripLifecycleState {
       driverPhone: status.driver?.phone,
       driverPhotoUrl: status.driver?.photoUrl,
       vehiclePlate: status.driver?.vehiclePlate,
+      distanceToPickupKm: _distanceKm(status),
       realtimeConnected: realtimeConnected,
       polling: polling,
       raw: status.raw,
@@ -242,6 +249,8 @@ class TripLifecycleState {
     String? driverPhone,
     String? driverPhotoUrl,
     String? vehiclePlate,
+    double? distanceToPickupKm,
+    bool? offline,
     bool? realtimeConnected,
     bool? polling,
     Map<String, dynamic>? raw,
@@ -263,12 +272,38 @@ class TripLifecycleState {
       driverPhone: driverPhone ?? this.driverPhone,
       driverPhotoUrl: driverPhotoUrl ?? this.driverPhotoUrl,
       vehiclePlate: vehiclePlate ?? this.vehiclePlate,
+      distanceToPickupKm: distanceToPickupKm ?? this.distanceToPickupKm,
+      offline: offline ?? this.offline,
       realtimeConnected: realtimeConnected ?? this.realtimeConnected,
       polling: polling ?? this.polling,
       raw: raw ?? this.raw,
     );
   }
 }
+
+double? _distanceKm(model.MotorVehicleTripStatus status) {
+  final driver = status.driver;
+  if (driver == null ||
+      driver.lat == null ||
+      driver.lng == null ||
+      status.pickupLat == null ||
+      status.pickupLng == null) {
+    return null;
+  }
+
+  const earthRadiusKm = 6371.0;
+  final dLat = _radians(status.pickupLat! - driver.lat!);
+  final dLng = _radians(status.pickupLng! - driver.lng!);
+  final lat1 = _radians(driver.lat!);
+  final lat2 = _radians(status.pickupLat!);
+  final a =
+      (sin(dLat / 2) * sin(dLat / 2)) +
+      cos(lat1) * cos(lat2) * sin(dLng / 2) * sin(dLng / 2);
+  final c = 2 * atan2(sqrt(a), sqrt(1 - a));
+  return earthRadiusKm * c;
+}
+
+double _radians(double degrees) => degrees * pi / 180;
 
 TripLifecyclePhase _mapPhase(
   model.TripLifecyclePhase phase,

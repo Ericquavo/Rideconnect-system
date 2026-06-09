@@ -28,7 +28,8 @@ class TripMatchingService {
   // Stop searching after this long with no driver (client-side safety net).
   static const Duration _searchTimeout = Duration(seconds: 120);
 
-  final _controller = StreamController<lifecycle.TripLifecycleState>.broadcast();
+  final _controller =
+      StreamController<lifecycle.TripLifecycleState>.broadcast();
   Stream<lifecycle.TripLifecycleState> get stream => _controller.stream;
 
   Timer? _timer;
@@ -44,7 +45,12 @@ class TripMatchingService {
   lifecycle.TripLifecycleState? latest;
   StreamSubscription<Map<String, dynamic>>? _realtimeSubscription;
 
-  void startPolling(int tripId) {
+  void startPolling(
+    int tripId, {
+    String? initialStatus,
+    String? initialMatchingStatus,
+    Map<String, dynamic>? initialData,
+  }) {
     stop();
     _tripId = tripId;
     _stopped = false;
@@ -54,7 +60,11 @@ class TripMatchingService {
     _startedAt = DateTime.now();
     _lastPhase = null;
     _listenRealtime();
-    _emitInitial();
+    _emitInitial(
+      initialStatus: initialStatus,
+      initialMatchingStatus: initialMatchingStatus,
+      initialData: initialData,
+    );
     _tick();
   }
 
@@ -68,22 +78,26 @@ class TripMatchingService {
       },
       onDone: _switchToPolling,
     );
-    _realtime.connect().then((connected) {
-      if (connected && _tripId != null) {
-        _realtime.subscribeTrip(_tripId!);
-      }
-    }).catchError((error) {
-      _logger.w('[TripMatchingService] realtime connect failed: $error');
-      _switchToPolling();
-    });
+    _realtime
+        .connect()
+        .then((connected) {
+          if (connected && _tripId != null) {
+            _realtime.subscribeTrip(_tripId!);
+          }
+        })
+        .catchError((error) {
+          _logger.w('[TripMatchingService] realtime connect failed: $error');
+          _switchToPolling();
+        });
   }
 
   void _onRealtimeMessage(Map<String, dynamic> payload) {
     _logger.d('[TripMatchingService] realtime payload: $payload');
     if (_tripId == null) return;
-    final data = payload['data'] is Map<String, dynamic>
-        ? payload['data'] as Map<String, dynamic>
-        : payload;
+    final data =
+        payload['data'] is Map<String, dynamic>
+            ? payload['data'] as Map<String, dynamic>
+            : payload;
     final status = MotorVehicleTripStatus.fromJson(data);
     if (status.tripId != _tripId) return;
     _useRealtime = true;
@@ -96,17 +110,38 @@ class TripMatchingService {
   void _switchToPolling() {
     if (_stopped) return;
     if (_useRealtime) {
-      _logger.i('[TripMatchingService] realtime disconnected, falling back to polling');
+      _logger.i(
+        '[TripMatchingService] realtime disconnected, falling back to polling',
+      );
     }
     _useRealtime = false;
     _scheduleNext();
   }
 
-  void _emitInitial() {
+  void _emitInitial({
+    String? initialStatus,
+    String? initialMatchingStatus,
+    Map<String, dynamic>? initialData,
+  }) {
     if (_tripId == null) return;
-    final state = lifecycle.TripLifecycleState.initial(
-      tripId: _tripId!,
-    );
+    if (initialStatus != null && initialStatus.trim().isNotEmpty) {
+      final data = <String, dynamic>{
+        'trip_id': _tripId,
+        if (initialData != null) ...initialData,
+        'status': initialStatus,
+        if (initialMatchingStatus != null &&
+            initialMatchingStatus.trim().isNotEmpty)
+          'matching_status': initialMatchingStatus,
+      };
+      final status = MotorVehicleTripStatus.fromJson(data);
+      if (status.phase != TripLifecyclePhase.unknown) {
+        _lastPhase = status.phase;
+        _publish(status, source: 'initial');
+        return;
+      }
+    }
+
+    final state = lifecycle.TripLifecycleState.initial(tripId: _tripId!);
     latest = state;
     _controller.add(state);
   }
@@ -194,6 +229,15 @@ class TripMatchingService {
   }
 
   void _publish(MotorVehicleTripStatus status, {required String source}) {
+    if (status.phase == TripLifecyclePhase.unknown) {
+      _logger.w(
+        '[TripMatchingService] ignoring unknown phase for '
+        'status=${status.status} matching=${status.matchingStatus} '
+        'keys=${status.raw.keys.toList()}',
+      );
+      return;
+    }
+
     final next = lifecycle.TripLifecycleState.fromStatus(
       status,
       realtimeConnected: source == 'realtime',
@@ -201,10 +245,13 @@ class TripMatchingService {
     );
     if (latest?.phase != next.phase) {
       _logger.i(
-          '[TripMatchingService] state transition ${latest?.phase} -> ${next.phase} (${source})');
+        '[TripMatchingService] state transition ${latest?.phase} -> ${next.phase} ($source)',
+      );
     }
     if (source == 'poll') {
-      _logger.d('[TripMatchingService] poll status=${next.status} phase=${next.phase}');
+      _logger.d(
+        '[TripMatchingService] poll status=${next.status} phase=${next.phase}',
+      );
     }
     latest = next;
     if (!_controller.isClosed) {

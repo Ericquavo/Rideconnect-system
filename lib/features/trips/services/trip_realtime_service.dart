@@ -44,13 +44,16 @@ class TripRealtimeService {
       final wsBase = _baseUrl
           .replaceFirst('https://', 'wss://')
           .replaceFirst('http://', 'ws://');
-      final uri = Uri.parse('$wsBase/realtime?token=${Uri.encodeQueryComponent(token)}');
+      final uri = Uri.parse(
+        '$wsBase/realtime?token=${Uri.encodeQueryComponent(token)}',
+      );
       _channel = WebSocketChannel.connect(uri);
+      await _channel!.ready.timeout(const Duration(seconds: 5));
       _channel!.stream.listen(
         _onRawMessage,
         onError: _onError,
         onDone: _onDone,
-        cancelOnError: true,
+        cancelOnError: false,
       );
       _logger.d('[TripRealtimeService] Connected to $uri');
       _heartbeat = Timer.periodic(const Duration(seconds: 25), (_) {

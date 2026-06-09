@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../domain/matching_lifecycle_models.dart';
+import '../../domain/trip_models.dart';
 import '../providers/trip_providers.dart';
 import '../widgets/assignment_attempts_widget.dart';
 import '../widgets/matching_progress_widget.dart';
@@ -13,9 +14,14 @@ import 'live_trip_tracking_page.dart';
 import 'trip_completion_page.dart';
 
 class MatchingInProgressPage extends ConsumerWidget {
-  const MatchingInProgressPage({super.key, required this.tripId});
+  const MatchingInProgressPage({
+    super.key,
+    required this.tripId,
+    this.initialSnapshot,
+  });
 
   final int tripId;
+  final MatchingLifecycleSnapshot? initialSnapshot;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -23,13 +29,33 @@ class MatchingInProgressPage extends ConsumerWidget {
     return Scaffold(
       appBar: AppBar(title: const Text('AI Matching')),
       body: state.when(
-        loading: () => const _MatchingLoading(),
-        error:
-            (error, _) => TripErrorView(
-              message: error.toString(),
-              onRetry:
-                  () => ref.read(tripMatchingProvider(tripId).notifier).refresh(),
-            ),
+        loading:
+            () =>
+                initialSnapshot == null
+                    ? const _MatchingLoading()
+                    : _MatchingBody(
+                      snapshot: initialSnapshot!,
+                      onRefresh:
+                          () =>
+                              ref
+                                  .read(tripMatchingProvider(tripId).notifier)
+                                  .refresh(),
+                    ),
+        error: (error, _) {
+          if (initialSnapshot != null) {
+            return _MatchingBody(
+              snapshot: initialSnapshot!,
+              onRefresh:
+                  () =>
+                      ref.read(tripMatchingProvider(tripId).notifier).refresh(),
+            );
+          }
+          return TripErrorView(
+            message: error.toString(),
+            onRetry:
+                () => ref.read(tripMatchingProvider(tripId).notifier).refresh(),
+          );
+        },
         data: (snapshot) {
           _routeForStatus(context, snapshot);
           return _MatchingBody(
@@ -68,17 +94,23 @@ class MatchingInProgressPage extends ConsumerWidget {
         case MatchingLifecycleStatus.driverRejected:
         case MatchingLifecycleStatus.reassigningDriver:
           Navigator.of(context).pushReplacement(
-            MaterialPageRoute(builder: (_) => MatchingRetryPage(tripId: tripId)),
+            MaterialPageRoute(
+              builder: (_) => MatchingRetryPage(tripId: tripId),
+            ),
           );
           break;
         case MatchingLifecycleStatus.noDriversAvailable:
           Navigator.of(context).pushReplacement(
-            MaterialPageRoute(builder: (_) => NoDriversFoundPage(tripId: tripId)),
+            MaterialPageRoute(
+              builder: (_) => NoDriversFoundPage(tripId: tripId),
+            ),
           );
           break;
         case MatchingLifecycleStatus.driverArriving:
           Navigator.of(context).pushReplacement(
-            MaterialPageRoute(builder: (_) => DriverArrivingPage(tripId: tripId)),
+            MaterialPageRoute(
+              builder: (_) => DriverArrivingPage(tripId: tripId),
+            ),
           );
           break;
         case MatchingLifecycleStatus.pickedUp:
@@ -91,7 +123,9 @@ class MatchingInProgressPage extends ConsumerWidget {
           break;
         case MatchingLifecycleStatus.completed:
           Navigator.of(context).pushReplacement(
-            MaterialPageRoute(builder: (_) => TripCompletionPage(tripId: tripId)),
+            MaterialPageRoute(
+              builder: (_) => TripCompletionPage(tripId: tripId),
+            ),
           );
           break;
         case MatchingLifecycleStatus.cancelled:
@@ -120,7 +154,8 @@ class DriverAssignmentPendingPage extends ConsumerWidget {
             (error, _) => TripErrorView(
               message: error.toString(),
               onRetry:
-                  () => ref.read(tripMatchingProvider(tripId).notifier).refresh(),
+                  () =>
+                      ref.read(tripMatchingProvider(tripId).notifier).refresh(),
             ),
         data:
             (snapshot) => _MatchingBody(
@@ -151,7 +186,8 @@ class DriverAcknowledgementPage extends ConsumerWidget {
             (error, _) => TripErrorView(
               message: error.toString(),
               onRetry:
-                  () => ref.read(tripMatchingProvider(tripId).notifier).refresh(),
+                  () =>
+                      ref.read(tripMatchingProvider(tripId).notifier).refresh(),
             ),
         data:
             (snapshot) => _MatchingBody(
@@ -188,12 +224,19 @@ class NoDriversFoundPage extends ConsumerWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(Icons.search_off_rounded, size: 54, color: Color(0xFFFF5E5B)),
+              const Icon(
+                Icons.search_off_rounded,
+                size: 54,
+                color: Color(0xFFFF5E5B),
+              ),
               const SizedBox(height: 12),
               Text(
                 'No available drivers matched this trip right now.',
                 textAlign: TextAlign.center,
-                style: GoogleFonts.poppins(fontSize: 16, fontWeight: FontWeight.w700),
+                style: GoogleFonts.poppins(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                ),
               ),
               const SizedBox(height: 10),
               Text(
@@ -214,7 +257,9 @@ class NoDriversFoundPage extends ConsumerWidget {
               ),
               TextButton(
                 onPressed: () async {
-                  await ref.read(tripRepositoryProvider).cancelPassengerTrip(tripId);
+                  await ref
+                      .read(tripRepositoryProvider)
+                      .cancelPassengerTrip(tripId);
                   if (context.mounted) Navigator.of(context).pop();
                 },
                 child: const Text('Cancel Trip'),
@@ -243,7 +288,8 @@ class MatchingRetryPage extends ConsumerWidget {
             (error, _) => TripErrorView(
               message: error.toString(),
               onRetry:
-                  () => ref.read(tripMatchingProvider(tripId).notifier).refresh(),
+                  () =>
+                      ref.read(tripMatchingProvider(tripId).notifier).refresh(),
             ),
         data:
             (snapshot) => _MatchingBody(
@@ -311,7 +357,14 @@ class _MatchingBody extends StatelessWidget {
           MatchingProgressWidget(status: snapshot.status),
           if (snapshot.message.isNotEmpty) ...[
             const SizedBox(height: 12),
-            Text(snapshot.message, style: GoogleFonts.poppins(color: Colors.grey)),
+            Text(
+              snapshot.message,
+              style: GoogleFonts.poppins(color: Colors.grey),
+            ),
+          ],
+          if (snapshot.trip != null) ...[
+            const SizedBox(height: 14),
+            _TripSearchSummary(trip: snapshot.trip!),
           ],
           const SizedBox(height: 18),
           if (snapshot.selectedDriver != null)
@@ -329,7 +382,10 @@ class _MatchingBody extends StatelessWidget {
               style: GoogleFonts.poppins(fontWeight: FontWeight.w700),
             ),
             const SizedBox(height: 8),
-            ...snapshot.candidates.take(5).indexed.map(
+            ...snapshot.candidates
+                .take(5)
+                .indexed
+                .map(
                   (entry) => _DriverCandidateTile(
                     rank: entry.$1 + 1,
                     name: entry.$2.driverName,
@@ -353,6 +409,88 @@ class _MatchingBody extends StatelessWidget {
           ],
         ],
       ),
+    );
+  }
+}
+
+class _TripSearchSummary extends StatelessWidget {
+  const _TripSearchSummary({required this.trip});
+
+  final Trip trip;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: colorScheme.outlineVariant),
+      ),
+      child: Column(
+        children: [
+          _SummaryRow(
+            icon: Icons.my_location_rounded,
+            label: 'Pickup',
+            value: trip.pickup.label,
+          ),
+          const SizedBox(height: 10),
+          _SummaryRow(
+            icon: Icons.location_on_rounded,
+            label: 'Destination',
+            value: trip.destination.label,
+          ),
+          if (trip.fare > 0) ...[
+            const SizedBox(height: 10),
+            _SummaryRow(
+              icon: Icons.payments_rounded,
+              label: 'Estimated fare',
+              value: '${trip.fare.toStringAsFixed(0)} RWF',
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _SummaryRow extends StatelessWidget {
+  const _SummaryRow({
+    required this.icon,
+    required this.label,
+    required this.value,
+  });
+
+  final IconData icon;
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, size: 18, color: Theme.of(context).colorScheme.primary),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                label,
+                style: GoogleFonts.poppins(fontSize: 11, color: Colors.grey),
+              ),
+              Text(
+                value,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }

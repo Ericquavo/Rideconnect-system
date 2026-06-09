@@ -54,11 +54,19 @@ extension TripStatusX on TripStatus {
 
   static TripStatus parse(dynamic value) {
     final raw = (value ?? '').toString().trim().toUpperCase();
-    if (raw.contains('MATCH')) {
+    if (raw == 'PASSENGER_WAITING' ||
+        raw.contains('ACCEPT') ||
+        raw.contains('CONFIRM')) {
+      return TripStatus.driverConfirmed;
+    }
+    if (raw == 'DRIVER_ASSIGNED' || raw == 'ASSIGNED') {
       return TripStatus.matched;
     }
-    if (raw.contains('CONFIRM') || raw == 'ACCEPTED') {
-      return TripStatus.driverConfirmed;
+    if (raw == 'DRIVER_ARRIVED' || raw == 'ARRIVED') {
+      return TripStatus.pickedUp;
+    }
+    if (raw.contains('MATCH')) {
+      return TripStatus.matched;
     }
     if (raw.contains('ARRIV')) {
       return TripStatus.driverArriving;
@@ -154,6 +162,36 @@ class TripRequest {
   final int? driverId;
   final String? matchingSessionId;
   final double? estimatedFare;
+
+  TripRequest copyWith({
+    TripLocation? pickup,
+    TripLocation? destination,
+    String? vehicleType,
+    int? seatCount,
+    String? tripType,
+    String? scheduleMode,
+    String? paymentMethod,
+    DateTime? departureTime,
+    String? notes,
+    int? driverId,
+    String? matchingSessionId,
+    double? estimatedFare,
+  }) {
+    return TripRequest(
+      pickup: pickup ?? this.pickup,
+      destination: destination ?? this.destination,
+      vehicleType: vehicleType ?? this.vehicleType,
+      seatCount: seatCount ?? this.seatCount,
+      tripType: tripType ?? this.tripType,
+      scheduleMode: scheduleMode ?? this.scheduleMode,
+      paymentMethod: paymentMethod ?? this.paymentMethod,
+      departureTime: departureTime ?? this.departureTime,
+      notes: notes ?? this.notes,
+      driverId: driverId ?? this.driverId,
+      matchingSessionId: matchingSessionId ?? this.matchingSessionId,
+      estimatedFare: estimatedFare ?? this.estimatedFare,
+    );
+  }
 
   Map<String, dynamic> toJson() => {
     ...pickup.toJson('pickup'),

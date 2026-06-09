@@ -96,6 +96,47 @@ class _PublicBusBookingPageState extends State<PublicBusBookingPage> {
     return text.isNotEmpty ? text : 'Unnamed';
   }
 
+  double? _readCoordinate(Map<String, dynamic> item, List<String> keys) {
+    for (final key in keys) {
+      final value = item[key];
+      if (value is double) return value;
+      if (value is num) return value.toDouble();
+      if (value is String) {
+        final parsed = double.tryParse(value.trim());
+        if (parsed != null) return parsed;
+      }
+    }
+    return null;
+  }
+
+  LatLng? _readStopPoint(Map<String, dynamic>? item) {
+    if (item == null) return null;
+    final nestedLocation = item['location'];
+    final source =
+        nestedLocation is Map<String, dynamic> ? nestedLocation : item;
+    final latitude = _readCoordinate(source, const [
+      'latitude',
+      'lat',
+      'stop_lat',
+    ]);
+    final longitude = _readCoordinate(source, const [
+      'longitude',
+      'lng',
+      'lon',
+      'stop_lng',
+      'stop_lon',
+    ]);
+    if (latitude == null || longitude == null) return null;
+    return LatLng(latitude, longitude);
+  }
+
+  Map<String, dynamic>? _findStopById(int stopId) {
+    for (final stop in _boardingStops) {
+      if (_readId(stop) == stopId) return stop;
+    }
+    return null;
+  }
+
   List<Map<String, dynamic>> _dropdownItems(List<Map<String, dynamic>> items) {
     final seenIds = <int>{};
     final result = <Map<String, dynamic>>[];
@@ -329,6 +370,10 @@ class _PublicBusBookingPageState extends State<PublicBusBookingPage> {
         boardingStopId,
         destinationStopId,
       );
+      final boardingStop = _findStopById(normalizedStops.boarding);
+      final destinationStop = _findStopById(normalizedStops.destination);
+      final boardingPoint = _readStopPoint(boardingStop);
+      final destinationPoint = _readStopPoint(destinationStop);
       final result = await PassengerApi.instance.bookPublicBusSeat(
         corridorId: corridorId,
         boardingStopId: normalizedStops.boarding,
@@ -336,6 +381,13 @@ class _PublicBusBookingPageState extends State<PublicBusBookingPage> {
         seatsReserved: seats,
         busRouteAssignmentId:
             allowWithoutSelectedBus ? null : _selectedBus?.assignmentId,
+        pickupLocation: boardingStop == null ? null : _readLabel(boardingStop),
+        pickupLat: boardingPoint?.latitude,
+        pickupLng: boardingPoint?.longitude,
+        dropoffLocation:
+            destinationStop == null ? null : _readLabel(destinationStop),
+        dropoffLat: destinationPoint?.latitude,
+        dropoffLng: destinationPoint?.longitude,
       );
 
       if (!mounted) return;

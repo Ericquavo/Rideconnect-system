@@ -6,9 +6,13 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 import 'matching_lifecycle_pages.dart';
+import 'trip_matching_page.dart';
 import 'location_picker_page.dart';
+import '../../domain/matching_lifecycle_models.dart';
+import '../../domain/trip_models.dart';
+import '../providers/trip_providers.dart';
 import '../../../../pages/passenger/public_bus_booking_page.dart';
-import '../../../../services/matching/matching_repository.dart';
+import '../../../../services/passenger_api.dart';
 
 class CreateTripPage extends ConsumerStatefulWidget {
   const CreateTripPage({super.key, this.onTripCreated});
@@ -174,12 +178,89 @@ class _CreateTripPageState extends ConsumerState<CreateTripPage> {
       _error = null;
     });
 
-    final matchingRepo = MatchingRepository();
-
     try {
+      final tripRepo = ref.read(tripRepositoryProvider);
+      final activeTrip = await _activeTrip();
+      if (activeTrip != null) {
+        debugPrint(
+          '[CreateTripPage] Active trip found; resuming tripId=${activeTrip.tripId}',
+        );
+        widget.onTripCreated?.call();
+        if (!mounted) return;
+        await Navigator.of(context).push(
+          MaterialPageRoute(
+            builder:
+                (_) => TripMatchingPage(
+                  tripId: activeTrip.tripId,
+                  initialStatus: activeTrip.status,
+                  initialMatchingStatus: activeTrip.matchingStatus,
+                  initialData: activeTrip.raw,
+                ),
+          ),
+        );
+        return;
+      }
+
+      final pickupAddress = _pickupController.text.trim();
+      final dropoffAddress = _destinationController.text.trim();
+      final request = TripRequest(
+        pickup: TripLocation(
+          label: pickupAddress,
+          lat: _pickupLatLng!.latitude,
+          lng: _pickupLatLng!.longitude,
+        ),
+        destination: TripLocation(
+          label: dropoffAddress,
+          lat: _destinationLatLng!.latitude,
+          lng: _destinationLatLng!.longitude,
+        ),
+        vehicleType: _vehicleType,
+        seatCount: _vehicleType == 'MOTORCYCLE' ? 1 : _seatCount,
+        tripType: _tripType,
+        scheduleMode: _scheduleMode,
+        paymentMethod: _paymentMethod,
+        departureTime: _scheduleMode == 'scheduled' ? _departureTime : null,
+        notes: _notesController.text,
+        estimatedFare: _estimateFare(),
+      );
+
+      if (_vehicleType == 'MOTORCYCLE') {
+        debugPrint('[CreateTripPage] Requesting MOTORCYCLE trip directly...');
+        final snapshot = await tripRepo.requestMotorVehicleTrip(request);
+        final tripId = snapshot.trip?.id ?? 0;
+        if (tripId <= 0) {
+          throw Exception(
+            'Trip request was accepted but the server did not return a valid trip ID.',
+          );
+        }
+
+        debugPrint(
+          '[CreateTripPage] Moto trip request succeeded: tripId=$tripId status=${snapshot.status}',
+        );
+        widget.onTripCreated?.call();
+        if (!mounted) return;
+
+        await Navigator.of(context).push(
+          MaterialPageRoute(
+            builder:
+                (_) => TripMatchingPage(
+                  tripId: tripId,
+                  initialStatus:
+                      snapshot.trip?.status.apiValue ??
+                      snapshot.status.apiValue,
+                  initialData: {
+                    if (snapshot.trip?.fare != null)
+                      'estimated_fare': snapshot.trip!.fare,
+                  },
+                ),
+          ),
+        );
+        return;
+      }
+
       // Step 1: Find available drivers first
       debugPrint('[CreateTripPage] Step 1: Matching drivers...');
-      final matchingSession = await matchingRepo.getAvailableDrivers(
+      final matchingSession = await tripRepo.matchPassengerDrivers(
         transportType: _vehicleType,
         pickupLat: _pickupLatLng!.latitude,
         pickupLng: _pickupLatLng!.longitude,
@@ -202,49 +283,37 @@ class _CreateTripPageState extends ConsumerState<CreateTripPage> {
         '[CreateTripPage] Found ${matchingSession.drivers.length} drivers',
       );
 
-      // Step 2: Request trip with first available driver using MatchingRepository
+      // Step 2: Request the trip through the mobile trips API so it is
+      // persisted as a real trip that matching and driver screens can load.
       final firstDriver = matchingSession.drivers.first;
-      final pickupAddress = _pickupController.text.trim();
-      final dropoffAddress = _destinationController.text.trim();
 
       debugPrint(
         '[CreateTripPage] Step 2: Requesting $_vehicleType trip with driver ${firstDriver.driverId}',
       );
 
-      if (_vehicleType == 'MOTORCYCLE') {
-        await matchingRepo.requestMotoTrip(
+      final snapshot = await tripRepo.requestMatchedTrip(
+        request.copyWith(
           driverId: firstDriver.driverId,
           matchingSessionId: matchingSession.matchingSessionId,
-          pickupName: pickupAddress,
-          pickupLat: _pickupLatLng!.latitude,
-          pickupLng: _pickupLatLng!.longitude,
-          dropoffName: dropoffAddress,
-          dropoffLat: _destinationLatLng!.latitude,
-          dropoffLng: _destinationLatLng!.longitude,
-        );
-      } else {
-        // CAR or default
-        await matchingRepo.requestPrivateCarBooking(
-          driverId: firstDriver.driverId,
-          matchingSessionId: matchingSession.matchingSessionId,
-          seats: _seatCount,
-          pickupName: pickupAddress,
-          pickupLat: _pickupLatLng!.latitude,
-          pickupLng: _pickupLatLng!.longitude,
-          dropoffName: dropoffAddress,
-          dropoffLat: _destinationLatLng!.latitude,
-          dropoffLng: _destinationLatLng!.longitude,
-          scheduleTime: _scheduleMode == 'scheduled' ? _departureTime : null,
+        ),
+      );
+
+      final tripId = snapshot.trip?.id ?? 0;
+      if (tripId <= 0) {
+        throw Exception(
+          'Trip request was accepted but the server did not return a valid trip ID.',
         );
       }
 
-      debugPrint('[CreateTripPage] Trip request succeeded');
+      debugPrint('[CreateTripPage] Trip request succeeded: tripId=$tripId');
       widget.onTripCreated?.call();
       if (!mounted) return;
 
       // Navigate to trip status page
       await Navigator.of(context).push(
-        MaterialPageRoute(builder: (_) => MatchingInProgressPage(tripId: 0)),
+        MaterialPageRoute(
+          builder: (_) => MatchingInProgressPage(tripId: tripId),
+        ),
       );
     } catch (e) {
       debugPrint('[CreateTripPage] Error: $e');
@@ -280,6 +349,61 @@ class _CreateTripPageState extends ConsumerState<CreateTripPage> {
       _ => 2500.0,
     };
     return base * _seatCount;
+  }
+
+  Future<_ActiveTripSeed?> _activeTrip() async {
+    try {
+      final data = await PassengerApi.instance.getActiveTrip();
+      final source =
+          data['trip'] is Map<String, dynamic>
+              ? data['trip'] as Map<String, dynamic>
+              : data;
+      final tripId = _readInt(source, const ['trip_id', 'id']);
+      if (tripId == null || tripId <= 0) return null;
+      final status = _readString(source, const ['status', 'trip_status']);
+      if (_isTerminalStatus(status)) return null;
+      return _ActiveTripSeed(
+        tripId: tripId,
+        status: status ?? 'REQUESTED',
+        matchingStatus: _readString(source, const ['matching_status']),
+        raw: source,
+      );
+    } on PassengerApiException catch (e) {
+      if (e.statusCode == 404) return null;
+      debugPrint('[CreateTripPage] Active trip check skipped: $e');
+      return null;
+    } catch (e) {
+      debugPrint('[CreateTripPage] Active trip check skipped: $e');
+      return null;
+    }
+  }
+
+  bool _isTerminalStatus(String? status) {
+    final raw = (status ?? '').toUpperCase();
+    return raw.contains('COMPLETE') ||
+        raw.contains('CANCEL') ||
+        raw == 'EXPIRED' ||
+        raw.contains('FAILED_MAX_RETRIES');
+  }
+
+  int? _readInt(Map<String, dynamic> source, List<String> keys) {
+    for (final key in keys) {
+      final value = source[key];
+      if (value is int) return value;
+      if (value is num) return value.toInt();
+      if (value is String) return int.tryParse(value.trim());
+    }
+    return null;
+  }
+
+  String? _readString(Map<String, dynamic> source, List<String> keys) {
+    for (final key in keys) {
+      final value = source[key];
+      if (value == null) continue;
+      final text = value.toString().trim();
+      if (text.isNotEmpty) return text;
+    }
+    return null;
   }
 
   @override
@@ -476,4 +600,18 @@ class _CreateTripPageState extends ConsumerState<CreateTripPage> {
       onTap: onMapTap,
     );
   }
+}
+
+class _ActiveTripSeed {
+  const _ActiveTripSeed({
+    required this.tripId,
+    required this.status,
+    required this.raw,
+    this.matchingStatus,
+  });
+
+  final int tripId;
+  final String status;
+  final String? matchingStatus;
+  final Map<String, dynamic> raw;
 }

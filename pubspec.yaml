@@ -31,36 +31,59 @@ dependencies:
   flutter:
     sdk: flutter
 
+  # UI & Styling
   cupertino_icons: ^1.0.8
   google_fonts: ^6.2.1
   font_awesome_flutter: ^10.7.0
+
+  # HTTP & API
   http: ^1.2.2
   dio: ^5.7.0
+  retrofit: ^4.1.0
+  
+  # Storage
   shared_preferences: ^2.2.3
+  flutter_secure_storage: ^9.2.2
+  
+  # Location & Maps
   google_maps_flutter: ^2.9.0
   geocoding: ^3.0.0
   geolocator: ^13.0.2
+  flutter_polyline_points: ^2.0.0
+  
+  # Media
   image_picker: ^1.1.2
   url_launcher: ^6.3.0
   flutter_google_places_sdk: any
+  
+  # State Management
   riverpod: ^2.4.0
   flutter_riverpod: ^2.4.0
+  hooks_riverpod: ^2.4.0
+  
+  # Utilities
   uuid: ^4.0.0
+  equatable: ^2.0.5
+  logger: ^2.1.0
+  intl: ^0.19.0
+  json_annotation: ^4.8.1
+  
+  # Real-Time & Messaging
   web_socket_channel: ^2.4.0
   firebase_core: ^3.8.0
   firebase_messaging: ^15.1.5
+  
+  # Connectivity
+  connectivity_plus: ^6.0.0
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^5.0.0
   flutter_launcher_icons: ^0.13.1
-
-  # The "flutter_lints" package below contains a set of recommended lints to
-  # encourage good coding practices. The lint set provided by the package is
-  # activated in the `analysis_options.yaml` file located at the root of your
-  # package. See that file for information about deactivating specific lint
-  # rules and activating additional ones.
+  retrofit_generator: ^8.1.0
+  build_runner: ^2.4.8
+  json_serializable: ^6.7.0
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec

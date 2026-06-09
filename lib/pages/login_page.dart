@@ -7,6 +7,7 @@ import 'passenger/passenger_dashboard.dart';
 import 'passenger/pending_approval_page.dart';
 import 'driver/driver_dashboard.dart';
 import '../auth/auth_api.dart';
+import '../services/app_theme_service.dart';
 import '../auth/auth_session.dart';
 import '../services/passenger_api.dart';
 import '../auth/google_oauth_service.dart';
@@ -222,7 +223,7 @@ class _LoginPageState extends State<LoginPage>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F7FF),
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: Stack(
         children: [
           // Background Illustrations
@@ -272,7 +273,7 @@ class _LoginPageState extends State<LoginPage>
                       child: Container(
                         constraints: const BoxConstraints(maxWidth: 420),
                         decoration: BoxDecoration(
-                          color: Colors.white,
+                          color: Theme.of(context).colorScheme.surface,
                           borderRadius: BorderRadius.circular(24),
                           boxShadow: [
                             BoxShadow(
@@ -295,8 +296,15 @@ class _LoginPageState extends State<LoginPage>
                             crossAxisAlignment: CrossAxisAlignment.center,
                             mainAxisSize: MainAxisSize.min,
                             children: [
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.end,
+                                children: [
+                                  _buildThemeToggleButton(),
+                                ],
+                              ),
+                              const SizedBox(height: 16),
                               _buildLogo(),
-                              const SizedBox(height: 28),
+                              const SizedBox(height: 18),
                               _buildHeader(),
                               const SizedBox(height: 32),
                               _buildEmailField(),
@@ -327,6 +335,26 @@ class _LoginPageState extends State<LoginPage>
     );
   }
 
+  Widget _buildThemeToggleButton() {
+    return ValueListenableBuilder<ThemeMode>(
+      valueListenable: AppThemeService.themeModeNotifier,
+      builder: (context, themeMode, child) {
+        final isDark = themeMode == ThemeMode.dark;
+        return GestureDetector(
+          onTap: () => AppThemeService.setDarkMode(!isDark),
+          child: SizedBox(
+            width: 34,
+            height: 34,
+            child: Padding(
+              padding: const EdgeInsets.all(4),
+              child: Image.asset('assets/icon/dark mode.png'),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   Widget _buildLogo() {
     return Center(
       child: SizedBox(
@@ -341,6 +369,7 @@ class _LoginPageState extends State<LoginPage>
   }
 
   Widget _buildHeader() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
@@ -349,7 +378,7 @@ class _LoginPageState extends State<LoginPage>
           style: GoogleFonts.poppins(
             fontSize: 28,
             fontWeight: FontWeight.w700,
-            color: const Color(0xFF1A1A1A),
+            color: isDark ? Colors.white : const Color(0xFF1A1A1A),
           ),
         ),
         const SizedBox(height: 8),
@@ -358,7 +387,7 @@ class _LoginPageState extends State<LoginPage>
             text: 'Login to continue your ride with ',
             style: GoogleFonts.poppins(
               fontSize: 14,
-              color: const Color(0xFF666666),
+              color: isDark ? Colors.white70 : const Color(0xFF666666),
             ),
             children: [
               TextSpan(
@@ -419,6 +448,7 @@ class _LoginPageState extends State<LoginPage>
   }
 
   Widget _buildRememberAndForgot() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
@@ -428,13 +458,16 @@ class _LoginPageState extends State<LoginPage>
               value: true,
               onChanged: (value) {},
               activeColor: const Color(0xFF4C57D6),
-              side: const BorderSide(color: Color(0xFFDDDDDD), width: 1.5),
+              side: BorderSide(
+                color: isDark ? Colors.white24 : const Color(0xFFDDDDDD),
+                width: 1.5,
+              ),
             ),
             Text(
               'Remember me',
               style: GoogleFonts.poppins(
                 fontSize: 13,
-                color: const Color(0xFF666666),
+                color: isDark ? Colors.white70 : const Color(0xFF666666),
               ),
             ),
           ],
@@ -618,6 +651,7 @@ class _InputField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -626,7 +660,7 @@ class _InputField extends StatelessWidget {
           style: GoogleFonts.poppins(
             fontSize: 13,
             fontWeight: FontWeight.w500,
-            color: const Color(0xFF333333),
+            color: isDark ? Colors.white70 : const Color(0xFF333333),
           ),
         ),
         const SizedBox(height: 8),
@@ -636,23 +670,23 @@ class _InputField extends StatelessWidget {
           keyboardType: keyboardType,
           validator: validator,
           style: GoogleFonts.poppins(
-            color: const Color(0xFF1A1A1A),
+            color: isDark ? Colors.white : const Color(0xFF1A1A1A),
             fontSize: 14,
           ),
           decoration: InputDecoration(
             hintText: hint,
             hintStyle: GoogleFonts.poppins(
-              color: const Color(0xFFBBBBBB),
+              color: isDark ? Colors.white38 : const Color(0xFFBBBBBB),
               fontSize: 14,
             ),
             prefixIcon: Icon(
               prefixIcon,
-              color: const Color(0xFF999999),
+              color: isDark ? Colors.white54 : const Color(0xFF999999),
               size: 20,
             ),
             suffixIcon: suffixIcon,
             filled: true,
-            fillColor: const Color(0xFFF8F8F8),
+            fillColor: isDark ? const Color(0xFF111827) : const Color(0xFFF8F8F8),
             contentPadding: const EdgeInsets.symmetric(
               horizontal: 16,
               vertical: 14,
@@ -663,12 +697,15 @@ class _InputField extends StatelessWidget {
             ),
             enabledBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(10),
-              borderSide: const BorderSide(color: Color(0xFFE0E0E0), width: 1),
+              borderSide: BorderSide(
+                color: isDark ? const Color(0xFF374151) : const Color(0xFFE0E0E0),
+                width: 1,
+              ),
             ),
             focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(10),
-              borderSide: const BorderSide(
-                color: Color(0xFF4C57D6),
+              borderSide: BorderSide(
+                color: const Color(0xFF4C57D6),
                 width: 1.5,
               ),
             ),

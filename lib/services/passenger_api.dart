@@ -10,39 +10,27 @@ class PassengerApi {
 
   static final PassengerApi instance = PassengerApi._();
 
-  static const String _baseUrl =
-      'https://rideconnect-emp0.onrender.com/api/v1/passenger';
+  // API root (shared/auth/notifications live here, NOT under /passenger).
+  static const String _rootUrl = 'https://rideconnect-emp0.onrender.com/api/v1';
+  // Passenger-scoped base.
+  static const String _baseUrl = '$_rootUrl/passenger';
   static const Duration _timeout = Duration(seconds: 20);
 
   Future<Map<String, dynamic>> getProfile() => _get('/profile');
 
-  /// Initialize/create the passenger profile if it doesn't exist
-  /// Call this after successful registration
+  /// Initialize/create the passenger profile if it doesn't exist.
+  /// FIX #5: there is no POST /profile on the backend — only GET and PUT|PATCH.
+  /// Call PUT /profile directly instead of attempting POST and falling back.
   Future<Map<String, dynamic>> initializeProfile({
     String? name,
     String? email,
     String? phone,
-  }) async {
-    try {
-      // Try to create profile with initial data
-      return await _post('/profile', {
-        if (name != null && name.isNotEmpty) 'name': name,
-        if (email != null && email.isNotEmpty) 'email': email,
-        if (phone != null && phone.isNotEmpty) 'phone': phone,
-      });
-    } catch (e) {
-      // If POST fails, try a PATCH/PUT to initialize
-      try {
-        return await _put('/profile', {
-          if (name != null && name.isNotEmpty) 'name': name,
-          if (email != null && email.isNotEmpty) 'email': email,
-          if (phone != null && phone.isNotEmpty) 'phone': phone,
-        });
-      } catch (_) {
-        // If both fail, just return empty success
-        return {'success': true, 'message': 'Profile initialization attempted'};
-      }
-    }
+  }) {
+    return _put('/profile', {
+      if (name != null && name.isNotEmpty) 'name': name,
+      if (email != null && email.isNotEmpty) 'email': email,
+      if (phone != null && phone.isNotEmpty) 'phone': phone,
+    });
   }
 
   Future<Map<String, dynamic>> updateProfile(Map<String, dynamic> payload) =>
@@ -55,7 +43,9 @@ class PassengerApi {
     return _extractList(response);
   }
 
-  /// Get rides by type and travel mode
+  /// Get rides by type and travel mode.
+  /// FIX #2: discovery is GET /rides/available (RideController@index).
+  /// GET /rides is PassengerController@rideHistory and ignores these filters.
   /// Parameters:
   ///   - transportType: 'CAR' or 'MOTORCYCLE'
   ///   - travelMode: 'SCHEDULED' or 'ON_DEMAND'
@@ -66,7 +56,7 @@ class PassengerApi {
     bool availableOnly = true,
   }) async {
     final normalizedTransportType = _normalizeTransportType(transportType);
-    final response = await _getWithQuery('/rides', {
+    final response = await _getWithQuery('/rides/available', {
       'transport_type': normalizedTransportType,
       'travel_mode': travelMode,
       'available_only': availableOnly,
@@ -209,22 +199,117 @@ class PassengerApi {
     Map<String, dynamic> payload,
   ) => _post('/ride-requests', payload);
 
+  // ===========================================================================
+  // MOTOR-VEHICLE (motorcycle / private car) ON-DEMAND TRIP FLOW
+  // This is the CURRENT trip-request architecture. The created record lives in
+  // the `motorcycle_trips` table, so it must be polled via the motor-vehicle
+  // endpoint below — NOT via /trips/{id}/status (that reads a different table).
+  // ===========================================================================
+
+  /// Create an on-demand motor-vehicle trip request (auto-matched).
+  /// Returns { success, trip_id, status, matching_status, estimated_fare, ... }.
+  Future<Map<String, dynamic>> createMotorVehicleTrip({
+    required String pickupLocation,
+    required String dropoffLocation,
+    double? pickupLat,
+    double? pickupLng,
+    double? dropoffLat,
+    double? dropoffLng,
+    String transportType = 'MOTORCYCLE',
+  }) {
+    return _post('/motor-vehicle/trip-requests', {
+      'transport_type': _normalizeTransportType(transportType),
+      'pickup_location': pickupLocation,
+      'dropoff_location': dropoffLocation,
+      if (pickupLat != null) 'pickup_lat': pickupLat,
+      if (pickupLng != null) 'pickup_lng': pickupLng,
+      if (dropoffLat != null) 'dropoff_lat': dropoffLat,
+      if (dropoffLng != null) 'dropoff_lng': dropoffLng,
+    });
+  }
+
+  /// Poll the live state of a motor-vehicle trip. SINGLE SOURCE OF TRUTH for the
+  /// SEARCHING -> ASSIGNED -> DRIVER_ASSIGNED -> PASSENGER_WAITING -> IN_PROGRESS
+  /// -> COMPLETED lifecycle. Returns status, matching_status, driver block, etc.
+  Future<Map<String, dynamic>> getMotorVehicleTrip(dynamic tripId) async {
+    final response = await _get('/motor-vehicle/trip-requests/$tripId');
+    return _extractDataMap(response);
+  }
+
+  Future<Map<String, dynamic>> getActiveTrip() async {
+    final response = await _get('/trips/active');
+    return _extractDataMap(response);
+  }
+
+  /// FIX #4: motor-vehicle cancel is POST /motor-vehicle/trip-requests/{id}/cancel
+  /// (the old PUT /ride-requests/{id}/cancel route does not exist).
+  Future<Map<String, dynamic>> cancelMotorVehicleTrip(
+    dynamic tripId, {
+    String? reason,
+  }) => _post('/motor-vehicle/trip-requests/$tripId/cancel', {
+    if (reason != null && reason.isNotEmpty) 'reason': reason,
+  });
+
   Future<Map<String, dynamic>> bookPublicBusSeat({
     required int corridorId,
     required int boardingStopId,
     required int destinationStopId,
     int? busRouteAssignmentId,
     int seatsReserved = 1,
+    String? pickupLocation,
+    double? pickupLat,
+    double? pickupLng,
+    String? dropoffLocation,
+    double? dropoffLat,
+    double? dropoffLng,
   }) {
-    return _post('/public-bus/book-seat', {
+    final payload = <String, dynamic>{
+      'transport_type': 'PUBLIC_BUS',
+      'seats_reserved': seatsReserved,
       'corridor_id': corridorId,
       'boarding_stop_id': boardingStopId,
       'destination_stop_id': destinationStopId,
-      'seats_reserved': seatsReserved,
       if (busRouteAssignmentId != null)
         'bus_route_assignment_id': busRouteAssignmentId,
-    });
+    };
+
+    // Backend requires corridor_id, pickup_location, dropoff_location.
+    final formattedPickup = pickupLocation ?? 'Boarding Stop $boardingStopId';
+    final formattedDropoff =
+        dropoffLocation ?? 'Destination Stop $destinationStopId';
+
+    final requestBody = <String, dynamic>{
+      ...payload,
+      'pickup_name': formattedPickup,
+      'pickup_location': formattedPickup,
+      'pickup_address': formattedPickup,
+      'dropoff_name': formattedDropoff,
+      'dropoff_location': formattedDropoff,
+      'dropoff_address': formattedDropoff,
+    };
+
+    if (pickupLat != null &&
+        pickupLng != null &&
+        dropoffLat != null &&
+        dropoffLng != null) {
+      requestBody.addAll({
+        'pickup_lat': pickupLat,
+        'pickup_lng': pickupLng,
+        'pickup': {'lat': pickupLat, 'lng': pickupLng},
+        'dropoff_lat': dropoffLat,
+        'dropoff_lng': dropoffLng,
+        'dropoff': {'lat': dropoffLat, 'lng': dropoffLng},
+      });
+    }
+
+    // FIX #1: the public-bus smart request endpoint is POST /public-bus/request
+    // (the /public-bus/trip-requests route does not exist).
+    return _post('/public-bus/request', requestBody);
   }
+
+  /// Poll a public-bus smart request after creation (matching / bus assignment).
+  Future<Map<String, dynamic>> getPublicBusRequest(dynamic requestId) =>
+      _get('/public-bus/requests/$requestId');
 
   Future<List<Map<String, dynamic>>> getPublicBusCorridors() async {
     final response = await _get('/public-bus/corridors');
@@ -277,6 +362,15 @@ class PassengerApi {
   Future<Map<String, dynamic>> getTripById(dynamic tripId) =>
       _get('/trips/$tripId');
 
+  /// Poll a Trip-model trip status (ON_DEMAND car / scheduled). NOTE: this reads
+  /// the `trips` table; do NOT use it for motor-vehicle/motorcycle trip_ids —
+  /// use [getMotorVehicleTrip] for those.
+  Future<Map<String, dynamic>> getTripStatus(dynamic tripId) =>
+      _get('/trips/$tripId/status');
+
+  Future<Map<String, dynamic>> getTripMatchingSession(dynamic tripId) =>
+      _get('/trips/$tripId/matching-session');
+
   /// Create a direct trip (for ON_DEMAND rides - Motorcycle, ON_DEMAND CAR)
   /// Used when ride_rules.can_request_trip = true
   Future<Map<String, dynamic>> createDirectTrip({
@@ -314,8 +408,12 @@ class PassengerApi {
   Future<Map<String, dynamic>> cancelTrip(dynamic tripId) =>
       _put('/trips/$tripId/cancel', <String, dynamic>{});
 
+  /// DEPRECATED: kept for backward compatibility. The backend has no
+  /// PUT /ride-requests/{id}/cancel route. For motor-vehicle trips use
+  /// [cancelMotorVehicleTrip]; for Trip-model trips use [cancelTrip].
+  @Deprecated('Use cancelMotorVehicleTrip() or cancelTrip() instead.')
   Future<Map<String, dynamic>> cancelRideRequest(dynamic requestId) =>
-      _put('/ride-requests/$requestId/cancel', <String, dynamic>{});
+      cancelMotorVehicleTrip(requestId);
 
   Future<Map<String, dynamic>> createPayment(Map<String, dynamic> payload) =>
       _post('/payments', payload);
@@ -325,13 +423,25 @@ class PassengerApi {
     return _extractList(response);
   }
 
+  /// FIX #3: notifications are NOT under /passenger. The endpoint is
+  /// /api/v1/notifications/unread-count, so call it against the API root.
   Future<int> getUnreadNotificationCount() async {
-    final response = await _get('/notifications/unread-count');
+    final response = await _request(
+      'GET',
+      '/notifications/unread-count',
+      baseUrl: _rootUrl,
+    );
     final data = _extractDataMap(response);
     return _asInt(
       data['unread_count'] ?? data['count'] ?? data['unread'],
       fallback: 0,
     );
+  }
+
+  /// List notifications (shared endpoint, outside /passenger).
+  Future<List<Map<String, dynamic>>> getNotifications() async {
+    final response = await _request('GET', '/notifications', baseUrl: _rootUrl);
+    return _extractList(response);
   }
 
   Future<Map<String, dynamic>> _get(String path) => _request('GET', path);
@@ -370,6 +480,7 @@ class PassengerApi {
     String method,
     String path, {
     Map<String, dynamic>? body,
+    String? baseUrl,
   }) async {
     final session = await AuthSession.load();
     final token = session?.token;
@@ -378,7 +489,7 @@ class PassengerApi {
       throw Exception('No auth token found. Please login again.');
     }
 
-    final uri = Uri.parse('$_baseUrl$path');
+    final uri = Uri.parse('${baseUrl ?? _baseUrl}$path');
     final headers = <String, String>{
       'Accept': 'application/json',
       'Authorization': 'Bearer ${token.trim()}',
@@ -530,6 +641,7 @@ class PassengerApi {
         directData['history'],
         directData['drivers'],
         directData['online_drivers'],
+        directData['notifications'],
       ];
       for (final value in values) {
         if (value is List) {

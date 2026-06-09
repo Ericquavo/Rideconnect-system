@@ -8,7 +8,7 @@ import '../../data/trip_repository.dart';
 import '../../domain/matching_lifecycle_models.dart';
 import '../../domain/trip_lifecycle_state.dart';
 import '../../domain/trip_models.dart';
-import '../../services/trip_matching_service.dart';
+import '../../services/trip_lifecycle_manager.dart';
 
 final apiClientProvider = Provider<ApiClient>((ref) => ApiClient());
 
@@ -20,16 +20,14 @@ final tripLifecycleServiceProvider = Provider<TripLifecycleService>(
   (ref) => TripLifecycleService(ref.read(tripRepositoryProvider)),
 );
 
-final motorVehicleTripMatchingServiceProvider = Provider<TripMatchingService>(
-  (ref) => TripMatchingService(),
-);
+final motorVehicleTripMatchingServiceProvider =
+    Provider<TripLifecycleManager>((ref) => TripLifecycleManager());
 
 final motorVehicleTripMatchingProvider = AutoDisposeAsyncNotifierProviderFamily<
-    MotorVehicleTripMatchingNotifier,
-    TripLifecycleState,
-    int>(
-  MotorVehicleTripMatchingNotifier.new,
-);
+  MotorVehicleTripMatchingNotifier,
+  TripLifecycleState,
+  MotorVehicleTripMatchingRequest
+>(MotorVehicleTripMatchingNotifier.new);
 
 final passengerTripsProvider = FutureProvider.autoDispose<List<Trip>>((ref) {
   return ref.read(tripRepositoryProvider).passengerTrips();
@@ -131,20 +129,33 @@ class TripMatchingNotifier
 }
 
 class MotorVehicleTripMatchingNotifier
-    extends AutoDisposeFamilyAsyncNotifier<TripLifecycleState, int> {
+    extends
+        AutoDisposeFamilyAsyncNotifier<
+          TripLifecycleState,
+          MotorVehicleTripMatchingRequest
+        > {
   StreamSubscription<TripLifecycleState>? _subscription;
+  TripLifecycleManager? _manager;
 
-  TripMatchingService get _service =>
-      ref.read(motorVehicleTripMatchingServiceProvider);
+  TripLifecycleManager get _service =>
+      _manager ??= TripLifecycleManager();
 
   @override
-  Future<TripLifecycleState> build(int tripId) async {
+  Future<TripLifecycleState> build(
+    MotorVehicleTripMatchingRequest request,
+  ) async {
     ref.onDispose(() {
       _subscription?.cancel();
-      _service.dispose();
+      _manager?.dispose();
+      _manager = null;
     });
 
-    _service.startPolling(tripId);
+    await _service.start(
+      request.tripId,
+      initialStatus: request.initialStatus,
+      initialMatchingStatus: request.initialMatchingStatus,
+      initialData: request.initialData,
+    );
     _subscription = _service.stream.listen((nextState) {
       state = AsyncValue.data(nextState);
       if (nextState.isTerminal) {
@@ -152,7 +163,8 @@ class MotorVehicleTripMatchingNotifier
       }
     });
 
-    return _service.latest ?? TripLifecycleState.initial(tripId: tripId);
+    return _service.latest ??
+        TripLifecycleState.initial(tripId: request.tripId);
   }
 
   void pause() {
@@ -162,4 +174,33 @@ class MotorVehicleTripMatchingNotifier
   void resume() {
     _service.resume();
   }
+
+  Future<void> refreshTripState() {
+    return _service.refreshTripState(reason: 'notifier-refresh');
+  }
+}
+
+class MotorVehicleTripMatchingRequest {
+  const MotorVehicleTripMatchingRequest({
+    required this.tripId,
+    this.initialStatus,
+    this.initialMatchingStatus,
+    this.initialData = const <String, dynamic>{},
+  });
+
+  final int tripId;
+  final String? initialStatus;
+  final String? initialMatchingStatus;
+  final Map<String, dynamic> initialData;
+
+  @override
+  bool operator ==(Object other) {
+    return other is MotorVehicleTripMatchingRequest &&
+        other.tripId == tripId &&
+        other.initialStatus == initialStatus &&
+        other.initialMatchingStatus == initialMatchingStatus;
+  }
+
+  @override
+  int get hashCode => Object.hash(tripId, initialStatus, initialMatchingStatus);
 }
