@@ -102,7 +102,8 @@ class _MotoDriverSelectionFlowState
 
   Future<void> _connectRealtime() async {
     try {
-      await _realtimeHandler.connect();
+      // No explicit connect needed with Firestore - subscriptions are lazy
+      // Just subscribe to the events we care about
 
       // Subscribe to lock events
       _realtimeHandler.subscribeToEvent<DriverTemporarilyLockedEvent>().listen((

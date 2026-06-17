@@ -2,9 +2,11 @@ import 'dart:async';
 
 import 'package:logger/logger.dart';
 
+import '../../../core/services/rtdb_service.dart';
 import '../../../services/passenger_api.dart';
 import '../domain/trip_lifecycle_state.dart' as lifecycle;
 import '../models/motor_vehicle_trip_status.dart';
+import 'realtime_event_router.dart';
 import 'trip_realtime_service.dart';
 
 class TripMatchingService {
@@ -41,9 +43,13 @@ class TripMatchingService {
   DateTime? _startedAt;
   TripLifecyclePhase? _lastPhase;
   int? _tripId;
+  StreamSubscription<dynamic>? _realtimeSubscription;
 
   lifecycle.TripLifecycleState? latest;
-  StreamSubscription<Map<String, dynamic>>? _realtimeSubscription;
+
+  // Event router callbacks for realtime events
+  late void Function(Map<String, dynamic>) _onRealtimeEvent;
+  bool _callbacksRegistered = false;
 
   void startPolling(
     int tripId, {
@@ -69,42 +75,103 @@ class TripMatchingService {
   }
 
   void _listenRealtime() {
-    _realtimeSubscription?.cancel();
-    _realtimeSubscription = _realtime.messages.listen(
-      _onRealtimeMessage,
-      onError: (error, stackTrace) {
-        _logger.w('[TripMatchingService] realtime error: $error');
-        _switchToPolling();
-      },
-      onDone: _switchToPolling,
-    );
-    _realtime
-        .connect()
-        .then((connected) {
-          if (connected && _tripId != null) {
-            _realtime.subscribeTrip(_tripId!);
-          }
-        })
-        .catchError((error) {
-          _logger.w('[TripMatchingService] realtime connect failed: $error');
+    // Subscribe to trip in Firestore using watchTrip stream
+    if (_tripId == null) return;
+
+    _registerEventCallbacks();
+
+    // Use watchTrip to get Firestore stream
+    final eventStream = _realtime.watchTrip(_tripId!);
+    if (eventStream != null) {
+      _logger.i(
+        '[TripMatchingService] Firestore realtime enabled, listening to trip stream',
+      );
+      _useRealtime = true;
+      _realtimeSubscription = eventStream.listen(
+        (event) {
+          // Events are handled through RideConnectEventRouter callbacks
+          _logger.d(
+            '[TripMatchingService] Received realtime event: ${event.event}',
+          );
+        },
+        onError: (error) {
+          _logger.w(
+            '[TripMatchingService] Stream error: $error, fallback to polling',
+          );
           _switchToPolling();
-        });
+        },
+      );
+    } else {
+      _logger.i('[TripMatchingService] Realtime not available, using polling');
+      _switchToPolling();
+    }
   }
 
-  void _onRealtimeMessage(Map<String, dynamic> payload) {
-    _logger.d('[TripMatchingService] realtime payload: $payload');
-    if (_tripId == null) return;
-    final data =
-        payload['data'] is Map<String, dynamic>
-            ? payload['data'] as Map<String, dynamic>
-            : payload;
-    final status = MotorVehicleTripStatus.fromJson(data);
-    if (status.tripId != _tripId) return;
-    _useRealtime = true;
-    _publish(status, source: 'realtime');
-    if (status.phase.isTerminal) {
-      stop();
-    }
+  /// Register event router callbacks to handle Firestore events
+  void _registerEventCallbacks() {
+    if (_callbacksRegistered) return;
+
+    // Define callback to handle all realtime events
+    _onRealtimeEvent = (payload) {
+      _logger.d('[TripMatchingService] realtime event: $payload');
+      if (_tripId == null) return;
+
+      // Extract trip ID from payload (normalized by event router)
+      final tripId = payload['trip_id'] as int?;
+      if (tripId != _tripId) {
+        _logger.d(
+          '[TripMatchingService] Event for different trip: $tripId, ignoring',
+        );
+        return;
+      }
+
+      // Extract event name and status
+      final eventName = payload['event'] as String?;
+      final data = payload;
+
+      try {
+        final status = MotorVehicleTripStatus.fromJson(data);
+        _useRealtime = true;
+        _publish(status, source: 'realtime', eventName: eventName);
+
+        if (status.phase.isTerminal) {
+          stop();
+        }
+      } catch (e, st) {
+        _logger.w(
+          '[TripMatchingService] Failed to parse realtime event: $e\n$st',
+        );
+      }
+    };
+
+    // Register callback with event router for trip events
+    // The router will call this callback when events are received from Firestore
+    RideConnectEventRouter.onDriverAssigned = _onRealtimeEvent;
+    RideConnectEventRouter.onDriverAccepted = _onRealtimeEvent;
+    RideConnectEventRouter.onDriverArrived = _onRealtimeEvent;
+    RideConnectEventRouter.onTripStarted = _onRealtimeEvent;
+    RideConnectEventRouter.onTripCompleted = _onRealtimeEvent;
+    RideConnectEventRouter.onTripCancelled = _onRealtimeEvent;
+    RideConnectEventRouter.onTripRequestUpdated = _onRealtimeEvent;
+
+    _callbacksRegistered = true;
+    _logger.d('[TripMatchingService] Event router callbacks registered');
+  }
+
+  /// Unregister event router callbacks
+  void _unregisterEventCallbacks() {
+    if (!_callbacksRegistered) return;
+
+    RideConnectEventRouter.onDriverAssigned = null;
+    RideConnectEventRouter.onDriverAccepted = null;
+    RideConnectEventRouter.onDriverArrived = null;
+    RideConnectEventRouter.onTripStarted = null;
+    RideConnectEventRouter.onTripCompleted = null;
+    RideConnectEventRouter.onTripCancelled = null;
+    RideConnectEventRouter.onTripRequestUpdated = null;
+
+    _callbacksRegistered = false;
+    _logger.d('[TripMatchingService] Event router callbacks unregistered');
   }
 
   void _switchToPolling() {
@@ -167,6 +234,7 @@ class TripMatchingService {
     _useRealtime = false;
     _realtimeSubscription?.cancel();
     _realtimeSubscription = null;
+    _unregisterEventCallbacks();
     _realtime.dispose();
   }
 
@@ -228,7 +296,11 @@ class TripMatchingService {
     _scheduleNext();
   }
 
-  void _publish(MotorVehicleTripStatus status, {required String source}) {
+  void _publish(
+    MotorVehicleTripStatus status, {
+    required String source,
+    String? eventName,
+  }) {
     if (status.phase == TripLifecyclePhase.unknown) {
       _logger.w(
         '[TripMatchingService] ignoring unknown phase for '
@@ -245,7 +317,7 @@ class TripMatchingService {
     );
     if (latest?.phase != next.phase) {
       _logger.i(
-        '[TripMatchingService] state transition ${latest?.phase} -> ${next.phase} ($source)',
+        '[TripMatchingService] state transition ${latest?.phase} -> ${next.phase} ($source${eventName != null ? ', event=$eventName' : ''})',
       );
     }
     if (source == 'poll') {

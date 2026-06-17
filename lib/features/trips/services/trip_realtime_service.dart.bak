@@ -1,0 +1,237 @@
+import 'dart:async';
+
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:logger/logger.dart';
+
+import 'realtime_event_router.dart';
+
+/// Real-time service using Firebase Firestore listeners
+/// Listens to trip_events/{tripId}/events collection for real-time updates
+///
+/// Architecture:
+/// - Firebase: Only event stream (DriverAssigned, DriverAccepted, etc.)
+/// - Supabase: Core data (users, trips, drivers, payments, history)
+///
+/// Firebase NEVER writes core data. Only Laravel writes to Supabase.
+class TripRealtimeService {
+  TripRealtimeService({Logger? logger}) : _logger = logger ?? Logger();
+
+  final Logger _logger;
+  final Map<String, StreamSubscription<QuerySnapshot>> _subscriptions = {};
+
+  bool get isConnected => _subscriptions.isNotEmpty;
+  bool get isRealtimeEnabled =>
+      true; // Firestore is always enabled if initialized
+
+  /// Initialize realtime connection
+  /// Returns true since Firestore is always available
+  Future<bool> connect() async {
+    _logger.i('[TripRealtimeService] Firestore realtime enabled');
+    return true;
+  }
+
+  /// Subscribe to trip events: trip_events/{tripId}/events
+  /// Listens to events for a specific trip
+  Future<void> subscribeTrip(int tripId) async {
+    final channelKey = 'trip.$tripId';
+
+    // Already subscribed
+    if (_subscriptions.containsKey(channelKey)) {
+      _logger.d('[TripRealtimeService] Already subscribed to $channelKey');
+      return;
+    }
+
+    try {
+      _logger.i(
+        '[TripRealtimeService] Subscribing to trip_events/$tripId/events',
+      );
+
+      // Listen to trip events in Firestore
+      final subscription = FirebaseFirestore.instance
+          .collection('trip_events')
+          .doc(tripId.toString())
+          .collection('events')
+          .orderBy('timestamp', descending: false)
+          .snapshots()
+          .listen(
+            (snapshot) {
+              for (final change in snapshot.docChanges) {
+                if (change.type == DocumentChangeType.added) {
+                  final eventData = change.doc.data();
+                  if (eventData != null) {
+                    _handleFirestoreEvent(eventData, tripId);
+                  }
+                }
+              }
+            },
+            onError: (error) {
+              _logger.e(
+                '[TripRealtimeService] Trip subscription error: $error',
+              );
+            },
+            cancelOnError: false,
+          );
+
+      _subscriptions[channelKey] = subscription;
+      _logger.d('[TripRealtimeService] Subscribed to $channelKey');
+    } catch (e) {
+      _logger.e('[TripRealtimeService] Failed to subscribe to trip: $e');
+    }
+  }
+
+  /// Subscribe to driver events: trip_events/drivers/{driverId}/events
+  Future<void> subscribeDriver(int driverId) async {
+    final channelKey = 'driver.$driverId';
+
+    if (_subscriptions.containsKey(channelKey)) {
+      _logger.d('[TripRealtimeService] Already subscribed to $channelKey');
+      return;
+    }
+
+    try {
+      _logger.i('[TripRealtimeService] Subscribing to driver events');
+
+      final subscription = FirebaseFirestore.instance
+          .collection('driver_events')
+          .doc(driverId.toString())
+          .collection('events')
+          .orderBy('timestamp', descending: false)
+          .snapshots()
+          .listen(
+            (snapshot) {
+              for (final change in snapshot.docChanges) {
+                if (change.type == DocumentChangeType.added) {
+                  final eventData = change.doc.data();
+                  if (eventData != null) {
+                    _handleFirestoreEvent(eventData, driverId);
+                  }
+                }
+              }
+            },
+            onError: (error) {
+              _logger.e(
+                '[TripRealtimeService] Driver subscription error: $error',
+              );
+            },
+            cancelOnError: false,
+          );
+
+      _subscriptions[channelKey] = subscription;
+      _logger.d('[TripRealtimeService] Subscribed to $channelKey');
+    } catch (e) {
+      _logger.e('[TripRealtimeService] Failed to subscribe to driver: $e');
+    }
+  }
+
+  /// Subscribe to user events: trip_events/users/{userId}/events
+  Future<void> subscribeUser(int userId) async {
+    final channelKey = 'user.$userId';
+
+    if (_subscriptions.containsKey(channelKey)) {
+      _logger.d('[TripRealtimeService] Already subscribed to $channelKey');
+      return;
+    }
+
+    try {
+      _logger.i('[TripRealtimeService] Subscribing to user events');
+
+      final subscription = FirebaseFirestore.instance
+          .collection('user_events')
+          .doc(userId.toString())
+          .collection('events')
+          .orderBy('timestamp', descending: false)
+          .snapshots()
+          .listen(
+            (snapshot) {
+              for (final change in snapshot.docChanges) {
+                if (change.type == DocumentChangeType.added) {
+                  final eventData = change.doc.data();
+                  if (eventData != null) {
+                    _handleFirestoreEvent(eventData, userId);
+                  }
+                }
+              }
+            },
+            onError: (error) {
+              _logger.e(
+                '[TripRealtimeService] User subscription error: $error',
+              );
+            },
+            cancelOnError: false,
+          );
+
+      _subscriptions[channelKey] = subscription;
+      _logger.d('[TripRealtimeService] Subscribed to $channelKey');
+    } catch (e) {
+      _logger.e('[TripRealtimeService] Failed to subscribe to user: $e');
+    }
+  }
+
+  /// Unsubscribe from trip channel
+  Future<void> unsubscribeTrip(int tripId) async {
+    final channelKey = 'trip.$tripId';
+    await _unsubscribe(channelKey);
+  }
+
+  /// Unsubscribe from driver channel
+  Future<void> unsubscribeDriver(int driverId) async {
+    final channelKey = 'driver.$driverId';
+    await _unsubscribe(channelKey);
+  }
+
+  /// Unsubscribe from user channel
+  Future<void> unsubscribeUser(int userId) async {
+    final channelKey = 'user.$userId';
+    await _unsubscribe(channelKey);
+  }
+
+  /// Internal unsubscribe
+  Future<void> _unsubscribe(String channelKey) async {
+    final subscription = _subscriptions.remove(channelKey);
+    if (subscription != null) {
+      await subscription.cancel();
+      _logger.d('[TripRealtimeService] Unsubscribed from $channelKey');
+    }
+  }
+
+  /// Handle Firestore event document
+  /// Converts Firestore document to event payload and routes through event router
+  void _handleFirestoreEvent(Map<String, dynamic> data, int entityId) {
+    try {
+      final eventName = data['event'] as String?;
+      if (eventName == null || eventName.isEmpty) {
+        _logger.d('[TripRealtimeService] Ignoring message without event name');
+        return;
+      }
+
+      // Normalize payload structure
+      // Firestore documents already have structured data, no need for nested 'data' field
+      final payload = {
+        'event': eventName,
+        'trip_id': data['trip_id'] ?? entityId,
+        'driver_id': data['driver_id'],
+        'status': data['status'],
+        'timestamp': data['timestamp'],
+        // Include all other fields
+        ...data,
+      };
+
+      _logger.d('[TripRealtimeService] Received event: $eventName');
+
+      // Route through event router
+      RideConnectEventRouter.handle(eventName, payload);
+    } catch (e) {
+      _logger.e('[TripRealtimeService] Error processing Firestore event: $e');
+    }
+  }
+
+  /// Dispose all subscriptions
+  Future<void> dispose() async {
+    _logger.i('[TripRealtimeService] Disposing all subscriptions');
+
+    for (final subscription in _subscriptions.values) {
+      await subscription.cancel();
+    }
+    _subscriptions.clear();
+  }
+}

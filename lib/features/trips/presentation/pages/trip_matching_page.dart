@@ -93,6 +93,23 @@ class _TripMatchingPageState extends ConsumerState<TripMatchingPage>
           ),
         );
       });
+    } else if (state.phase == TripLifecyclePhase.driverArrived) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        showDialog(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Driver Arrived'),
+            content: const Text('Your driver has arrived at the pickup location!'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: const Text('OK'),
+              ),
+            ],
+          ),
+        );
+      });
     }
   }
 
@@ -108,6 +125,20 @@ class _TripMatchingPageState extends ConsumerState<TripMatchingPage>
     await launchUrl(uri);
   }
 
+  Future<void> _messageDriver(String? phone) async {
+    if (phone == null || phone.trim().isEmpty) return;
+    final uri = Uri(scheme: 'sms', path: phone.trim());
+    await launchUrl(uri);
+  }
+
+  void _trackDriver() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => LiveTripTrackingPage(tripId: widget.tripId),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     ref.listen<AsyncValue<TripLifecycleState>>(
@@ -117,6 +148,7 @@ class _TripMatchingPageState extends ConsumerState<TripMatchingPage>
         if (current == null) return;
         final previousPhase = previous?.valueOrNull?.phase;
         if (previousPhase != current.phase) {
+          ref.read(tripRepositoryProvider).acknowledgeTripStatus(widget.tripId, current.phase.name);
           _routeIfNeeded(current);
         }
       },
@@ -213,6 +245,15 @@ class _TripMatchingPageState extends ConsumerState<TripMatchingPage>
           const Icon(Icons.local_taxi_outlined, size: 64),
           const SizedBox(height: 12),
           Text(state.statusLabel, style: GoogleFonts.poppins(fontSize: 18)),
+          if (state.phase == TripLifecyclePhase.driversFound ||
+              state.phase == TripLifecyclePhase.contactingDrivers)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(
+                'Waiting for driver confirmation...',
+                style: GoogleFonts.poppins(color: Colors.grey[700]),
+              ),
+            ),
           const SizedBox(height: 16),
           _driverCard(state),
           if (state.etaMinutes != null)
@@ -237,6 +278,16 @@ class _TripMatchingPageState extends ConsumerState<TripMatchingPage>
               child: Text(
                 'Estimated fare ${state.estimatedFare}',
                 style: GoogleFonts.poppins(color: Colors.grey[700]),
+              ),
+            ),
+          if (state.phase == TripLifecyclePhase.driverAccepted ||
+              state.phase == TripLifecyclePhase.driverArriving)
+            Padding(
+              padding: const EdgeInsets.only(top: 16),
+              child: FilledButton.icon(
+                onPressed: state.offline ? null : _trackDriver,
+                icon: const Icon(Icons.navigation_rounded),
+                label: const Text('Track driver'),
               ),
             ),
         ],
@@ -429,6 +480,12 @@ class _TripMatchingPageState extends ConsumerState<TripMatchingPage>
                     state.offline ? null : () => _callDriver(driver.phone),
                 icon: const Icon(Icons.call_rounded),
                 tooltip: 'Call driver',
+              ),
+              IconButton(
+                onPressed:
+                    state.offline ? null : () => _messageDriver(driver.phone),
+                icon: const Icon(Icons.message_rounded),
+                tooltip: 'Message driver',
               ),
             ],
           ),

@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:http/http.dart' as http;
 
@@ -129,6 +131,24 @@ class AuthApi {
             _asString(data['status']) ??
             'pending',
       );
+    } on SocketException catch (_) {
+      return AuthApiRegisterResult(
+        success: false,
+        message:
+            'Network error: Unable to connect to server. Please check your internet connection.',
+        role: normalizedRole,
+        name: fullName.trim(),
+        email: email.trim(),
+      );
+    } on TimeoutException catch (_) {
+      return AuthApiRegisterResult(
+        success: false,
+        message:
+            'Request timeout: Server took too long to respond. Please try again.',
+        role: normalizedRole,
+        name: fullName.trim(),
+        email: email.trim(),
+      );
     } catch (_) {
       return AuthApiRegisterResult(
         success: false,
@@ -149,12 +169,20 @@ class AuthApi {
       try {
         response = await _postJson(
           Uri.parse(_loginUrl),
-          body: {'email': email.trim(), 'password': password},
+          body: {
+            'login': email.trim(),
+            'password': password,
+            'device_name': 'flutter',
+          },
         );
       } catch (_) {
         response = await _postJson(
           Uri.parse(_fallbackLoginUrl),
-          body: {'email': email.trim(), 'password': password},
+          body: {
+            'login': email.trim(),
+            'password': password,
+            'device_name': 'flutter',
+          },
         );
       }
 
@@ -201,7 +229,25 @@ class AuthApi {
             _asString(data['status']) ??
             'approved',
       );
-    } catch (_) {
+    } on SocketException catch (_) {
+      return AuthApiLoginResult(
+        success: false,
+        message:
+            'Network error: Unable to connect to server. Please check your internet connection.',
+        role: '',
+        name: '',
+        email: email.trim(),
+      );
+    } on TimeoutException catch (_) {
+      return AuthApiLoginResult(
+        success: false,
+        message:
+            'Request timeout: Server took too long to respond. Please try again.',
+        role: '',
+        name: '',
+        email: email.trim(),
+      );
+    } catch (e) {
       return AuthApiLoginResult(
         success: false,
         message: 'Unable to reach server. Please try again.',
@@ -532,12 +578,25 @@ class AuthApi {
   static Map<String, dynamic> _decodeObject(String body) {
     if (body.trim().isEmpty) return <String, dynamic>{};
     try {
+      // Check if response is HTML (common error response)
+      if (body.trim().startsWith('<')) {
+        return {
+          'success': false,
+          'message':
+              'Server error: Invalid response format. Please try again later.',
+        };
+      }
       final decoded = jsonDecode(body);
       if (decoded is Map<String, dynamic>) {
         return decoded;
       }
-    } catch (_) {
-      return <String, dynamic>{};
+    } catch (e) {
+      // Return a user-friendly error message instead of silent failure
+      return {
+        'success': false,
+        'message':
+            'Connection error: Unable to process server response. Please check your internet connection and try again.',
+      };
     }
     return <String, dynamic>{};
   }

@@ -18,7 +18,12 @@ import 'driver_settings_page.dart';
 import 'driver_vehicle_info_page.dart';
 import 'driver_booking_queue_page.dart';
 import 'driver_notifications_page.dart';
+import '../../services/trip_service_v2.dart';
 import '../../features/trips/presentation/pages/driver_trip_pages.dart';
+import '../../screens/driver/driver_active_trip_screen.dart';
+import '../../screens/driver/driver_incoming_request_screen.dart';
+import '../../core/services/rtdb_service.dart';
+import 'dart:convert';
 
 class DriverDashboard extends StatefulWidget {
   final String driverName;
@@ -43,6 +48,8 @@ class _DriverDashboardState extends State<DriverDashboard> {
   Uint8List? _driverAvatarBytes;
   Timer? _notificationTimer;
   Timer? _presenceTimer;
+  StreamSubscription<Map<String, dynamic>?>? _incomingTripSubscription;
+  bool _isShowingIncomingRequest = false;
   final DriverLanguageService _lang = DriverLanguageService.instance;
 
   @override
@@ -68,6 +75,35 @@ class _DriverDashboardState extends State<DriverDashboard> {
       (_) => _syncDriverPresence(),
     );
     _syncNotificationTimer();
+    _initIncomingTripListener();
+    
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _checkActiveTrip();
+    });
+  }
+
+  Future<void> _checkActiveTrip() async {
+    try {
+      final session = await AuthSession.load();
+      if (session?.token == null) return;
+      
+      final service = TripServiceV2(authToken: session!.token);
+      final trip = await service.getCurrentTrip();
+      
+      if (trip != null && trip.isActive) {
+        if (!mounted) return;
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => DriverActiveTripScreen(
+              trip: trip,
+              authToken: session.token!,
+            ),
+          ),
+        );
+      }
+    } catch (_) {
+      // Ignore if no active trip or network error
+    }
   }
 
   @override
@@ -84,6 +120,7 @@ class _DriverDashboardState extends State<DriverDashboard> {
     );
     _notificationTimer?.cancel();
     _presenceTimer?.cancel();
+    _incomingTripSubscription?.cancel();
     super.dispose();
   }
 
@@ -214,6 +251,63 @@ class _DriverDashboardState extends State<DriverDashboard> {
     } catch (_) {
       // Keep previous badge state on transient failures.
     }
+  }
+
+  Future<void> _initIncomingTripListener() async {
+    final session = await AuthSession.load();
+    final token = session?.token;
+    if (token == null || token.isEmpty) return;
+
+    // Extract driverId from JWT token
+    String? driverId;
+    try {
+      final parts = token.split('.');
+      if (parts.length >= 2) {
+        final payload = parts[1];
+        final normalizedPayload = base64Url.normalize(payload);
+        final decoded = utf8.decode(base64Url.decode(normalizedPayload));
+        final claims = jsonDecode(decoded);
+        driverId = (claims['id'] ?? claims['user_id'] ?? claims['sub'])?.toString();
+      }
+    } catch (_) {
+      // Failed to decode JWT
+    }
+
+    if (driverId == null || driverId.isEmpty) return;
+
+    final rtdb = RTDBService();
+    _incomingTripSubscription = rtdb.getIncomingTripStream(driverId).listen((payload) {
+      if (!mounted || payload == null || payload.isEmpty) {
+        if (_isShowingIncomingRequest && mounted) {
+          Navigator.of(context).pop(); // Dismiss if removed
+          _isShowingIncomingRequest = false;
+        }
+        return;
+      }
+
+      if (!_isShowingIncomingRequest) {
+        _isShowingIncomingRequest = true;
+        showModalBottomSheet(
+          context: context,
+          isScrollControlled: true,
+          isDismissible: false,
+          enableDrag: false,
+          backgroundColor: Colors.transparent,
+          builder: (_) => Padding(
+            padding: EdgeInsets.only(
+              bottom: MediaQuery.of(context).viewInsets.bottom,
+            ),
+            child: DriverIncomingRequestScreen(
+              payload: payload,
+              authToken: token,
+            ),
+          ),
+        ).then((_) {
+          _isShowingIncomingRequest = false;
+          // Optionally clear the assigned trip from RTDB if they rejected or ignored it
+        });
+      }
+    });
   }
 
   @override

@@ -2,7 +2,8 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
-import '../../../core/api/api_client.dart';
+import '../../../../core/network/api_client.dart';
+import '../../../../core/errors/app_exception.dart';
 import '../../../models/matching/matching_session.dart';
 import '../domain/matching_lifecycle_models.dart';
 import '../domain/trip_models.dart';
@@ -15,9 +16,9 @@ class TripRepository {
   Future<Trip> createPassengerTrip(TripRequest request) async {
     final response = await _api.post(
       '/mobile/trips/request',
-      body: request.toJson(),
+      data: request.toJson(),
     );
-    return Trip.fromJson(response.dataMap);
+    return Trip.fromJson(response.data);
   }
 
   Future<MatchingLifecycleSnapshot> requestMatchedTrip(
@@ -25,7 +26,7 @@ class TripRepository {
   ) async {
     final body = request.toJson();
     debugPrint('[TripRepository] Sending request to /mobile/trips/request');
-    debugPrint('[TripRepository] Request body: ${jsonEncode(body)}');
+    debugPrint('[TripRepository] Request data: ${jsonEncode(body)}');
     debugPrint(
       '[TripRepository] Pickup fields: ${body.keys.where((k) => k.contains("pickup"))}',
     );
@@ -34,30 +35,30 @@ class TripRepository {
     );
 
     try {
-      final response = await _api.post('/mobile/trips/request', body: body);
+      final response = await _api.post('/mobile/trips/request', data: body);
       debugPrint('[TripRepository] Response status: ${response.statusCode}');
       debugPrint(
-        '[TripRepository] Response envelope: ${jsonEncode(response.envelope)}',
+        '[TripRepository] Response data: ${jsonEncode(response.data)}',
       );
 
       // Check if the response indicates an error
-      if (response.envelope['success'] == false) {
+      if (response.data['success'] == false) {
         debugPrint(
-          '[TripRepository] API returned error: ${response.envelope['message']}',
+          '[TripRepository] API returned error: ${response.data['message']}',
         );
         debugPrint(
-          '[TripRepository] Error code: ${response.envelope['error_code']}',
+          '[TripRepository] Error code: ${response.data['error_code']}',
         );
       }
 
-      final snapshot = MatchingLifecycleSnapshot.fromJson(response.envelope);
+      final snapshot = MatchingLifecycleSnapshot.fromJson(response.data);
       if (snapshot.trip != null ||
           snapshot.candidates.isNotEmpty ||
           snapshot.selectedDriver != null) {
         return snapshot;
       }
       return MatchingLifecycleSnapshot.fromTrip(
-        Trip.fromJson(response.dataMap),
+        Trip.fromJson(response.data),
       );
     } catch (e, stackTrace) {
       debugPrint('[TripRepository] Exception occurred: $e');
@@ -91,16 +92,16 @@ class TripRepository {
     debugPrint(
       '[TripRepository] Sending request to /passenger/motor-vehicle/trip-requests',
     );
-    debugPrint('[TripRepository] Moto request body: ${jsonEncode(body)}');
+    debugPrint('[TripRepository] Moto request data: ${jsonEncode(body)}');
 
     final response = await _api.post(
       '/passenger/motor-vehicle/trip-requests',
-      body: body,
+      data: body,
     );
     debugPrint(
-      '[TripRepository] Moto response envelope: ${jsonEncode(response.envelope)}',
+      '[TripRepository] Moto response data: ${jsonEncode(response.data)}',
     );
-    final snapshot = MatchingLifecycleSnapshot.fromJson(response.envelope);
+    final snapshot = MatchingLifecycleSnapshot.fromJson(response.data);
     final trip = snapshot.trip;
     if (trip == null) return snapshot;
     return snapshot.copyWith(
@@ -135,7 +136,7 @@ class TripRepository {
 
     final response = await _api.get(
       '/passenger/drivers/match',
-      query: {
+      queryParameters: {
         'transport_type': transportType,
         'pickup_lat': pickupLat,
         'pickup_lng': pickupLng,
@@ -149,24 +150,28 @@ class TripRepository {
     debugPrint(
       '[TripRepository] Match response status: ${response.statusCode}',
     );
-    debugPrint('[TripRepository] Match response: ${response.envelope}');
+    debugPrint('[TripRepository] Match response: ${response.data}');
 
-    final session = MatchingSession.fromJson(response.envelope);
+    final session = MatchingSession.fromJson(response.data);
     debugPrint('[TripRepository] Found ${session.drivers.length} drivers');
     return session;
   }
 
   Future<List<Trip>> passengerTrips() async {
     final response = await _api.get('/passenger/trips');
-    return response
-        .list(['trips', 'items', 'history'])
-        .map(Trip.fromJson)
-        .toList();
+    final data = response.data;
+    if (data is Map && data['trips'] != null) {
+      final trips = data['trips'];
+      if (trips is List) {
+        return trips.map((t) => Trip.fromJson(t)).toList();
+      }
+    }
+    return [];
   }
 
   Future<Trip?> currentPassengerTrip() async {
     final response = await _api.get('/mobile/trips/current');
-    final map = response.dataMap;
+    final map = response.data;
     if (map.isEmpty || map['trip'] == null && map['id'] == null) return null;
     return Trip.fromJson(
       map['trip'] is Map<String, dynamic> ? map['trip'] : map,
@@ -175,28 +180,42 @@ class TripRepository {
 
   Future<MatchingLifecycleSnapshot?> currentPassengerMatching() async {
     final response = await _api.get('/mobile/trips/current');
-    final map = response.dataMap;
+    final map = response.data;
     if (map.isEmpty || map['trip'] == null && map['id'] == null) return null;
-    return MatchingLifecycleSnapshot.fromJson(response.envelope);
+    return MatchingLifecycleSnapshot.fromJson(response.data);
   }
 
   Future<Trip> passengerTrip(int id) async {
     final response = await _api.get('/passenger/trips/$id');
-    return Trip.fromJson(response.dataMap);
+    return Trip.fromJson(response.data);
   }
 
   Future<void> cancelPassengerTrip(int id, {String? reason}) async {
     await _api.put(
       '/mobile/trips/$id/cancel',
-      body: {
+      data: {
         if (reason != null && reason.trim().isNotEmpty) 'reason': reason.trim(),
       },
     );
   }
 
+  Future<void> acknowledgeTripStatus(int tripId, String ackType) async {
+    try {
+      await _api.post(
+        '/trips/$tripId/acknowledge',
+        data: {
+          'acknowledgement_type': ackType,
+          'source': 'flutter',
+        },
+      );
+    } catch (e) {
+      debugPrint('[TripRepository] Error acknowledging trip status: $e');
+    }
+  }
+
   Future<TripTracking> trackTrip(int id) async {
     final response = await _api.get('/mobile/trips/$id/track');
-    return TripTracking.fromJson(response.dataMap);
+    return TripTracking.fromJson(response.data);
   }
 
   Future<MatchingLifecycleSnapshot> lifecycleSnapshotForTrip(
@@ -220,13 +239,13 @@ class TripRepository {
         if (_hasActionableProgress(snapshot)) break;
       } on ApiException catch (e) {
         lastError = e;
-        if (e.isUnauthorized) continue;
+        if (e.statusCode == 401) continue;
       }
     }
 
     if (snapshots.isEmpty) {
       if (previous != null) return previous;
-      throw lastError ?? ApiException('Unable to load trip status.', 0, {});
+      throw lastError ?? ApiException(message: 'Unable to load trip status.');
     }
 
     var merged = _mergeSnapshots(snapshots, previous: previous);
@@ -242,12 +261,12 @@ class TripRepository {
 
   Future<MatchingLifecycleSnapshot> _trackingSnapshotForTrip(int id) async {
     final response = await _api.get('/mobile/trips/$id/track');
-    return MatchingLifecycleSnapshot.fromTrackingEnvelope(response.envelope);
+    return MatchingLifecycleSnapshot.fromTrackingEnvelope(response.data);
   }
 
   Future<MatchingLifecycleSnapshot> _endpointSnapshot(String path) async {
     final response = await _api.get(path);
-    return MatchingLifecycleSnapshot.fromJson(response.envelope);
+    return MatchingLifecycleSnapshot.fromJson(response.data);
   }
 
   bool _hasActionableProgress(MatchingLifecycleSnapshot snapshot) {
@@ -298,7 +317,14 @@ class TripRepository {
   ) async {
     try {
       final response = await _api.get('/notifications');
-      final notifications = response.list(['notifications', 'items', 'data']);
+      final data = response.data;
+      final notifications = <dynamic>[];
+      if (data is Map && data['notifications'] != null) {
+        final notifs = data['notifications'];
+        if (notifs is List) {
+          notifications.addAll(notifs);
+        }
+      }
       for (final notification in notifications) {
         if (!_notificationBelongsToTrip(notification, id)) continue;
         final status = _notificationStatus(notification);
@@ -368,7 +394,7 @@ class TripRepository {
   }) async {
     await _api.post(
       '/passenger/payments',
-      body: {'trip_id': tripId, 'amount': amount, 'payment_method': method},
+      data: {'trip_id': tripId, 'amount': amount, 'payment_method': method},
     );
   }
 
@@ -379,7 +405,7 @@ class TripRepository {
   }) async {
     await _api.post(
       '/passenger/trips/$tripId/feedback',
-      body: {
+      data: {
         'rating': rating,
         if (comments != null && comments.trim().isNotEmpty)
           'comments': comments.trim(),
@@ -394,7 +420,7 @@ class TripRepository {
   }) async {
     await _api.post(
       '/devices/push-token',
-      body: {
+      data: {
         'device_token': token,
         'platform': platform,
         'device_id': deviceId,
@@ -404,15 +430,19 @@ class TripRepository {
 
   Future<List<Trip>> incomingDriverTrips() async {
     final response = await _api.get('/mobile/drivers/trips');
-    return response
-        .list(['trips', 'requests', 'items'])
-        .map(Trip.fromJson)
-        .toList();
+    final data = response.data;
+    if (data is Map && data['trips'] != null) {
+      final trips = data['trips'];
+      if (trips is List) {
+        return trips.map((t) => Trip.fromJson(t)).toList();
+      }
+    }
+    return [];
   }
 
   Future<Trip> acceptDriverTrip(int id) async {
     final response = await _api.post('/mobile/drivers/trips/$id/accept');
-    return Trip.fromJson(response.dataMap);
+    return Trip.fromJson(response.data);
   }
 
   Future<void> rejectDriverTrip(int id) async {
@@ -421,16 +451,16 @@ class TripRepository {
 
   Future<Trip> startDriverTrip(int id) async {
     final response = await _api.put('/mobile/drivers/trips/$id/start');
-    return Trip.fromJson(response.dataMap);
+    return Trip.fromJson(response.data);
   }
 
   Future<Trip> completeDriverTrip(int id) async {
     final response = await _api.put('/mobile/drivers/trips/$id/complete');
-    return Trip.fromJson(response.dataMap);
+    return Trip.fromJson(response.data);
   }
 
   Future<void> updateDriverStatus(bool isOnline) async {
-    await _api.post('/mobile/drivers/status', body: {'is_online': isOnline});
+    await _api.post('/mobile/drivers/status', data: {'is_online': isOnline});
   }
 
   Future<void> uploadDriverLocation({
@@ -449,22 +479,26 @@ class TripRepository {
       if (speed != null) 'speed': speed,
     };
     try {
-      await _api.post('/mobile/drivers/live-location', body: payload);
+      await _api.post('/mobile/drivers/live-location', data: payload);
     } on ApiException {
-      await _api.post('/mobile/driver/live-location', body: payload);
+      await _api.post('/mobile/driver/live-location', data: payload);
     }
   }
 
   Future<List<Trip>> driverTripHistory() async {
     final response = await _api.get('/driver/trips');
-    return response
-        .list(['trips', 'history', 'items'])
-        .map(Trip.fromJson)
-        .toList();
+    final data = response.data;
+    if (data is Map && data['trips'] != null) {
+      final trips = data['trips'];
+      if (trips is List) {
+        return trips.map((t) => Trip.fromJson(t)).toList();
+      }
+    }
+    return [];
   }
 
   Future<Map<String, dynamic>> driverEarnings() async {
     final response = await _api.get('/driver/earnings');
-    return response.dataMap;
+    return response.data;
   }
 }

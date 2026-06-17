@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 
 import 'package:google_fonts/google_fonts.dart';
 
-import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
 import '../auth/auth_api.dart';
 import '../services/app_theme_service.dart';
@@ -217,7 +216,7 @@ class _SignupPageState extends State<SignupPage>
     showDialog(
       context: context,
       barrierDismissible: false,
-      barrierColor: Colors.black.withOpacity(0.7),
+      barrierColor: Colors.black.withValues(alpha: 0.7),
       builder:
           (_) => Dialog(
             backgroundColor: Colors.transparent,
@@ -227,10 +226,10 @@ class _SignupPageState extends State<SignupPage>
               decoration: BoxDecoration(
                 color: const Color(0xFF131729),
                 borderRadius: BorderRadius.circular(24),
-                border: Border.all(color: Colors.white.withOpacity(0.1)),
+                border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
                 boxShadow: [
                   BoxShadow(
-                    color: const Color(0xFF6C63FF).withOpacity(0.25),
+                    color: const Color(0xFF6C63FF).withValues(alpha: 0.25),
                     blurRadius: 40,
                     spreadRadius: 4,
                   ),
@@ -251,7 +250,7 @@ class _SignupPageState extends State<SignupPage>
                       ),
                       boxShadow: [
                         BoxShadow(
-                          color: const Color(0xFF6C63FF).withOpacity(0.5),
+                          color: const Color(0xFF6C63FF).withValues(alpha: 0.5),
                           blurRadius: 24,
                           spreadRadius: 2,
                         ),
@@ -294,7 +293,9 @@ class _SignupPageState extends State<SignupPage>
                         borderRadius: BorderRadius.circular(14),
                         boxShadow: [
                           BoxShadow(
-                            color: const Color(0xFF6C63FF).withOpacity(0.45),
+                            color: const Color(
+                              0xFF6C63FF,
+                            ).withValues(alpha: 0.45),
                             blurRadius: 16,
                             offset: const Offset(0, 6),
                           ),
@@ -448,114 +449,23 @@ class _SignupPageState extends State<SignupPage>
     );
   }
 
-  Widget _buildThemeToggleButton() {
-    return ValueListenableBuilder<ThemeMode>(
-      valueListenable: AppThemeService.themeModeNotifier,
-      builder: (context, themeMode, child) {
-        final isDark = themeMode == ThemeMode.dark;
-        return GestureDetector(
-          onTap: () => AppThemeService.setDarkMode(!isDark),
-          child: SizedBox(
-            width: 34,
-            height: 34,
-            child: Padding(
-              padding: const EdgeInsets.all(4),
-              child: Image.asset('assets/icon/dark mode.png'),
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _buildBackButton(BuildContext context) {
-    return GestureDetector(
-      onTap: () => Navigator.pop(context),
-      child: Container(
-        width: 44,
-        height: 44,
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(12),
-          color:
-              Theme.of(context).brightness == Brightness.dark
-                  ? Colors.white.withOpacity(0.07)
-                  : const Color(0xFFF8F8F8),
-          border: Border.all(
-            color:
-                Theme.of(context).brightness == Brightness.dark
-                    ? Colors.white.withOpacity(0.1)
-                    : const Color(0xFFE6E6E6),
-          ),
-        ),
-        child: Icon(
-          Icons.arrow_back_ios_new_rounded,
-          color:
-              Theme.of(context).brightness == Brightness.dark
-                  ? Colors.white70
-                  : const Color(0xFF333333),
-          size: 18,
-        ),
-      ),
-    );
-  }
-
   Widget _buildHeader() {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          children: [
-            SizedBox(
-              width: 56,
-              height: 56,
-              child: Padding(
-                padding: const EdgeInsets.all(6),
-                child: Image.asset(
-                  'assets/icon/app_icon.png',
-                  fit: BoxFit.contain,
-                ),
-              ),
-            ),
-
-            const SizedBox(width: 12),
-
-            Text(
-              'RideConnect',
-
-              style: GoogleFonts.poppins(
-                fontSize: 20,
-
-                fontWeight: FontWeight.w700,
-
-                foreground:
-                    Paint()
-                      ..shader = const LinearGradient(
-                        colors: [Color(0xFF6C63FF), Color(0xFF3B82F6)],
-                      ).createShader(const Rect.fromLTWH(0, 0, 160, 30)),
-              ),
-            ),
-          ],
-        ),
-
-        const SizedBox(height: 20),
-
         Text(
-          'Create Your Passenger Account 🚀',
+          'Create Account',
           style: GoogleFonts.poppins(
             fontSize: 26,
             fontWeight: FontWeight.w700,
-            color: isDark ? Colors.white : const Color(0xFF1A1A1A),
+            color: Colors.white,
           ),
         ),
-
-        const SizedBox(height: 6),
-
+        const SizedBox(height: 8),
         Text(
-          'Join RideConnect and start booking rides',
+          'Sign up to get started with RideConnect',
           style: GoogleFonts.poppins(
-            fontSize: 14,
-            color: isDark ? Colors.white54 : const Color(0xFF666666),
+            fontSize: 13,
+            color: Colors.white54,
           ),
         ),
       ],
@@ -565,161 +475,127 @@ class _SignupPageState extends State<SignupPage>
   Widget _buildNameField() {
     return _InputField(
       controller: _nameController,
-
       label: 'Full Name',
-
-      hint: 'John Doe',
-
-      prefixIcon: Icons.person_outline_rounded,
+      hint: 'Enter your full name',
+      prefixIcon: Icons.person_outline,
+      keyboardType: TextInputType.name,
+      validator: (v) {
+        if (v == null || v.isEmpty) return 'Full name is required';
+        if (v.trim().length < 3) return 'Name must be at least 3 characters';
+        return null;
+      },
     );
   }
 
   Widget _buildEmailField() {
     return _InputField(
       controller: _emailController,
-
-      label: 'Email Address',
-
-      hint: 'you@example.com',
-
+      label: 'Email',
+      hint: 'Enter your email',
       prefixIcon: Icons.email_outlined,
-
       keyboardType: TextInputType.emailAddress,
+      validator: (v) {
+        if (v == null || v.isEmpty) return 'Email is required';
+        if (!RegExp(r'^[\w-.]+@([\w-]+\.)+[\w]{2,4}$').hasMatch(v)) {
+          return 'Enter a valid email';
+        }
+        return null;
+      },
     );
   }
 
   Widget _buildPhoneField() {
     return _InputField(
       controller: _phoneController,
-
       label: 'Phone Number',
-
-      hint: '+1 234 567 8900',
-
+      hint: 'Enter your phone number',
       prefixIcon: Icons.phone_outlined,
-
       keyboardType: TextInputType.phone,
+      validator: (v) {
+        if (v == null || v.isEmpty) return 'Phone number is required';
+        if (v.replaceAll(RegExp(r'[\s\-\+\(\)]'), '').length < 7) {
+          return 'Enter a valid phone number';
+        }
+        return null;
+      },
     );
   }
 
   Widget _buildPasswordField() {
     return _InputField(
       controller: _passwordController,
-
       label: 'Password',
-
-      hint: '••••••••',
-
-      prefixIcon: Icons.lock_outline_rounded,
-
+      hint: 'Enter your password',
+      prefixIcon: Icons.lock_outlined,
       obscureText: _obscurePassword,
-
       suffixIcon: IconButton(
         icon: Icon(
           _obscurePassword
               ? Icons.visibility_off_outlined
               : Icons.visibility_outlined,
-
-          color: Colors.white38,
-
+          color: const Color(0xFF999999),
           size: 20,
         ),
-
-        onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
+        onPressed: () =>
+            setState(() => _obscurePassword = !_obscurePassword),
       ),
+      validator: (v) {
+        if (v == null || v.isEmpty) return 'Password is required';
+        if (v.length < 8) return 'Minimum 8 characters';
+        if (!RegExp(r'[A-Z]').hasMatch(v)) return 'Need uppercase letter';
+        if (!RegExp(r'[a-z]').hasMatch(v)) return 'Need lowercase letter';
+        if (!RegExp(r'[0-9]').hasMatch(v)) return 'Need a number';
+        if (!RegExp(r'[!@#$%^&*]').hasMatch(v)) return 'Need special char (!@#\$%)';
+        return null;
+      },
     );
   }
 
   Widget _buildConfirmPasswordField() {
     return _InputField(
       controller: _confirmPasswordController,
-
       label: 'Confirm Password',
-
-      hint: '••••••••',
-
-      prefixIcon: Icons.lock_outline_rounded,
-
+      hint: 'Re-enter your password',
+      prefixIcon: Icons.lock_outlined,
       obscureText: _obscureConfirm,
-
       suffixIcon: IconButton(
         icon: Icon(
           _obscureConfirm
               ? Icons.visibility_off_outlined
               : Icons.visibility_outlined,
-
-          color: Colors.white38,
-
+          color: const Color(0xFF999999),
           size: 20,
         ),
-
-        onPressed: () => setState(() => _obscureConfirm = !_obscureConfirm),
+        onPressed: () =>
+            setState(() => _obscureConfirm = !_obscureConfirm),
       ),
+      validator: (v) {
+        if (v == null || v.isEmpty) return 'Please confirm your password';
+        if (v != _passwordController.text) return 'Passwords do not match';
+        return null;
+      },
     );
   }
 
   Widget _buildSignupButton() {
     return SizedBox(
       width: double.infinity,
-
-      height: 56,
-
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          gradient: const LinearGradient(
-            colors: [Color(0xFF6C63FF), Color(0xFF3B82F6)],
+      height: 52,
+      child: ElevatedButton(
+        onPressed: _handleSignup,
+        style: ElevatedButton.styleFrom(
+          backgroundColor: const Color(0xFF4C57D6),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
           ),
-
-          borderRadius: BorderRadius.circular(16),
-
-          boxShadow: [
-            BoxShadow(
-              color: const Color(0xFF6C63FF).withValues(alpha: 0.45),
-
-              blurRadius: 20,
-
-              offset: const Offset(0, 8),
-            ),
-          ],
         ),
-
-        child: ElevatedButton(
-          onPressed: _isLoading ? null : _handleSignup,
-
-          style: ElevatedButton.styleFrom(
-            backgroundColor: Colors.transparent,
-
-            shadowColor: Colors.transparent,
-
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-            ),
+        child: Text(
+          _isLoading ? 'Creating Account...' : 'Sign Up',
+          style: GoogleFonts.poppins(
+            fontSize: 15,
+            fontWeight: FontWeight.w600,
+            color: Colors.white,
           ),
-
-          child:
-              _isLoading
-                  ? const SizedBox(
-                    width: 24,
-
-                    height: 24,
-
-                    child: CircularProgressIndicator(
-                      color: Colors.white,
-
-                      strokeWidth: 2.5,
-                    ),
-                  )
-                  : Text(
-                    'Create Account',
-
-                    style: GoogleFonts.poppins(
-                      fontSize: 16,
-
-                      fontWeight: FontWeight.w600,
-
-                      color: Colors.white,
-                    ),
-                  ),
         ),
       ),
     );
@@ -732,7 +608,7 @@ class _SignupPageState extends State<SignupPage>
           child: Divider(
             color:
                 Theme.of(context).brightness == Brightness.dark
-                    ? Colors.white.withOpacity(0.15)
+                    ? Colors.white.withValues(alpha: 0.15)
                     : const Color(0xFFECEFF3),
             thickness: 1,
           ),
@@ -754,12 +630,32 @@ class _SignupPageState extends State<SignupPage>
           child: Divider(
             color:
                 Theme.of(context).brightness == Brightness.dark
-                    ? Colors.white.withOpacity(0.15)
+                    ? Colors.white.withValues(alpha: 0.15)
                     : const Color(0xFFECEFF3),
             thickness: 1,
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildThemeToggleButton() {
+    return ValueListenableBuilder<ThemeMode>(
+      valueListenable: AppThemeService.themeModeNotifier,
+      builder: (context, themeMode, child) {
+        final isDark = themeMode == ThemeMode.dark;
+        return GestureDetector(
+          onTap: () => AppThemeService.setDarkMode(!isDark),
+          child: SizedBox(
+            width: 34,
+            height: 34,
+            child: Padding(
+              padding: const EdgeInsets.all(4),
+              child: Image.asset('assets/icon/dark mode.png'),
+            ),
+          ),
+        );
+      },
     );
   }
 
@@ -942,72 +838,6 @@ class _InputField extends StatelessWidget {
   }
 }
 
-// ─── Social Login Button ─────────────────────────────────────────────────────
-
-class _SocialButton extends StatelessWidget {
-  final IconData icon;
-
-  final String label;
-
-  final Color color;
-
-  final VoidCallback onTap;
-
-  const _SocialButton({
-    required this.icon,
-
-    required this.label,
-
-    required this.color,
-
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-
-      child: Container(
-        width: 90,
-
-        height: 52,
-
-        decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.06),
-
-          borderRadius: BorderRadius.circular(14),
-
-          border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
-        ),
-
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-
-          children: [
-            FaIcon(icon, color: color, size: 18),
-
-            const SizedBox(width: 6),
-
-            Text(
-              label,
-
-              style: GoogleFonts.poppins(
-                fontSize: 11,
-
-                color: Colors.white70,
-
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-// Compact icon-only social button (matching login page style)
 class _IconSocialButton extends StatelessWidget {
   final String assetPath;
   final Color color;

@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'signup_page.dart';
 import 'passenger/passenger_dashboard.dart';
@@ -8,7 +7,7 @@ import 'passenger/pending_approval_page.dart';
 import 'driver/driver_dashboard.dart';
 import '../auth/auth_api.dart';
 import '../services/app_theme_service.dart';
-import '../auth/auth_session.dart';
+import '../repositories/auth_repository.dart';
 import '../services/passenger_api.dart';
 import '../auth/google_oauth_service.dart';
 
@@ -26,6 +25,7 @@ class _LoginPageState extends State<LoginPage>
   final _passwordController = TextEditingController();
   bool _obscurePassword = true;
   bool _isLoading = false;
+  bool _rememberMe = true;
   late AnimationController _animController;
   late Animation<double> _fadeAnim;
   late Animation<Offset> _slideAnim;
@@ -74,11 +74,9 @@ class _LoginPageState extends State<LoginPage>
       final isDriver = normalizedRole == 'driver';
 
       if (isPassenger) {
-        // Check approval status for passengers
         final approvalStatus = result.status.toLowerCase();
 
         if (approvalStatus == 'pending') {
-          // Passenger account is pending admin approval
           if (!mounted) return;
           Navigator.of(context).pushReplacement(
             PageRouteBuilder(
@@ -104,15 +102,10 @@ class _LoginPageState extends State<LoginPage>
           return;
         }
 
-        // Account is approved, proceed with login
-        await AuthSession.save(
-          role: normalizedRole,
-          name: result.name,
-          email: result.email,
-          token: result.token,
-        );
+        if (result.token != null) {
+          await AuthRepository.instance.saveToken(result.token!);
+        }
 
-        // Initialize passenger profile to enable ride booking
         try {
           await PassengerApi.instance.initializeProfile(
             name: result.name,
@@ -120,7 +113,6 @@ class _LoginPageState extends State<LoginPage>
           );
         } catch (e) {
           print('Profile initialization error (non-critical): $e');
-          // Continue even if profile init fails - user can try again
         }
 
         if (!mounted) return;
@@ -141,12 +133,9 @@ class _LoginPageState extends State<LoginPage>
       }
 
       if (isDriver) {
-        await AuthSession.save(
-          role: normalizedRole,
-          name: result.name,
-          email: result.email,
-          token: result.token,
-        );
+        if (result.token != null) {
+          await AuthRepository.instance.saveToken(result.token!);
+        }
         if (!mounted) return;
         Navigator.of(context).pushReplacement(
           PageRouteBuilder(
@@ -179,8 +168,6 @@ class _LoginPageState extends State<LoginPage>
 
       if (await canLaunchUrl(authUrl)) {
         await launchUrl(authUrl, mode: LaunchMode.externalApplication);
-        // Note: In a real implementation, you'd handle the OAuth callback
-        // using deep linking or WebView to capture the authorization code
       } else {
         _showSnack('Could not launch Google Sign In', isError: true);
       }
@@ -222,22 +209,23 @@ class _LoginPageState extends State<LoginPage>
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Scaffold(
-      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+      backgroundColor: isDark ? const Color(0xFF0A0E1A) : const Color(0xFFF0F4FA),
       body: Stack(
         children: [
-          // Background Illustrations
+          // Background blobs
           Positioned(
             left: -50,
             bottom: 0,
             child: Opacity(
-              opacity: 0.15,
+              opacity: isDark ? 0.08 : 0.15,
               child: Container(
                 width: 300,
                 height: 300,
-                decoration: BoxDecoration(
+                decoration: const BoxDecoration(
                   shape: BoxShape.circle,
-                  color: const Color(0xFF4C57D6),
+                  color: Color(0xFF4C57D6),
                 ),
               ),
             ),
@@ -246,82 +234,73 @@ class _LoginPageState extends State<LoginPage>
             right: -80,
             top: -50,
             child: Opacity(
-              opacity: 0.1,
+              opacity: isDark ? 0.05 : 0.1,
               child: Container(
                 width: 400,
                 height: 400,
-                decoration: BoxDecoration(
+                decoration: const BoxDecoration(
                   shape: BoxShape.circle,
-                  color: const Color(0xFF2D8CFF),
+                  color: Color(0xFF2D8CFF),
                 ),
               ),
             ),
           ),
           // Main Content
           SafeArea(
-            child: SingleChildScrollView(
-              child: FadeTransition(
-                opacity: _fadeAnim,
-                child: SlideTransition(
-                  position: _slideAnim,
-                  child: Center(
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 24,
-                        vertical: 40,
-                      ),
-                      child: Container(
-                        constraints: const BoxConstraints(maxWidth: 420),
-                        decoration: BoxDecoration(
-                          color: Theme.of(context).colorScheme.surface,
-                          borderRadius: BorderRadius.circular(24),
-                          boxShadow: [
-                            BoxShadow(
-                              color: const Color(
-                                0xFF4C57D6,
-                              ).withValues(alpha: 0.08),
-                              blurRadius: 30,
-                              spreadRadius: 0,
-                              offset: const Offset(0, 10),
-                            ),
-                          ],
-                        ),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 32,
-                          vertical: 40,
-                        ),
-                        child: Form(
-                          key: _formKey,
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.center,
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Row(
-                                mainAxisAlignment: MainAxisAlignment.end,
-                                children: [
-                                  _buildThemeToggleButton(),
-                                ],
-                              ),
-                              const SizedBox(height: 16),
-                              _buildLogo(),
-                              const SizedBox(height: 18),
-                              _buildHeader(),
-                              const SizedBox(height: 32),
-                              _buildEmailField(),
-                              const SizedBox(height: 20),
-                              _buildPasswordField(),
-                              const SizedBox(height: 16),
-                              _buildRememberAndForgot(),
-                              const SizedBox(height: 28),
-                              _buildLoginButton(),
-                              const SizedBox(height: 28),
-                              _buildDivider(),
-                              const SizedBox(height: 24),
-                              _buildSocialButtons(),
-                              const SizedBox(height: 32),
-                              _buildSignupRedirect(),
-                            ],
+            child: Center(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+                child: FadeTransition(
+                  opacity: _fadeAnim,
+                  child: SlideTransition(
+                    position: _slideAnim,
+                    child: Container(
+                      constraints: const BoxConstraints(maxWidth: 400),
+                      decoration: BoxDecoration(
+                        color: isDark ? const Color(0xFF111827) : Colors.white,
+                        borderRadius: BorderRadius.circular(28),
+                        boxShadow: [
+                          BoxShadow(
+                            color: isDark
+                                ? Colors.black.withOpacity(0.3)
+                                : const Color(0xFF4C57D6).withOpacity(0.08),
+                            blurRadius: 30,
+                            spreadRadius: 0,
+                            offset: const Offset(0, 10),
                           ),
+                        ],
+                      ),
+                      padding: const EdgeInsets.all(28),
+                      child: Form(
+                        key: _formKey,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.end,
+                              children: [
+                                _buildThemeToggleButton(),
+                              ],
+                            ),
+                            _buildLogo(),
+                            const SizedBox(height: 12),
+                            _buildHeader(),
+                            const SizedBox(height: 28),
+                            _buildEmailField(),
+                            const SizedBox(height: 16),
+                            _buildPasswordField(),
+                            const SizedBox(height: 12),
+                            _buildRememberAndForgot(),
+                            const SizedBox(height: 24),
+                            _buildLoginButton(),
+                            const SizedBox(height: 24),
+                            _buildDivider(),
+                            const SizedBox(height: 20),
+                            _buildSocialButtons(),
+                            const SizedBox(height: 24),
+                            _buildSignupRedirect(),
+                          ],
                         ),
                       ),
                     ),
@@ -342,13 +321,10 @@ class _LoginPageState extends State<LoginPage>
         final isDark = themeMode == ThemeMode.dark;
         return GestureDetector(
           onTap: () => AppThemeService.setDarkMode(!isDark),
-          child: SizedBox(
-            width: 34,
-            height: 34,
-            child: Padding(
-              padding: const EdgeInsets.all(4),
-              child: Image.asset('assets/icon/dark mode.png'),
-            ),
+          child: Icon(
+            isDark ? Icons.wb_sunny_outlined : Icons.nightlight_round,
+            color: isDark ? Colors.amber : const Color(0xFF1A1A1A),
+            size: 24,
           ),
         );
       },
@@ -357,12 +333,38 @@ class _LoginPageState extends State<LoginPage>
 
   Widget _buildLogo() {
     return Center(
-      child: SizedBox(
-        width: 120,
-        height: 120,
-        child: Padding(
-          padding: const EdgeInsets.all(10),
-          child: Image.asset('assets/icon/app_icon.png', fit: BoxFit.contain),
+      child: Container(
+        width: 80,
+        height: 80,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.05),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
+            )
+          ],
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(16),
+          child: Image.asset(
+            'assets/icon/app_icon.png',
+            fit: BoxFit.cover,
+            errorBuilder: (_, __, ___) => Container(
+              color: const Color(0xFF4C57D6),
+              child: const Center(
+                child: Text(
+                  'RC',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 28,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ),
+          ),
         ),
       ),
     );
@@ -376,26 +378,27 @@ class _LoginPageState extends State<LoginPage>
         Text(
           'Welcome Back!',
           style: GoogleFonts.poppins(
-            fontSize: 28,
+            fontSize: 24,
             fontWeight: FontWeight.w700,
             color: isDark ? Colors.white : const Color(0xFF1A1A1A),
           ),
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: 6),
         RichText(
+          textAlign: TextAlign.center,
           text: TextSpan(
             text: 'Login to continue your ride with ',
             style: GoogleFonts.poppins(
-              fontSize: 14,
+              fontSize: 13,
               color: isDark ? Colors.white70 : const Color(0xFF666666),
             ),
             children: [
               TextSpan(
                 text: 'RideConnect',
                 style: GoogleFonts.poppins(
-                  fontSize: 14,
+                  fontSize: 13,
                   fontWeight: FontWeight.w600,
-                  color: const Color(0xFF4C57D6),
+                  color: const Color(0xFF2D8CFF),
                 ),
               ),
             ],
@@ -454,15 +457,24 @@ class _LoginPageState extends State<LoginPage>
       children: [
         Row(
           children: [
-            Checkbox(
-              value: true,
-              onChanged: (value) {},
-              activeColor: const Color(0xFF4C57D6),
-              side: BorderSide(
-                color: isDark ? Colors.white24 : const Color(0xFFDDDDDD),
-                width: 1.5,
+            SizedBox(
+              width: 24,
+              height: 24,
+              child: Checkbox(
+                value: _rememberMe,
+                onChanged: (value) {
+                  setState(() {
+                    _rememberMe = value ?? true;
+                  });
+                },
+                activeColor: const Color(0xFF2D8CFF),
+                side: BorderSide(
+                  color: isDark ? Colors.white24 : const Color(0xFFDDDDDD),
+                  width: 1.5,
+                ),
               ),
             ),
+            const SizedBox(width: 8),
             Text(
               'Remember me',
               style: GoogleFonts.poppins(
@@ -478,7 +490,7 @@ class _LoginPageState extends State<LoginPage>
             'Forgot Password?',
             style: GoogleFonts.poppins(
               fontSize: 13,
-              color: const Color(0xFF4C57D6),
+              color: const Color(0xFF2D8CFF),
               fontWeight: FontWeight.w500,
             ),
           ),
@@ -490,7 +502,7 @@ class _LoginPageState extends State<LoginPage>
   Widget _buildLoginButton() {
     return SizedBox(
       width: double.infinity,
-      height: 56,
+      height: 52,
       child: DecoratedBox(
         decoration: BoxDecoration(
           gradient: const LinearGradient(
@@ -498,13 +510,13 @@ class _LoginPageState extends State<LoginPage>
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
           ),
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(12),
           boxShadow: [
             BoxShadow(
-              color: const Color(0xFF4C57D6).withValues(alpha: 0.3),
-              blurRadius: 16,
+              color: const Color(0xFF2D8CFF).withOpacity(0.25),
+              blurRadius: 12,
               spreadRadius: 0,
-              offset: const Offset(0, 6),
+              offset: const Offset(0, 4),
             ),
           ],
         ),
@@ -514,49 +526,50 @@ class _LoginPageState extends State<LoginPage>
             backgroundColor: Colors.transparent,
             shadowColor: Colors.transparent,
             shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(14),
+              borderRadius: BorderRadius.circular(12),
             ),
           ),
-          child:
-              _isLoading
-                  ? const SizedBox(
-                    width: 24,
-                    height: 24,
-                    child: CircularProgressIndicator(
-                      color: Colors.white,
-                      strokeWidth: 2.5,
-                    ),
-                  )
-                  : Text(
-                    'LOGIN',
-                    style: GoogleFonts.poppins(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w700,
-                      color: Colors.white,
-                      letterSpacing: 0.5,
-                    ),
+          child: _isLoading
+              ? const SizedBox(
+                  width: 24,
+                  height: 24,
+                  child: CircularProgressIndicator(
+                    color: Colors.white,
+                    strokeWidth: 2.5,
                   ),
+                )
+              : Text(
+                  'LOGIN',
+                  style: GoogleFonts.poppins(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.white,
+                    letterSpacing: 0.5,
+                  ),
+                ),
         ),
       ),
     );
   }
 
   Widget _buildDivider() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final dividerColor = isDark ? Colors.white12 : const Color(0xFFE2E8F0);
     return Row(
       children: [
-        Expanded(child: Divider(color: const Color(0xFFE0E0E0), thickness: 1)),
+        Expanded(child: Divider(color: dividerColor, thickness: 1)),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 14),
           child: Text(
             'OR CONTINUE WITH',
             style: GoogleFonts.poppins(
-              fontSize: 12,
+              fontSize: 11,
               fontWeight: FontWeight.w500,
               color: const Color(0xFF999999),
             ),
           ),
         ),
-        Expanded(child: Divider(color: const Color(0xFFE0E0E0), thickness: 1)),
+        Expanded(child: Divider(color: dividerColor, thickness: 1)),
       ],
     );
   }
@@ -566,23 +579,17 @@ class _LoginPageState extends State<LoginPage>
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
         _SocialButton(
-          // Official Google brand mark (existing asset at assets/icon/google.png)
           assetPath: 'assets/icon/google.png',
-          color: const Color(0xFFEA4335),
           onTap: _isLoading ? () {} : _handleGoogleLogin,
         ),
-        const SizedBox(width: 20),
+        const SizedBox(width: 16),
         _SocialButton(
-          // Official Facebook mark (existing asset at assets/icon/facebook.png)
           assetPath: 'assets/icon/facebook.png',
-          color: const Color(0xFF1877F2),
           onTap: () {},
         ),
-        const SizedBox(width: 20),
+        const SizedBox(width: 16),
         _SocialButton(
-          // Official X mark (existing asset at assets/icon/X.png)
           assetPath: 'assets/icon/X.png',
-          color: const Color(0xFF000000),
           onTap: () {},
         ),
       ],
@@ -590,6 +597,7 @@ class _LoginPageState extends State<LoginPage>
   }
 
   Widget _buildSignupRedirect() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
@@ -597,26 +605,24 @@ class _LoginPageState extends State<LoginPage>
           "Don't have an account? ",
           style: GoogleFonts.poppins(
             fontSize: 13,
-            color: const Color(0xFF666666),
+            color: isDark ? Colors.white70 : const Color(0xFF666666),
           ),
         ),
         GestureDetector(
-          onTap:
-              () => Navigator.push(
-                context,
-                PageRouteBuilder(
-                  pageBuilder: (_, __, ___) => const SignupPage(),
-                  transitionsBuilder:
-                      (_, anim, __, child) =>
-                          FadeTransition(opacity: anim, child: child),
-                  transitionDuration: const Duration(milliseconds: 400),
-                ),
-              ),
+          onTap: () => Navigator.push(
+            context,
+            PageRouteBuilder(
+              pageBuilder: (_, __, ___) => const SignupPage(),
+              transitionsBuilder: (_, anim, __, child) =>
+                  FadeTransition(opacity: anim, child: child),
+              transitionDuration: const Duration(milliseconds: 400),
+            ),
+          ),
           child: Text(
             'Sign Up',
             style: GoogleFonts.poppins(
               fontSize: 13,
-              color: const Color(0xFF4C57D6),
+              color: const Color(0xFF2D8CFF),
               fontWeight: FontWeight.w700,
             ),
           ),
@@ -660,7 +666,7 @@ class _InputField extends StatelessWidget {
           style: GoogleFonts.poppins(
             fontSize: 13,
             fontWeight: FontWeight.w500,
-            color: isDark ? Colors.white70 : const Color(0xFF333333),
+            color: isDark ? Colors.white70 : const Color(0xFF475569),
           ),
         ),
         const SizedBox(height: 8),
@@ -670,51 +676,54 @@ class _InputField extends StatelessWidget {
           keyboardType: keyboardType,
           validator: validator,
           style: GoogleFonts.poppins(
-            color: isDark ? Colors.white : const Color(0xFF1A1A1A),
+            color: isDark ? Colors.white : const Color(0xFF1E293B),
             fontSize: 14,
           ),
           decoration: InputDecoration(
             hintText: hint,
             hintStyle: GoogleFonts.poppins(
-              color: isDark ? Colors.white38 : const Color(0xFFBBBBBB),
+              color: isDark ? Colors.white38 : const Color(0xFF94A3B8),
               fontSize: 14,
             ),
             prefixIcon: Icon(
               prefixIcon,
-              color: isDark ? Colors.white54 : const Color(0xFF999999),
+              color: isDark ? Colors.white54 : const Color(0xFF64748B),
               size: 20,
             ),
             suffixIcon: suffixIcon,
             filled: true,
-            fillColor: isDark ? const Color(0xFF111827) : const Color(0xFFF8F8F8),
+            fillColor: isDark ? const Color(0xFF1F2937) : Colors.white,
             contentPadding: const EdgeInsets.symmetric(
               horizontal: 16,
               vertical: 14,
             ),
             border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(10),
-              borderSide: BorderSide.none,
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide(
+                color: isDark ? const Color(0xFF374151) : const Color(0xFFCBD5E1),
+                width: 1,
+              ),
             ),
             enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(10),
+              borderRadius: BorderRadius.circular(12),
               borderSide: BorderSide(
-                color: isDark ? const Color(0xFF374151) : const Color(0xFFE0E0E0),
+                color: isDark ? const Color(0xFF374151) : const Color(0xFFCBD5E1),
                 width: 1,
               ),
             ),
             focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(10),
-              borderSide: BorderSide(
-                color: const Color(0xFF4C57D6),
+              borderRadius: BorderRadius.circular(12),
+              borderSide: const BorderSide(
+                color: Color(0xFF2D8CFF),
                 width: 1.5,
               ),
             ),
             errorBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(10),
+              borderRadius: BorderRadius.circular(12),
               borderSide: const BorderSide(color: Color(0xFFFF5E5B), width: 1),
             ),
             focusedErrorBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(10),
+              borderRadius: BorderRadius.circular(12),
               borderSide: const BorderSide(
                 color: Color(0xFFFF5E5B),
                 width: 1.5,
@@ -734,42 +743,38 @@ class _InputField extends StatelessWidget {
 // ─── Social Login Button ─────────────────────────────────────────────────────
 
 class _SocialButton extends StatelessWidget {
-  final IconData? icon;
-  final String? assetPath;
-  final Color color;
+  final String assetPath;
   final VoidCallback onTap;
 
   const _SocialButton({
-    this.icon,
-    this.assetPath,
-    required this.color,
+    required this.assetPath,
     required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return GestureDetector(
       onTap: onTap,
       child: Container(
         width: 56,
         height: 56,
         decoration: BoxDecoration(
-          color: const Color(0xFFFAFAFA),
+          color: isDark ? const Color(0xFF1F2937) : Colors.white,
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: const Color(0xFFE0E0E0), width: 1),
+          border: Border.all(
+            color: isDark ? const Color(0xFF374151) : const Color(0xFFE2E8F0),
+            width: 1,
+          ),
         ),
         child: Center(
-          child:
-              assetPath != null
-                  ? Image.asset(
-                    assetPath!,
-                    width: 28,
-                    height: 28,
-                    fit: BoxFit.contain,
-                  )
-                  : (icon != null
-                      ? FaIcon(icon, color: color, size: 24)
-                      : const SizedBox.shrink()),
+          child: Image.asset(
+            assetPath,
+            width: 24,
+            height: 24,
+            fit: BoxFit.contain,
+            errorBuilder: (_, __, ___) => const Icon(Icons.login),
+          ),
         ),
       ),
     );

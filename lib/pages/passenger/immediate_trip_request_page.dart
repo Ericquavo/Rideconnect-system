@@ -1,25 +1,29 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../../features/trips/domain/matching_lifecycle_models.dart';
+import '../../features/trips/domain/trip_models.dart';
+import '../../features/trips/presentation/pages/trip_matching_page.dart';
+import '../../features/trips/presentation/providers/trip_providers.dart';
 import '../../features/mobile/data/mobile_flow_api_service.dart';
 import '../../services/passenger_api.dart';
 import '../../services/passenger_location_helper.dart';
 import '../../services/passenger_language_service.dart';
 
-class ImmediateTripRequestPage extends StatefulWidget {
+class ImmediateTripRequestPage extends ConsumerStatefulWidget {
   final VoidCallback? onRequestLifecycleUpdate;
 
   const ImmediateTripRequestPage({super.key, this.onRequestLifecycleUpdate});
 
   @override
-  State<ImmediateTripRequestPage> createState() =>
+  ConsumerState<ImmediateTripRequestPage> createState() =>
       _ImmediateTripRequestPageState();
 }
 
-class _ImmediateTripRequestPageState extends State<ImmediateTripRequestPage> {
+class _ImmediateTripRequestPageState
+    extends ConsumerState<ImmediateTripRequestPage> {
   final PassengerLanguageService _lang = PassengerLanguageService.instance;
   final TextEditingController _pickupController = TextEditingController();
   final TextEditingController _dropoffController = TextEditingController();
@@ -37,11 +41,8 @@ class _ImmediateTripRequestPageState extends State<ImmediateTripRequestPage> {
 
   int? _selectedDriverId;
   String _selectedRideType = 'CAR';
-  int? _activeTripId;
-  PassengerTripSnapshot? _activeTrip;
   LatLng? _pickupLatLng;
   final LatLng _dropoffLatLng = const LatLng(-1.9411, 30.1098);
-  Timer? _pollTimer;
 
   @override
   void initState() {
@@ -56,7 +57,6 @@ class _ImmediateTripRequestPageState extends State<ImmediateTripRequestPage> {
   @override
   void dispose() {
     _lang.languageNotifier.removeListener(_onLanguageChanged);
-    _pollTimer?.cancel();
     _pickupController.dispose();
     _dropoffController.dispose();
     _fareController.dispose();
@@ -121,16 +121,11 @@ class _ImmediateTripRequestPageState extends State<ImmediateTripRequestPage> {
   Future<void> _submitRideRequest() async {
     if (_submitting) return;
 
-    final driverId = _selectedDriverId;
     final pickup = _pickupController.text.trim();
     final dropoff = _dropoffController.text.trim();
     final fare = double.tryParse(_fareController.text.trim());
     final seats = int.tryParse(_seatsController.text.trim()) ?? 1;
 
-    if (driverId == null) {
-      _showSnack(_lang.t('request.pickDriverError'));
-      return;
-    }
     if (pickup.isEmpty || dropoff.isEmpty) {
       _showSnack(_lang.t('request.locationRequired'));
       return;
@@ -153,34 +148,81 @@ class _ImmediateTripRequestPageState extends State<ImmediateTripRequestPage> {
     });
 
     try {
-      final result = await mobileFlowApi.createRideRequest(
-        RideRequestPayload(
-          driverId: driverId,
-          pickupLocation: pickup,
-          pickupLat: pickupPoint.latitude,
-          pickupLng: pickupPoint.longitude,
-          dropoffLocation: dropoff,
-          dropoffLat: _dropoffLatLng.latitude,
-          dropoffLng: _dropoffLatLng.longitude,
-          fare: fare,
-          seats: seats,
-          transportType: _selectedRideType,
+      final tripRepo = ref.read(tripRepositoryProvider);
+      final request = TripRequest(
+        pickup: TripLocation(
+          label: pickup,
+          lat: pickupPoint.latitude,
+          lng: pickupPoint.longitude,
         ),
+        destination: TripLocation(
+          label: dropoff,
+          lat: _dropoffLatLng.latitude,
+          lng: _dropoffLatLng.longitude,
+        ),
+        vehicleType: _selectedRideType,
+        seatCount: _selectedRideType == 'MOTORCYCLE' ? 1 : seats,
+        tripType: _selectedRideType == 'BUS' ? 'public' : 'private',
+        scheduleMode: 'immediate',
+        paymentMethod: 'cash',
+        estimatedFare: fare,
       );
 
-      final tripId = result.tripId;
+      final snapshot =
+          _selectedRideType == 'MOTORCYCLE'
+              ? await tripRepo.requestMotorVehicleTrip(request)
+              : await () async {
+                final matchingSession = await tripRepo.matchPassengerDrivers(
+                  transportType: _selectedRideType,
+                  pickupLat: pickupPoint.latitude,
+                  pickupLng: pickupPoint.longitude,
+                  dropoffLat: _dropoffLatLng.latitude,
+                  dropoffLng: _dropoffLatLng.longitude,
+                );
+
+                if (matchingSession.drivers.isEmpty) {
+                  throw Exception(_lang.t('request.noDrivers'));
+                }
+
+                final matchedDriver = matchingSession.drivers.first;
+                return tripRepo.requestMatchedTrip(
+                  request.copyWith(
+                    driverId: matchedDriver.driverId,
+                    matchingSessionId: matchingSession.matchingSessionId,
+                  ),
+                );
+              }();
+
+      final tripId = snapshot.trip?.id;
       if (tripId == null || tripId <= 0) {
         throw Exception(_lang.t('request.tripIdMissing'));
       }
-
-      _activeTripId = tripId;
-      await _pollTripStatus();
-      _startPolling();
 
       if (!mounted) return;
       setState(() => _submitting = false);
       widget.onRequestLifecycleUpdate?.call();
       _showSnack(_lang.t('request.submitted'));
+      await Navigator.of(context).push(
+        MaterialPageRoute(
+          builder:
+              (_) => TripMatchingPage(
+                tripId: tripId,
+                initialStatus:
+                    snapshot.trip?.status.apiValue ?? snapshot.status.apiValue,
+                initialMatchingStatus: snapshot.status.apiValue,
+                initialData: <String, dynamic>{
+                  'estimated_fare': fare,
+                  if (snapshot.selectedDriver != null)
+                    'driver': <String, dynamic>{
+                      'id': snapshot.selectedDriver!.driverId,
+                      'name': snapshot.selectedDriver!.driverName,
+                      'rating': snapshot.selectedDriver!.rating,
+                      'photo_url': snapshot.selectedDriver!.profilePhotoUrl,
+                    },
+                },
+              ),
+        ),
+      );
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -206,41 +248,6 @@ class _ImmediateTripRequestPageState extends State<ImmediateTripRequestPage> {
 
     setState(() => _pickupLatLng = resolved.point);
     return resolved.point;
-  }
-
-  void _startPolling() {
-    _pollTimer?.cancel();
-    _pollTimer = Timer.periodic(const Duration(seconds: 5), (_) {
-      _pollTripStatus();
-    });
-  }
-
-  Future<void> _pollTripStatus() async {
-    final tripId = _activeTripId;
-    if (tripId == null || tripId <= 0) return;
-
-    try {
-      final snapshot = await mobileFlowApi.getPassengerTripById(tripId);
-      if (!mounted) return;
-
-      setState(() {
-        _activeTrip = snapshot;
-      });
-
-      final lower = snapshot.status.toLowerCase();
-      final isTerminal =
-          lower.contains('accepted') ||
-          lower.contains('reject') ||
-          lower.contains('cancel') ||
-          lower.contains('complete');
-
-      if (isTerminal) {
-        _pollTimer?.cancel();
-        widget.onRequestLifecycleUpdate?.call();
-      }
-    } catch (_) {
-      // Polling errors are intentionally silent to avoid noisy UI.
-    }
   }
 
   void _showSnack(String message) {
@@ -285,8 +292,6 @@ class _ImmediateTripRequestPageState extends State<ImmediateTripRequestPage> {
               _buildTitle(),
               const SizedBox(height: 16),
               _buildRequestForm(),
-              const SizedBox(height: 16),
-              _buildActiveStatusCard(),
               const SizedBox(height: 16),
               _buildDriversSection(),
             ],
@@ -460,73 +465,6 @@ class _ImmediateTripRequestPageState extends State<ImmediateTripRequestPage> {
     );
   }
 
-  Widget _buildActiveStatusCard() {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final active = _activeTrip;
-    if (active == null) {
-      return Container(
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color:
-              isDark
-                  ? Colors.white.withValues(alpha: 0.04)
-                  : Colors.white.withValues(alpha: 0.88),
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(
-            color:
-                isDark
-                    ? Colors.white.withValues(alpha: 0.08)
-                    : const Color(0xFFCBD5E1),
-          ),
-        ),
-        child: Text(
-          _lang.t('request.noActive'),
-          style: GoogleFonts.poppins(
-            color: isDark ? Colors.white54 : const Color(0xFF64748B),
-            fontSize: 12,
-          ),
-        ),
-      );
-    }
-
-    final statusColor = _statusColor(active.status);
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: statusColor.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: statusColor.withValues(alpha: 0.35)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          Text(
-            '${_lang.t('request.currentStatus')}: ${active.status}',
-            style: GoogleFonts.poppins(
-              color: isDark ? Colors.white : const Color(0xFF0F172A),
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            '${_lang.t('trips.driver')}: ${active.driverName}',
-            style: GoogleFonts.poppins(
-              color: isDark ? Colors.white70 : const Color(0xFF334155),
-              fontSize: 12,
-            ),
-          ),
-          Text(
-            '${_lang.t('request.route')}: ${active.pickup} -> ${active.dropoff}',
-            style: GoogleFonts.poppins(
-              color: isDark ? Colors.white54 : const Color(0xFF64748B),
-              fontSize: 11,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildDriversSection() {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     if (_loadingDrivers) {
@@ -667,16 +605,6 @@ class _ImmediateTripRequestPageState extends State<ImmediateTripRequestPage> {
         ),
       ),
     );
-  }
-
-  Color _statusColor(String status) {
-    final lower = status.toLowerCase();
-    if (lower.contains('accept')) return const Color(0xFF10B981);
-    if (lower.contains('reject') || lower.contains('cancel')) {
-      return const Color(0xFFFF5E5B);
-    }
-    if (lower.contains('complete')) return const Color(0xFF6C63FF);
-    return const Color(0xFF3B82F6);
   }
 
   String _rideTypeLabel(String value) {

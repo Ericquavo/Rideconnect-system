@@ -1,139 +1,78 @@
 import 'dart:async';
-import 'dart:convert';
-
+import 'package:firebase_database/firebase_database.dart';
 import 'package:logger/logger.dart';
-import 'package:web_socket_channel/web_socket_channel.dart';
 
-import '../../../auth/auth_session.dart';
+import 'realtime_event_router.dart';
+import '../domain/trip_realtime_event.dart';
 
+/// Real-time service using Firebase Realtime Database (RTDB).
+/// Listens to RTDB nodes for active trip updates and driver events.
 class TripRealtimeService {
-  TripRealtimeService({
-    String baseUrl = 'https://rideconnect-emp0.onrender.com/api/v1',
-    Logger? logger,
-  }) : _baseUrl = baseUrl,
-       _logger = logger ?? Logger();
+  TripRealtimeService({Logger? logger}) : _logger = logger ?? Logger();
 
-  final String _baseUrl;
   final Logger _logger;
+  final Map<int, StreamSubscription<DatabaseEvent>> _subscriptions = {};
+  StreamController<TripRealtimeEvent>? _controller;
 
-  WebSocketChannel? _channel;
-  StreamController<Map<String, dynamic>>? _controller;
-  Timer? _heartbeat;
-  bool _subscribed = false;
+  bool get isConnected => _subscriptions.isNotEmpty;
+  bool get isRealtimeEnabled => true;
 
-  Stream<Map<String, dynamic>> get messages {
-    _controller ??= StreamController<Map<String, dynamic>>.broadcast(
-      onCancel: _disposeChannel,
-    );
+  /// Watch a trip's realtime events via RTDB path `active_trips/{tripId}`.
+  Stream<TripRealtimeEvent>? watchTrip(int tripId) {
+    _controller ??= StreamController<TripRealtimeEvent>.broadcast();
+    final ref = FirebaseDatabase.instance.ref('active_trips').child(tripId.toString());
+    _logger.i('[TripRealtimeService] Watching RTDB path: active_trips/$tripId');
+
+    _subscriptions[tripId]?.cancel();
+    final subscription = ref.onValue.listen((event) {
+      try {
+        final data = event.snapshot.value;
+        if (data != null && data is Map<dynamic, dynamic>) {
+          // Add cast to ensure type safety
+          final Map<String, dynamic> typedData = Map<String, dynamic>.from(data);
+          final realtimeEvent = TripRealtimeEvent.fromRtdb(typedData, tripId);
+          if (!_controller!.isClosed) _controller!.add(realtimeEvent);
+        }
+      } catch (e) {
+        _logger.e('[TripRealtimeService] Error parsing RTDB event: $e');
+      }
+    }, onError: (error) {
+      _logger.e('[TripRealtimeService] RTDB subscribe error: $error');
+      _scheduleRecovery(tripId);
+    });
+
+    _subscriptions[tripId] = subscription;
     return _controller!.stream;
   }
 
-  bool get isConnected => _channel != null;
-
-  Future<bool> connect() async {
-    if (_channel != null) return true;
-
-    final session = await AuthSession.load();
-    final token = session?.token;
-    if (token == null || token.isEmpty) {
-      _logger.w('Realtime connection skipped because auth token is missing.');
-      return false;
-    }
-
-    try {
-      final wsBase = _baseUrl
-          .replaceFirst('https://', 'wss://')
-          .replaceFirst('http://', 'ws://');
-      final uri = Uri.parse(
-        '$wsBase/realtime?token=${Uri.encodeQueryComponent(token)}',
-      );
-      _channel = WebSocketChannel.connect(uri);
-      await _channel!.ready.timeout(const Duration(seconds: 5));
-      _channel!.stream.listen(
-        _onRawMessage,
-        onError: _onError,
-        onDone: _onDone,
-        cancelOnError: false,
-      );
-      _logger.d('[TripRealtimeService] Connected to $uri');
-      _heartbeat = Timer.periodic(const Duration(seconds: 25), (_) {
-        if (_channel != null) {
-          _send({'action': 'ping'});
-        }
-      });
-      return true;
-    } catch (e, stackTrace) {
-      _logger.e('[TripRealtimeService] Connect failed: $e\n$stackTrace');
-      _disposeChannel();
-      return false;
-    }
-  }
-
-  Future<void> subscribeTrip(int tripId) async {
-    if (!await connect()) return;
-    if (_subscribed) return;
-    _send({'action': 'subscribe', 'topic': 'trip.$tripId'});
-    _subscribed = true;
-    _logger.d('[TripRealtimeService] Subscribed to trip.$tripId');
-  }
-
-  Future<void> unsubscribeTrip(int tripId) async {
-    if (!_subscribed || _channel == null) return;
-    _send({'action': 'unsubscribe', 'topic': 'trip.$tripId'});
-    _subscribed = false;
-    _logger.d('[TripRealtimeService] Unsubscribed from trip.$tripId');
-  }
-
-  void _send(Map<String, dynamic> envelope) {
-    try {
-      final data = jsonEncode(envelope);
-      _channel?.sink.add(data);
-      _logger.d('[TripRealtimeService] Sent: $envelope');
-    } catch (e) {
-      _logger.e('[TripRealtimeService] Failed to send message: $e');
-    }
-  }
-
-  void _onRawMessage(dynamic raw) {
-    try {
-      if (raw is String) {
-        final payload = jsonDecode(raw);
-        if (payload is Map<String, dynamic>) {
-          _controller?.add(payload);
-          return;
-        }
+  void _scheduleRecovery(int tripId) {
+    Timer.periodic(const Duration(seconds: 5), (timer) {
+      if (!_subscriptions.containsKey(tripId)) {
+        timer.cancel();
+        return;
       }
-      if (raw is Map<String, dynamic>) {
-        _controller?.add(raw);
-      }
-    } catch (e) {
-      _logger.e('[TripRealtimeService] Error decoding message: $e');
-    }
-  }
-
-  void _onError(Object error, StackTrace stackTrace) {
-    _logger.e('[TripRealtimeService] Connection error: $error\n$stackTrace');
-    _disposeChannel();
-  }
-
-  void _onDone() {
-    _logger.w('[TripRealtimeService] Connection closed');
-    _disposeChannel();
+      _logger.d('[TripRealtimeService] Attempting RTDB reconnection...');
+    });
   }
 
   Future<void> dispose() async {
-    _disposeChannel();
-    await _controller?.close();
+    _logger.i('[TripRealtimeService] Disposing RTDB subscriptions');
+    for (final sub in _subscriptions.values) {
+      await sub.cancel();
+    }
+    _subscriptions.clear();
+    if (_controller != null && !_controller!.isClosed) {
+      await _controller!.close();
+    }
     _controller = null;
   }
 
-  void _disposeChannel() {
-    _heartbeat?.cancel();
-    _heartbeat = null;
-    try {
-      _channel?.sink.close();
-    } catch (_) {}
-    _channel = null;
-    _subscribed = false;
+  void handleRealtimeEvent(TripRealtimeEvent event) {
+    final payload = {
+      'event': event.event,
+      'trip_id': event.tripId,
+      ...event.payload,
+    };
+    RideConnectEventRouter.handle(event.event, payload);
   }
 }

@@ -67,15 +67,13 @@ class DriverTemporarilyLockedEvent extends RealtimeEvent {
   final String reason;
 
   const DriverTemporarilyLockedEvent({
-    required String matchingSessionId,
+    required super.matchingSessionId,
     required this.driverId,
     required this.lockDurationSeconds,
     required this.reason,
-    required DateTime receivedAt,
+    required super.receivedAt,
   }) : super(
          eventType: 'DriverTemporarilyLocked',
-         matchingSessionId: matchingSessionId,
-         receivedAt: receivedAt,
        );
 
   @override
@@ -98,14 +96,12 @@ class DriverAssignmentAcceptedEvent extends RealtimeEvent {
   final String tripId;
 
   const DriverAssignmentAcceptedEvent({
-    required String matchingSessionId,
+    required super.matchingSessionId,
     required this.driverId,
     required this.tripId,
-    required DateTime receivedAt,
+    required super.receivedAt,
   }) : super(
          eventType: 'DriverAssignmentAccepted',
-         matchingSessionId: matchingSessionId,
-         receivedAt: receivedAt,
        );
 
   @override
@@ -127,14 +123,12 @@ class DriverAssignmentRejectedEvent extends RealtimeEvent {
   final String reason;
 
   const DriverAssignmentRejectedEvent({
-    required String matchingSessionId,
+    required super.matchingSessionId,
     required this.driverId,
     required this.reason,
-    required DateTime receivedAt,
+    required super.receivedAt,
   }) : super(
          eventType: 'DriverAssignmentRejected',
-         matchingSessionId: matchingSessionId,
-         receivedAt: receivedAt,
        );
 
   @override
@@ -156,14 +150,12 @@ class DriverMatchAvailabilityChangedEvent extends RealtimeEvent {
   final String availabilityStatus; // 'online', 'offline', 'busy'
 
   const DriverMatchAvailabilityChangedEvent({
-    required String matchingSessionId,
+    required super.matchingSessionId,
     required this.driverId,
     required this.availabilityStatus,
-    required DateTime receivedAt,
+    required super.receivedAt,
   }) : super(
          eventType: 'DriverMatchAvailabilityChanged',
-         matchingSessionId: matchingSessionId,
-         receivedAt: receivedAt,
        );
 
   @override

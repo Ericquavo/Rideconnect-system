@@ -182,23 +182,45 @@ class _CreateTripPageState extends ConsumerState<CreateTripPage> {
       final tripRepo = ref.read(tripRepositoryProvider);
       final activeTrip = await _activeTrip();
       if (activeTrip != null) {
-        debugPrint(
-          '[CreateTripPage] Active trip found; resuming tripId=${activeTrip.tripId}',
-        );
-        widget.onTripCreated?.call();
-        if (!mounted) return;
-        await Navigator.of(context).push(
-          MaterialPageRoute(
-            builder:
-                (_) => TripMatchingPage(
-                  tripId: activeTrip.tripId,
-                  initialStatus: activeTrip.status,
-                  initialMatchingStatus: activeTrip.matchingStatus,
-                  initialData: activeTrip.raw,
-                ),
+        bool? shouldCreateNew = await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Active Trip Found'),
+            content: const Text(
+                'You already have an active trip in progress. Would you like to view your current trip or create a new one?'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(false),
+                child: const Text('View Active Trip'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(true),
+                child: const Text('Create New Trip'),
+              ),
+            ],
           ),
         );
-        return;
+
+        if (shouldCreateNew != true) {
+          debugPrint(
+            '[CreateTripPage] Active trip found; resuming tripId=${activeTrip.tripId}',
+          );
+          widget.onTripCreated?.call();
+          if (!mounted) return;
+          await Navigator.of(context).push(
+            MaterialPageRoute(
+              builder:
+                  (_) => TripMatchingPage(
+                    tripId: activeTrip.tripId,
+                    initialStatus: activeTrip.status,
+                    initialMatchingStatus: activeTrip.matchingStatus,
+                    initialData: activeTrip.raw,
+                  ),
+            ),
+          );
+          setState(() => _submitting = false);
+          return;
+        }
       }
 
       final pickupAddress = _pickupController.text.trim();

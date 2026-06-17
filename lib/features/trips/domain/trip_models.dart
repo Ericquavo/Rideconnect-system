@@ -240,6 +240,14 @@ class Trip {
 
   bool get isActive => !status.isTerminal;
 
+  Map<String, dynamic> toJson() => {
+    'trip_id': id,
+    'status': status.apiValue,
+    'pickup_location': pickup.label,
+    'dropoff_location': destination.label,
+    'fare': fare,
+    // Add more fields as needed for UI
+  };
   factory Trip.fromJson(Map<String, dynamic> json) {
     final driver = json['driver'];
     final vehicle = json['vehicle'];
@@ -248,18 +256,12 @@ class Trip {
       status: TripStatusX.parse(json['status'] ?? json['trip_status']),
       pickup: TripLocation.fromJson(json, 'pickup'),
       destination: TripLocation.fromJson(json, 'dropoff'),
-      driver:
-          driver is Map<String, dynamic> ? TripDriver.fromJson(driver) : null,
-      vehicle:
-          vehicle is Map<String, dynamic>
-              ? TripVehicle.fromJson(vehicle)
-              : null,
+      driver: driver is Map<String, dynamic> ? TripDriver.fromJson(driver) : null,
+      vehicle: vehicle is Map<String, dynamic> ? TripVehicle.fromJson(vehicle) : null,
       fare: _readDouble(json, ['fare', 'actual_fare', 'price', 'amount']) ?? 0,
       etaText: _readString(json, ['eta', 'eta_text', 'duration']) ?? '',
       paymentStatus: _readString(json, ['payment_status']) ?? '',
-      createdAt: DateTime.tryParse(
-        _readString(json, ['created_at', 'requested_at']) ?? '',
-      ),
+      createdAt: DateTime.tryParse(_readString(json, ['created_at', 'requested_at']) ?? ''),
     );
   }
 }

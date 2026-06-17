@@ -19,10 +19,6 @@ class PendingApprovalPage extends StatefulWidget {
 }
 
 class _PendingApprovalPageState extends State<PendingApprovalPage> {
-  late AnimationController _animController;
-  late Animation<double> _fadeAnim;
-  late Animation<Offset> _slideAnim;
-
   @override
   void initState() {
     super.initState();
@@ -59,7 +55,6 @@ class _PendingApprovalPageState extends State<PendingApprovalPage> {
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 const SizedBox(height: 60),
-                // Animated hourglass icon
                 Container(
                   width: 100,
                   height: 100,
@@ -116,7 +111,6 @@ class _PendingApprovalPageState extends State<PendingApprovalPage> {
                   ),
                 ),
                 const SizedBox(height: 40),
-                // Info card
                 Container(
                   padding: const EdgeInsets.all(24),
                   decoration: BoxDecoration(
@@ -145,11 +139,10 @@ class _PendingApprovalPageState extends State<PendingApprovalPage> {
                   ),
                 ),
                 const SizedBox(height: 40),
-                // Message section
                 Column(
                   children: [
                     Text(
-                      'What\'s Next?',
+                      "What's Next?",
                       style: GoogleFonts.poppins(
                         fontSize: 16,
                         fontWeight: FontWeight.w600,
@@ -168,7 +161,7 @@ class _PendingApprovalPageState extends State<PendingApprovalPage> {
                     ),
                     const SizedBox(height: 20),
                     Text(
-                      '⏱️ This usually takes 24-48 hours.',
+                      'This usually takes 24-48 hours.',
                       textAlign: TextAlign.center,
                       style: GoogleFonts.poppins(
                         fontSize: 12,
@@ -179,7 +172,6 @@ class _PendingApprovalPageState extends State<PendingApprovalPage> {
                   ],
                 ),
                 const SizedBox(height: 60),
-                // Logout button
                 SizedBox(
                   width: double.infinity,
                   height: 52,
@@ -225,7 +217,6 @@ class _PendingApprovalPageState extends State<PendingApprovalPage> {
                   ),
                 ),
                 const SizedBox(height: 20),
-                // Help text
                 Center(
                   child: Text(
                     'Questions? Contact support',

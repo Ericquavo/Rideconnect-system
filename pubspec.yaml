@@ -66,16 +66,18 @@ dependencies:
   equatable: ^2.0.5
   logger: ^2.1.0
   intl: ^0.19.0
-  json_annotation: ^4.8.1
+  json_annotation: ^4.9.0
   
   # Real-Time & Messaging
-  web_socket_channel: ^2.4.0
   firebase_core: ^3.8.0
   firebase_messaging: ^15.1.5
   
   # Connectivity
   connectivity_plus: ^6.0.0
 
+  web_socket_channel: any
+  firebase_database: ^11.3.10
+  flutter_background_service: ^5.1.0
 dev_dependencies:
   flutter_test:
     sdk: flutter

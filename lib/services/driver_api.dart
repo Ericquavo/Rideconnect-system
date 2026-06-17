@@ -4,7 +4,8 @@ import 'package:http/http.dart' as http;
 import 'dart:async';
 import 'dart:io';
 
-import '../auth/auth_session.dart';
+import 'api_client.dart';
+import 'package:dio/dio.dart';
 
 class DriverApi {
   DriverApi._();
@@ -53,8 +54,15 @@ class DriverApi {
   Future<Map<String, dynamic>> cancelBooking(dynamic id) =>
       _put('/bookings/$id/cancel', <String, dynamic>{});
 
-  Future<List<Map<String, dynamic>>> getNotifications() async {
-    final response = await _requestRoot('GET', '/notifications');
+  Future<List<Map<String, dynamic>>> getNotifications({
+    int page = 1,
+    int perPage = 20,
+    bool onlyUnread = false,
+  }) async {
+    final response = await _requestRoot(
+      'GET', 
+      '/notifications?page=$page&per_page=$perPage&only_unread=$onlyUnread'
+    );
     return extractList(
       response,
       preferredKeys: const ['notifications', 'items', 'results'],
@@ -360,90 +368,61 @@ class DriverApi {
     bool useRootBaseUrl = false,
     String? customBaseUrl,
   }) async {
-    final session = await AuthSession.load();
-    final token = session?.token;
+    // Use the centralized ApiClient for all HTTP calls
+    final client = ApiClient();
+    // Determine the base URL according to the provided flags
+    final base = customBaseUrl ??
+        (useRootBaseUrl ? _rootBaseUrl : _baseUrl);
+    final fullUrl = '$base$path';
 
-    if (token == null || token.trim().isEmpty) {
-      throw Exception('No auth token found. Please login again.');
-    }
-
-    final root = customBaseUrl ?? (useRootBaseUrl ? _rootBaseUrl : _baseUrl);
-    final uri = Uri.parse('$root$path');
-    final headers = <String, String>{
-      'Accept': 'application/json',
-      'Authorization': 'Bearer ${token.trim()}',
-      'Content-Type': 'application/json',
-    };
-
-    late http.Response response;
     try {
-      if (method == 'GET') {
-        response = await http.get(uri, headers: headers).timeout(_timeout);
-      } else if (method == 'POST') {
-        response = await http
-            .post(
-              uri,
-              headers: headers,
-              body: jsonEncode(body ?? <String, dynamic>{}),
-            )
-            .timeout(_timeout);
-      } else if (method == 'PUT') {
-        response = await http
-            .put(
-              uri,
-              headers: headers,
-              body: jsonEncode(body ?? <String, dynamic>{}),
-            )
-            .timeout(_timeout);
-      } else if (method == 'DELETE') {
-        response = await http.delete(uri, headers: headers).timeout(_timeout);
-      } else {
-        throw Exception('Unsupported HTTP method: $method');
+      final response = await client.dio.request(
+        fullUrl,
+        data: body,
+        options: Options(
+          method: method,
+          sendTimeout: client.dio.options.sendTimeout,
+          receiveTimeout: client.dio.options.receiveTimeout,
+          contentType: 'application/json',
+          responseType: ResponseType.json,
+        ),
+      );
+
+      // Dio already parses JSON; ensure we have a map
+      final parsed = response.data is Map<String, dynamic>
+          ? response.data as Map<String, dynamic>
+          : _decodeObject(response.data?.toString() ?? '');
+
+      final success = _asBool(parsed['success']);
+      final ok = response.statusCode != null &&
+          response.statusCode! >= 200 &&
+          response.statusCode! < 300;
+
+      if (!(success ?? ok)) {
+        final message = _asString(parsed['message']) ??
+            'Request failed (${response.statusCode})';
+        final errorCode = _asString(parsed['error_code']);
+        throw DriverApiException(
+          message: message,
+          statusCode: response.statusCode ?? 0,
+          errorCode: errorCode,
+        );
       }
-    } on TimeoutException catch (_) {
-      throw DriverApiException(
-        message:
-            'Request timed out after ${_timeout.inSeconds} seconds. Check your network and try again.',
-        statusCode: 408,
-      );
-    } on SocketException catch (e) {
-      throw DriverApiException(
-        message: 'Network error: ${e.message}. Please check your connection.',
-        statusCode: 0,
-      );
-    } catch (e) {
-      // Re-throw driver API exceptions unchanged
-      if (e is DriverApiException) rethrow;
-      throw DriverApiException(message: e.toString(), statusCode: 0);
-    }
 
-    final parsed = _decodeObject(response.body);
-    final success = _asBool(parsed['success']);
-    final ok = response.statusCode >= 200 && response.statusCode < 300;
-
-    if (!(success ?? ok)) {
-      final errorMap = parsed['error'];
-      final errorCode =
-          errorMap is Map<String, dynamic>
-              ? _asString(errorMap['code'])
-              : _asString(parsed['error_code']);
-      final nestedError =
-          errorMap is Map<String, dynamic>
-              ? _asString(errorMap['description'])
-              : null;
-      final message =
-          _asString(parsed['message']) ??
-          nestedError ??
-          _asString(parsed['error']) ??
-          'Request failed (${response.statusCode})';
+      return parsed;
+    } on DioException catch (e) {
+      final response = e.response;
+      final parsed = response?.data is Map<String, dynamic>
+          ? response!.data as Map<String, dynamic>
+          : {};
+      final message = _asString(parsed['message']) ?? e.message ?? 'Unknown error';
+      final statusCode = response?.statusCode ?? 0;
       throw DriverApiException(
         message: message,
-        statusCode: response.statusCode,
-        errorCode: errorCode,
+        statusCode: statusCode,
+        errorCode: _asString(parsed['error_code']),
       );
     }
-
-    return parsed;
   }
 
   Map<String, dynamic> extractDataMap(Map<String, dynamic> response) {

@@ -40,7 +40,7 @@ class _DriverEditProfilePageState extends State<DriverEditProfilePage> {
     Color(0xFF14B8A6),
     Color(0xFF0EA5E9),
   ];
-  int _avatarColorIndex = 0;
+  final int _avatarColorIndex = 0;
   bool _saving = false;
   bool _loading = true;
 
@@ -85,12 +85,6 @@ class _DriverEditProfilePageState extends State<DriverEditProfilePage> {
   void _onLanguageChanged() {
     if (!mounted) return;
     setState(() {});
-  }
-
-  void _changeAvatarColor() {
-    setState(() {
-      _avatarColorIndex = (_avatarColorIndex + 1) % _avatarColors.length;
-    });
   }
 
   Future<void> _loadProfile() async {

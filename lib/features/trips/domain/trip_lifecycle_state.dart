@@ -18,7 +18,13 @@ enum TripLifecyclePhase {
   cancelled,
   noDriversFound,
   matchTimeout,
-  unknown,
+  unknown;
+
+  bool get isTerminal =>
+      this == TripLifecyclePhase.tripCompleted ||
+      this == TripLifecyclePhase.cancelled ||
+      this == TripLifecyclePhase.noDriversFound ||
+      this == TripLifecyclePhase.matchTimeout;
 }
 
 extension TripLifecyclePhaseX on TripLifecyclePhase {

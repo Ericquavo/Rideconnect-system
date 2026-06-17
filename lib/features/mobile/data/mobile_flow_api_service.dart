@@ -4,11 +4,11 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
-import '../../../auth/auth_session.dart';
+import '../../../repositories/auth_repository.dart';
 
 final MobileFlowApiService mobileFlowApi = MobileFlowApiService(
   baseUrl: 'https://rideconnect-emp0.onrender.com/api/v1',
-  authHeadersProvider: AuthSession.authHeaders,
+  authHeadersProvider: AuthRepository.instance.authHeaders,
 );
 
 typedef AuthHeadersProvider = Future<Map<String, String>> Function();

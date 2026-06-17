@@ -1,9 +1,11 @@
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
+import 'package:dio/dio.dart';
+import '../../core/network/api_client.dart';
 import 'package:http/http.dart' as http;
 
-import '../auth/auth_session.dart';
+import '../repositories/auth_repository.dart';
 
 class PassengerApi {
   PassengerApi._();
@@ -368,6 +370,9 @@ class PassengerApi {
   Future<Map<String, dynamic>> getTripStatus(dynamic tripId) =>
       _get('/trips/$tripId/status');
 
+  Future<Map<String, dynamic>> trackTrip(dynamic tripId) =>
+      _get('/trips/$tripId/track');
+
   Future<Map<String, dynamic>> getTripMatchingSession(dynamic tripId) =>
       _get('/trips/$tripId/matching-session');
 
@@ -415,6 +420,37 @@ class PassengerApi {
   Future<Map<String, dynamic>> cancelRideRequest(dynamic requestId) =>
       cancelMotorVehicleTrip(requestId);
 
+  Future<List<Map<String, dynamic>>> getNearbyDrivers({
+    required double lat,
+    required double lng,
+    double radius = 10.0,
+  }) async {
+    final response = await _request(
+      'GET',
+      '/mobile/tracking/nearby?latitude=$lat&longitude=$lng&lat=$lat&lng=$lng&radius=$radius',
+      useRootBaseUrl: true,
+    );
+    return _extractList(response);
+  }
+
+  Future<Map<String, dynamic>> assignDriverToTrip(dynamic tripId, int driverId) async {
+    try {
+      final response = await _request(
+        'POST',
+        '/mobile/trips/$tripId/assign-driver',
+        body: {'driver_id': driverId},
+        useRootBaseUrl: true,
+      );
+      return response;
+    } catch (e) {
+      debugPrint('[Matching] assignDriverToTrip mobile error: $e');
+    }
+
+    return _post('/motor-vehicle/trip-requests/$tripId/assign', {
+      'driver_id': driverId,
+    });
+  }
+
   Future<Map<String, dynamic>> createPayment(Map<String, dynamic> payload) =>
       _post('/payments', payload);
 
@@ -429,7 +465,7 @@ class PassengerApi {
     final response = await _request(
       'GET',
       '/notifications/unread-count',
-      baseUrl: _rootUrl,
+      customBaseUrl: _rootUrl,
     );
     final data = _extractDataMap(response);
     return _asInt(
@@ -439,10 +475,21 @@ class PassengerApi {
   }
 
   /// List notifications (shared endpoint, outside /passenger).
-  Future<List<Map<String, dynamic>>> getNotifications() async {
-    final response = await _request('GET', '/notifications', baseUrl: _rootUrl);
+  Future<List<Map<String, dynamic>>> getNotifications({
+    int page = 1,
+    int perPage = 20,
+    bool onlyUnread = false,
+  }) async {
+    final response = await _request(
+      'GET', 
+      '/notifications?page=$page&per_page=$perPage&only_unread=$onlyUnread', 
+      customBaseUrl: _rootUrl,
+    );
     return _extractList(response);
   }
+
+  Future<Map<String, dynamic>> markNotificationRead(dynamic id) =>
+      _request('PUT', '/notifications/$id/read', body: <String, dynamic>{}, customBaseUrl: _rootUrl);
 
   Future<Map<String, dynamic>> _get(String path) => _request('GET', path);
 
@@ -466,6 +513,13 @@ class PassengerApi {
     return _request('GET', '$path?$queryString');
   }
 
+  Future<Map<String, dynamic>> post(
+    String path,
+    Map<String, dynamic> payload,
+  ) => _post(path, payload);
+
+  Future<Map<String, dynamic>> get(String path) => _get(path);
+
   Future<Map<String, dynamic>> _post(
     String path,
     Map<String, dynamic> payload,
@@ -476,91 +530,7 @@ class PassengerApi {
     Map<String, dynamic> payload,
   ) => _request('PUT', path, body: payload);
 
-  Future<Map<String, dynamic>> _request(
-    String method,
-    String path, {
-    Map<String, dynamic>? body,
-    String? baseUrl,
-  }) async {
-    final session = await AuthSession.load();
-    final token = session?.token;
 
-    if (token == null || token.trim().isEmpty) {
-      throw Exception('No auth token found. Please login again.');
-    }
-
-    final uri = Uri.parse('${baseUrl ?? _baseUrl}$path');
-    final headers = <String, String>{
-      'Accept': 'application/json',
-      'Authorization': 'Bearer ${token.trim()}',
-      'Content-Type': 'application/json',
-    };
-
-    _logRequest(method, uri, body: body);
-
-    late http.Response response;
-    if (method == 'GET') {
-      response = await http.get(uri, headers: headers).timeout(_timeout);
-    } else if (method == 'POST') {
-      response = await http
-          .post(
-            uri,
-            headers: headers,
-            body: jsonEncode(body ?? <String, dynamic>{}),
-          )
-          .timeout(_timeout);
-    } else if (method == 'PUT') {
-      response = await http
-          .put(
-            uri,
-            headers: headers,
-            body: jsonEncode(body ?? <String, dynamic>{}),
-          )
-          .timeout(_timeout);
-    } else {
-      throw Exception('Unsupported HTTP method: $method');
-    }
-
-    _logResponse(method, uri, response);
-
-    final parsed = _decodeObject(response.body);
-    final success = _asBool(parsed['success']);
-    final ok = response.statusCode >= 200 && response.statusCode < 300;
-
-    if (!(success ?? ok)) {
-      final errorMap = parsed['error'];
-      final nestedError =
-          errorMap is Map<String, dynamic>
-              ? _asString(errorMap['description'])
-              : null;
-      final nestedErrorCode =
-          errorMap is Map<String, dynamic> ? _asString(errorMap['code']) : null;
-      final fieldErrors = _extractFieldErrors(parsed);
-      final message =
-          _asString(parsed['message']) ??
-          nestedError ??
-          _asString(parsed['error']) ??
-          'Request failed (${response.statusCode})';
-      final errorCode =
-          _asString(parsed['error_code']) ??
-          nestedErrorCode ??
-          _asString(parsed['code']);
-      final safeMessage =
-          response.statusCode >= 500
-              ? 'Server error (${response.statusCode}). Please try again later.'
-              : message;
-
-      throw PassengerApiException(
-        message: safeMessage,
-        statusCode: response.statusCode,
-        raw: parsed,
-        fieldErrors: fieldErrors,
-        errorCode: errorCode,
-      );
-    }
-
-    return parsed;
-  }
 
   void _logRequest(String method, Uri uri, {Map<String, dynamic>? body}) {
     if (!kDebugMode) return;
@@ -677,6 +647,7 @@ class PassengerApi {
   }
 
   int _asInt(dynamic value, {required int fallback}) {
+    // Existing implementation unchanged
     if (value is int) return value;
     if (value is num) return value.toInt();
     if (value is String) return int.tryParse(value) ?? fallback;
@@ -687,6 +658,65 @@ class PassengerApi {
     if (value == null) return null;
     if (value is String) return value;
     return value.toString();
+  }
+  /// Centralized request handling using ApiClient
+  Future<Map<String, dynamic>> _request(
+    String method,
+    String path, {
+    Map<String, dynamic>? body,
+    bool useRootBaseUrl = false,
+    String? customBaseUrl,
+  }) async {
+    final client = ApiClient();
+    final base = customBaseUrl ?? (useRootBaseUrl ? _rootUrl : _baseUrl);
+    final fullUrl = '$base$path';
+    try {
+      final response = await client.dio.request(
+        fullUrl,
+        data: body,
+        options: Options(
+          method: method,
+          sendTimeout: client.dio.options.sendTimeout,
+          receiveTimeout: client.dio.options.receiveTimeout,
+          contentType: 'application/json',
+          responseType: ResponseType.json,
+        ),
+      );
+      final parsed = response.data is Map<String, dynamic>
+          ? response.data as Map<String, dynamic>
+          : _decodeObject(response.data?.toString() ?? '');
+      final success = _asBool(parsed['success']);
+      final ok = response.statusCode != null && response.statusCode! >= 200 && response.statusCode! < 300;
+      if (!(success ?? ok)) {
+        final fieldErrors = _extractFieldErrors(parsed);
+        final message = _asString(parsed['message']) ?? 'Request failed (${response.statusCode})';
+        final errorCode = _asString(parsed['error_code']);
+        throw PassengerApiException(
+          message: message,
+          statusCode: response.statusCode ?? 0,
+          raw: parsed,
+          fieldErrors: fieldErrors,
+          errorCode: errorCode,
+        );
+      }
+      return parsed;
+    } on DioException catch (e) {
+      final response = e.response;
+      final parsed = response?.data is Map<String, dynamic>
+          ? response!.data as Map<String, dynamic>
+          : <String, dynamic>{};
+      final message = _asString(parsed['message']) ?? e.message ?? 'Unknown error';
+      final statusCode = response?.statusCode ?? 0;
+      final errorCode = _asString(parsed['error_code']);
+      final fieldErrors = _extractFieldErrors(parsed);
+      throw PassengerApiException(
+        message: message,
+        statusCode: statusCode,
+        raw: parsed,
+        fieldErrors: fieldErrors,
+        errorCode: errorCode,
+      );
+    }
   }
 }
 

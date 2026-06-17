@@ -13,10 +13,8 @@ enum TripLifecyclePhase {
   noDriversFound,
   cancelled,
   matchTimeout,
-  unknown,
-}
+  unknown;
 
-extension TripLifecyclePhaseX on TripLifecyclePhase {
   bool get isTerminal =>
       this == TripLifecyclePhase.tripCompleted ||
       this == TripLifecyclePhase.noDriversFound ||
@@ -166,10 +164,7 @@ class MotorVehicleTripStatus {
       pickupLat: _readDouble(data, const ['pickup_lat', 'pickup_latitude']),
       pickupLng: _readDouble(data, const ['pickup_lng', 'pickup_longitude']),
       dropoffLat: _readDouble(data, const ['dropoff_lat', 'dropoff_latitude']),
-      dropoffLng: _readDouble(data, const [
-        'dropoff_lng',
-        'dropoff_longitude',
-      ]),
+      dropoffLng: _readDouble(data, const ['dropoff_lng', 'dropoff_longitude']),
       raw: data,
     );
   }
@@ -198,10 +193,10 @@ class MotorVehicleTripStatus {
       case 'DRIVER_FOUND':
         return TripLifecyclePhase.driversFound;
       case 'DRIVER_NOTIFIED':
-        return TripLifecyclePhase.contactingDrivers;
       case 'ASSIGNED':
       case 'DRIVER_ASSIGNED':
       case 'DRIVER_ACKNOWLEDGED':
+        return TripLifecyclePhase.contactingDrivers;
       case 'DRIVER_ACCEPTED':
         return TripLifecyclePhase.driverAccepted;
       case 'DRIVER_ARRIVING':

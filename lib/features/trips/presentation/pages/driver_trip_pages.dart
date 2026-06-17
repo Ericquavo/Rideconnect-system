@@ -7,6 +7,10 @@ import '../../domain/trip_models.dart';
 import '../providers/trip_providers.dart';
 import '../widgets/active_trip_card.dart';
 import '../widgets/trip_error_view.dart';
+import '../../../../ui/driver/driver_match_modal.dart';
+import '../../../../repositories/auth_repository.dart';
+
+
 
 class IncomingTripRequestPage extends ConsumerWidget {
   const IncomingTripRequestPage({super.key, required this.isOnline});
@@ -62,17 +66,14 @@ class IncomingTripRequestPage extends ConsumerWidget {
                                       );
                                     },
                                     onPrimaryAction: () async {
-                                      final accepted = await ref
-                                          .read(tripRepositoryProvider)
-                                          .acceptDriverTrip(trip.id);
-                                      if (!context.mounted) return;
-                                      Navigator.of(context).push(
-                                        MaterialPageRoute(
-                                          builder:
-                                              (_) => DriverNavigationPage(
-                                                trip: accepted,
-                                              ),
-                                        ),
+                                      final token =
+                                          await AuthRepository.instance.getToken();
+                                      DriverMatchModal.show(
+                                        context,
+                                        trip.toJson(),
+                                        token ?? '',
+                                        () {}, // onAccept placeholder (modal handles navigation)
+                                        () {}, // onDecline placeholder
                                       );
                                     },
                                     primaryLabel: 'Accept',

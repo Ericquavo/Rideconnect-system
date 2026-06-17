@@ -2,7 +2,7 @@ import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../../core/api/api_client.dart';
+import '../../../../core/network/api_client.dart';
 import '../../data/trip_lifecycle_service.dart';
 import '../../data/trip_repository.dart';
 import '../../domain/matching_lifecycle_models.dart';

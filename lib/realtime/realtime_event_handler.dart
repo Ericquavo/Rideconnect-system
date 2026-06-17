@@ -1,11 +1,16 @@
 import 'dart:async';
-import 'dart:convert';
-import 'package:flutter/foundation.dart';
-import 'package:web_socket_channel/web_socket_channel.dart';
-import 'package:rideconnect_app/models/matching/realtime_events.dart';
-import 'package:rideconnect_app/auth/auth_session.dart';
+import 'package:logger/logger.dart';
 
-/// Handles WebSocket connections for real-time events
+import '../core/services/rtdb_service.dart';
+import '../features/trips/domain/trip_realtime_event.dart';
+import '../features/trips/services/realtime_event_router.dart';
+
+/// Handles RTDB-based real-time events (RTDB-only, no Firestore)
+///
+/// Architecture:
+/// - Firebase RTDB: Real-time event stream (trip status changes)
+/// - NO Firestore, NO WebSockets, NO Reverb, NO Echo, NO Pusher
+/// - Only RTDB listeners via RTDBService
 class RealtimeEventHandler {
   static final RealtimeEventHandler _instance =
       RealtimeEventHandler._internal();
@@ -16,77 +21,101 @@ class RealtimeEventHandler {
 
   RealtimeEventHandler._internal();
 
-  WebSocketChannel? _channel;
-  final _eventStreamController = StreamController<RealtimeEvent>.broadcast();
+  final Logger _logger = Logger();
+  final RTDBService _rtdbService = RTDBService();
+  final Map<int, StreamSubscription> _subscriptions = {};
+  final _eventStreamController = StreamController<dynamic>.broadcast();
   final _connectionStateController = StreamController<bool>.broadcast();
 
-  bool get isConnected => _channel != null;
-  Stream<RealtimeEvent> get eventStream => _eventStreamController.stream;
+  bool get isConnected => _subscriptions.isNotEmpty;
+  Stream<dynamic> get eventStream => _eventStreamController.stream;
   Stream<bool> get connectionStream => _connectionStateController.stream;
 
-  /// Connect to WebSocket for real-time events
-  Future<void> connect() async {
-    if (isConnected) return;
+  /// Subscribe to RTDB for real-time trip events
+  Future<void> subscribeToTrip(int tripId) async {
+    if (_subscriptions.containsKey(tripId)) return;
 
     try {
-      final session = await AuthSession.load();
-      final token = session?.token;
-      if (token == null) throw Exception('No auth token available');
-
-      // Update WebSocket URL based on your backend
-      const wsUrl = 'wss://rideconnect-emp0.onrender.com/ws';
-
-      _channel = WebSocketChannel.connect(Uri.parse('$wsUrl?token=$token'));
-
+      _logger.i(
+        '[RealtimeEventHandler] Subscribing to active_trips/$tripId',
+      );
       _connectionStateController.add(true);
-      _listenToChannel();
+
+      final subscription = _rtdbService
+          .getTripStatusStream(tripId)
+          .listen(
+            (data) {
+              try {
+                if (data != null) {
+                  final event = TripRealtimeEvent.fromRtdb(data, tripId);
+                  if (!_eventStreamController.isClosed) {
+                    _eventStreamController.add(event);
+                    // Route to appropriate handler
+                    RideConnectEventRouter.handle(event.event, event.payload);
+                  }
+                }
+              } catch (e) {
+                _logger.e('[RealtimeEventHandler] Error parsing event: $e');
+              }
+            },
+            onError: (error) {
+              _logger.e('[RealtimeEventHandler] Subscribe error: $error');
+              _connectionStateController.add(false);
+              _scheduleRecovery(tripId);
+            },
+          );
+
+      _subscriptions[tripId] = subscription;
     } catch (e) {
-      debugPrint('WebSocket connection error: $e');
+      _logger.e('[RealtimeEventHandler] Connection error: $e');
       _connectionStateController.add(false);
       rethrow;
     }
   }
 
-  /// Listen to incoming WebSocket messages
-  void _listenToChannel() {
-    _channel?.stream.listen(
-      (message) {
-        try {
-          final json = jsonDecode(message as String) as Map<String, dynamic>;
-          final event = RealtimeEvent.fromJson(json);
-          _eventStreamController.add(event);
-        } catch (e) {
-          debugPrint('Error parsing real-time event: $e');
-        }
-      },
-      onError: (error) {
-        debugPrint('WebSocket error: $error');
-        _connectionStateController.add(false);
-      },
-      onDone: () {
-        debugPrint('WebSocket closed');
-        _connectionStateController.add(false);
-        _channel = null;
-      },
-    );
+  void _scheduleRecovery(int tripId) {
+    Timer(const Duration(seconds: 5), () {
+      if (_subscriptions.containsKey(tripId)) {
+        _logger.d(
+          '[RealtimeEventHandler] Attempting reconnection for trip $tripId',
+        );
+        subscribeToTrip(tripId);
+      }
+    });
   }
 
-  /// Disconnect from WebSocket
-  void disconnect() {
-    _channel?.sink.close();
-    _channel = null;
+  /// Unsubscribe from a specific trip
+  Future<void> unsubscribeFromTrip(int tripId) async {
+    await _subscriptions[tripId]?.cancel();
+    _subscriptions.remove(tripId);
+    if (_subscriptions.isEmpty) {
+      _connectionStateController.add(false);
+    }
+  }
+
+  /// Disconnect from all RTDB listeners
+  Future<void> disconnect() async {
+    _logger.i('[RealtimeEventHandler] Disconnecting from all trips');
+    for (final subscription in _subscriptions.values) {
+      await subscription.cancel();
+    }
+    _subscriptions.clear();
     _connectionStateController.add(false);
   }
 
-  /// Subscribe to specific event type
-  Stream<T> subscribeToEvent<T extends RealtimeEvent>() {
-    return _eventStreamController.stream.where((event) => event is T).cast<T>();
+  /// Cleanup on dispose
+  Future<void> dispose() async {
+    await disconnect();
+    if (!_eventStreamController.isClosed) {
+      await _eventStreamController.close();
+    }
+    if (!_connectionStateController.isClosed) {
+      await _connectionStateController.close();
+    }
   }
 
-  /// Cleanup resources
-  void dispose() {
-    disconnect();
-    _eventStreamController.close();
-    _connectionStateController.close();
+  /// Subscribe to specific event type
+  Stream<T> subscribeToEvent<T>() {
+    return _eventStreamController.stream.where((event) => event is T).cast<T>();
   }
 }

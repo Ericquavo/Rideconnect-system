@@ -5,7 +5,8 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import '../core/api/api_client.dart';
+import '../core/network/api_client.dart';
+import '../config/api_config.dart';
 
 @pragma('vm:entry-point')
 Future<void> rideConnectFirebaseMessagingBackgroundHandler(
@@ -13,6 +14,16 @@ Future<void> rideConnectFirebaseMessagingBackgroundHandler(
 ) async {
   try {
     await Firebase.initializeApp();
+    final api = ApiClient();
+    final notificationId = message.data['notification_id'] ?? message.messageId;
+    if (notificationId != null) {
+      final prefs = await SharedPreferences.getInstance();
+      final deviceId = prefs.getString('notifications.fcm_token');
+      await api.post(
+        ApiEndpoints.notificationAcknowledge(notificationId),
+        data: {'source': 'fcm', 'device_id': deviceId},
+      ).catchError((_) => null);
+    }
   } catch (_) {
     // App-level Firebase options may be configured by the target build.
   }
@@ -60,7 +71,7 @@ class FcmService {
     if (token == null || token.isEmpty) return null;
     await _api.post(
       '/devices/push-token',
-      body: {'device_token': token, 'platform': _platform, 'device_id': token},
+      data: {'device_token': token, 'platform': _platform, 'device_id': token},
     );
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_tokenKey, token);
@@ -77,12 +88,30 @@ class FcmService {
     if (kDebugMode) {
       debugPrint('[FcmService] foreground message: ${message.data}');
     }
+    _acknowledgeNotification(message);
   }
 
   void _handleOpenedMessage(RemoteMessage message) {
     if (kDebugMode) {
       debugPrint('[FcmService] opened message: ${message.data}');
     }
+    _acknowledgeNotification(message);
+  }
+
+  Future<void> _acknowledgeNotification(RemoteMessage message) async {
+    final notificationId = message.data['notification_id'] ?? message.messageId;
+    if (notificationId == null) return;
+    
+    final deviceId = await currentToken();
+    try {
+      await _api.post(
+        ApiEndpoints.notificationAcknowledge(notificationId),
+        data: {
+          'source': 'fcm',
+          'device_id': deviceId,
+        }
+      );
+    } catch (_) {}
   }
 
   String get _platform {

@@ -1,4 +1,5 @@
 /// Models for Private Transport (CAR & MOTORCYCLE)
+library;
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Ride Type & Rules Models
