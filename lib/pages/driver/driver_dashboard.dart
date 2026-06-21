@@ -8,6 +8,7 @@ import '../../auth/auth_session.dart';
 import '../../services/driver_api.dart';
 import '../../services/driver_language_service.dart';
 import '../../services/driver_preferences_service.dart';
+import '../../services/driver_websocket_service.dart';
 import '../login_page.dart';
 import 'driver_home_page.dart';
 import 'driver_profile_page.dart';
@@ -76,6 +77,7 @@ class _DriverDashboardState extends State<DriverDashboard> {
     );
     _syncNotificationTimer();
     _initIncomingTripListener();
+    _syncWebSocketListener();
     
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _checkActiveTrip();
@@ -121,6 +123,7 @@ class _DriverDashboardState extends State<DriverDashboard> {
     _notificationTimer?.cancel();
     _presenceTimer?.cancel();
     _incomingTripSubscription?.cancel();
+    DriverWebSocketService.instance.disconnect();
     super.dispose();
   }
 
@@ -178,6 +181,7 @@ class _DriverDashboardState extends State<DriverDashboard> {
   void _handleStatusChanged(bool value) {
     setState(() => _isOnline = value);
     _syncDriverPresence();
+    _syncWebSocketListener();
     if (!value) {
       DriverApi.instance.updateStatus(isOnline: false).catchError((_) {
         return <String, dynamic>{};
@@ -258,19 +262,30 @@ class _DriverDashboardState extends State<DriverDashboard> {
     final token = session?.token;
     if (token == null || token.isEmpty) return;
 
-    // Extract driverId from JWT token
+    // Resolve driverId from profile API to get actual driver_id (not user_id)
     String? driverId;
     try {
-      final parts = token.split('.');
-      if (parts.length >= 2) {
-        final payload = parts[1];
-        final normalizedPayload = base64Url.normalize(payload);
-        final decoded = utf8.decode(base64Url.decode(normalizedPayload));
-        final claims = jsonDecode(decoded);
-        driverId = (claims['id'] ?? claims['user_id'] ?? claims['sub'])?.toString();
+      final api = DriverApi.instance;
+      final profileRes = await api.getProfile();
+      final profile = api.extractDataMap(profileRes);
+      
+      final driverMap = profile['driver'];
+      if (driverMap != null && driverMap is Map) {
+        driverId = (driverMap['id'] ?? driverMap['driver_id'])?.toString();
       }
+      driverId ??= (profile['driver_id'] ?? profile['id'])?.toString();
     } catch (_) {
-      // Failed to decode JWT
+      // Fallback: decode JWT claims if API call fails
+      try {
+        final parts = token.split('.');
+        if (parts.length >= 2) {
+          final payload = parts[1];
+          final normalizedPayload = base64Url.normalize(payload);
+          final decoded = utf8.decode(base64Url.decode(normalizedPayload));
+          final claims = jsonDecode(decoded);
+          driverId = (claims['driver_id'] ?? claims['id'] ?? claims['user_id'] ?? claims['sub'])?.toString();
+        }
+      } catch (_) {}
     }
 
     if (driverId == null || driverId.isEmpty) return;
@@ -308,6 +323,97 @@ class _DriverDashboardState extends State<DriverDashboard> {
         });
       }
     });
+  }
+
+  Future<void> _syncWebSocketListener() async {
+    if (!_isOnline) {
+      DriverWebSocketService.instance.disconnect();
+      return;
+    }
+
+    final session = await AuthSession.load();
+    final token = session?.token;
+    if (token == null || token.isEmpty) return;
+
+    int? userId;
+    try {
+      final api = DriverApi.instance;
+      final profileRes = await api.getProfile();
+      final profile = api.extractDataMap(profileRes);
+      final userMap = profile['user'] ?? profile;
+      final rawId = userMap['id'] ?? userMap['user_id'];
+      if (rawId != null) {
+        userId = int.tryParse(rawId.toString());
+      }
+    } catch (_) {
+      // Fallback: decode JWT claims if API call fails
+      try {
+        final parts = token.split('.');
+        if (parts.length >= 2) {
+          final payload = parts[1];
+          final normalizedPayload = base64Url.normalize(payload);
+          final decoded = utf8.decode(base64Url.decode(normalizedPayload));
+          final claims = jsonDecode(decoded);
+          final rawUserId = claims['user_id'] ?? claims['sub'] ?? claims['id'];
+          if (rawUserId != null) {
+            userId = int.tryParse(rawUserId.toString());
+          }
+        }
+      } catch (_) {}
+    }
+
+    if (userId == null) return;
+
+    await DriverWebSocketService.instance.connect(
+      token: token,
+      userId: userId,
+      onNewTripRequest: (payload) {
+        if (!mounted || payload.isEmpty) {
+          if (_isShowingIncomingRequest && mounted) {
+            Navigator.of(context).pop();
+            _isShowingIncomingRequest = false;
+          }
+          return;
+        }
+
+        // Normalize payload keys for DriverIncomingRequestScreen
+        final normalizedPayload = Map<String, dynamic>.from(payload);
+        if (!normalizedPayload.containsKey('pickup_location') && normalizedPayload.containsKey('pickup')) {
+          normalizedPayload['pickup_location'] = normalizedPayload['pickup'];
+        }
+        if (!normalizedPayload.containsKey('dropoff_location') && normalizedPayload.containsKey('dropoff')) {
+          normalizedPayload['dropoff_location'] = normalizedPayload['dropoff'];
+        }
+        if (!normalizedPayload.containsKey('passenger_name') && normalizedPayload.containsKey('passenger')) {
+          normalizedPayload['passenger_name'] = normalizedPayload['passenger'];
+        }
+        if (!normalizedPayload.containsKey('expires_at') || normalizedPayload['expires_at'] == null) {
+          normalizedPayload['expires_at'] = DateTime.now().add(const Duration(seconds: 60)).toIso8601String();
+        }
+
+        if (!_isShowingIncomingRequest) {
+          _isShowingIncomingRequest = true;
+          showModalBottomSheet(
+            context: context,
+            isScrollControlled: true,
+            isDismissible: false,
+            enableDrag: false,
+            backgroundColor: Colors.transparent,
+            builder: (_) => Padding(
+              padding: EdgeInsets.only(
+                bottom: MediaQuery.of(context).viewInsets.bottom,
+              ),
+              child: DriverIncomingRequestScreen(
+                payload: normalizedPayload,
+                authToken: token,
+              ),
+            ),
+          ).then((_) {
+            _isShowingIncomingRequest = false;
+          });
+        }
+      },
+    );
   }
 
   @override

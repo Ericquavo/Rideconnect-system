@@ -5,6 +5,9 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'dart:convert';
 import 'dart:typed_data';
+import 'dart:async';
+
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../services/driver_api.dart';
 import '../../services/driver_language_service.dart';
@@ -54,6 +57,8 @@ class _DriverHomePageState extends State<DriverHomePage> {
   bool _isLocating = false;
   double _mapZoom = 14;
   final ImagePicker _imagePicker = ImagePicker();
+  
+  Map<String, dynamic>? _demandHotspot;
 
   bool get _isDarkMode => Theme.of(context).brightness == Brightness.dark;
   Color get _bgTop =>
@@ -84,6 +89,16 @@ class _DriverHomePageState extends State<DriverHomePage> {
     _initDriverLocation();
     _sync.dataVersionNotifier.addListener(_onSyncDataChanged);
     _sync.activeTripNotifier.addListener(_onActiveTripChanged);
+  }
+
+  void _moveMapToHotspot() {
+    if (_demandHotspot != null && _mapController != null) {
+      final lat = double.tryParse(_demandHotspot!['lat'].toString()) ?? 0.0;
+      final lng = double.tryParse(_demandHotspot!['lng'].toString()) ?? 0.0;
+      if (lat != 0.0 && lng != 0.0) {
+        _mapController!.animateCamera(CameraUpdate.newLatLngZoom(LatLng(lat, lng), 14.5));
+      }
+    }
   }
 
   @override
@@ -187,6 +202,16 @@ class _DriverHomePageState extends State<DriverHomePage> {
         infoWindow: InfoWindow(title: _lang.t('home.requests')),
         icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueOrange),
       ),
+      if (_demandHotspot != null)
+        Marker(
+          markerId: const MarkerId('hotspot'),
+          position: LatLng(
+            double.tryParse(_demandHotspot!['lat'].toString()) ?? 0.0,
+            double.tryParse(_demandHotspot!['lng'].toString()) ?? 0.0,
+          ),
+          infoWindow: InfoWindow(title: 'High Demand Zone'),
+          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
+        ),
     };
   }
 
@@ -884,8 +909,25 @@ class _DriverHomePageState extends State<DriverHomePage> {
 
   Widget _buildMapPreview() {
     final center = _driverLatLng ?? _kigaliCenter;
+    final Set<Circle> circles = {};
+    if (_demandHotspot != null) {
+      circles.add(
+        Circle(
+          circleId: const CircleId('hotspot_zone'),
+          center: LatLng(
+            double.tryParse(_demandHotspot!['lat'].toString()) ?? 0.0,
+            double.tryParse(_demandHotspot!['lng'].toString()) ?? 0.0,
+          ),
+          radius: 1500, // 1.5km radius
+          fillColor: const Color(0xFFFF5E5B).withValues(alpha: 0.25),
+          strokeColor: const Color(0xFFFF5E5B),
+          strokeWidth: 2,
+        ),
+      );
+    }
+
     return Container(
-      height: 180,
+      height: 240,
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(20),
         gradient: LinearGradient(
@@ -908,10 +950,11 @@ class _DriverHomePageState extends State<DriverHomePage> {
                 zoom: _mapZoom,
               ),
               markers: _driverMapMarkers(),
+              circles: circles,
               mapToolbarEnabled: false,
               myLocationEnabled: _hasLocationPermission,
               myLocationButtonEnabled: _hasLocationPermission,
-              zoomControlsEnabled: true,
+              zoomControlsEnabled: false,
               zoomGesturesEnabled: true,
               rotateGesturesEnabled: true,
               scrollGesturesEnabled: true,
@@ -919,11 +962,13 @@ class _DriverHomePageState extends State<DriverHomePage> {
               compassEnabled: true,
               onMapCreated: (controller) {
                 _mapController = controller;
-                controller.animateCamera(
-                  CameraUpdate.newCameraPosition(
-                    CameraPosition(target: center, zoom: _mapZoom),
-                  ),
-                );
+                if (_demandHotspot == null) {
+                  controller.animateCamera(
+                    CameraUpdate.newCameraPosition(
+                      CameraPosition(target: center, zoom: _mapZoom),
+                    ),
+                  );
+                }
               },
             ),
           ),
@@ -956,9 +1001,80 @@ class _DriverHomePageState extends State<DriverHomePage> {
               ],
             ),
           ),
+          if (_demandHotspot != null)
+            Positioned(
+              top: 8,
+              left: 40,
+              right: 40,
+              child: GestureDetector(
+                onTap: _navigateToHotspot,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFF5E5B),
+                    borderRadius: BorderRadius.circular(16),
+                    boxShadow: [
+                      BoxShadow(
+                        color: const Color(0xFFFF5E5B).withValues(alpha: 0.4),
+                        blurRadius: 8,
+                        offset: const Offset(0, 3),
+                      ),
+                    ],
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.local_fire_department_rounded, color: Colors.white),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'High Demand Detected',
+                              style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
+                            ),
+                            Text(
+                              'Est. ${_demandHotspot!['estimated_requests']} requests nearby. Tap to navigate.',
+                              style: GoogleFonts.poppins(color: Colors.white70, fontSize: 11),
+                            ),
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.close_rounded, color: Colors.white, size: 18),
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(),
+                        onPressed: () {
+                          setState(() => _demandHotspot = null);
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
         ],
       ),
     );
+  }
+
+  Future<void> _navigateToHotspot() async {
+    if (_demandHotspot == null) return;
+    final lat = double.tryParse(_demandHotspot!['lat'].toString()) ?? 0.0;
+    final lng = double.tryParse(_demandHotspot!['lng'].toString()) ?? 0.0;
+    final uri = Uri.parse('google.navigation:q=$lat,$lng');
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri);
+    } else {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Could not launch navigation.'),
+            backgroundColor: const Color(0xFFFF5E5B),
+          ),
+        );
+      }
+    }
   }
 
   Widget _mapZoomBtn(IconData icon, VoidCallback onTap) {

@@ -3,6 +3,12 @@ class ApiEndpoints {
   // Base URL
   static const String baseUrl = 'https://rideconnect-emp0.onrender.com/api/v1';
   
+  // TransportOrder endpoints
+  static const String transportOrders = '/transport-orders';
+  static const String transportOrderDetails = '/transport-orders/{id}';
+  static const String transportOrderStart = '/transport-orders/{id}/start';
+  static const String transportOrderComplete = '/transport-orders/{id}/complete';
+  
   // Auth endpoints
   static const String login = '/auth/mobile/login';
   static const String logout = '/auth/logout';
@@ -31,6 +37,9 @@ class ApiEndpoints {
   static String notificationRead(int id) => '/notifications/$id/read';
   static const String notificationsUnreadCount = '/notifications/unread-count';
   
+  // Admin dashboard endpoints
+  static const String adminDemandNotifications = '/admin/dashboard/demand-notifications';
+
   // Driver endpoints
   static const String driverStatus = '/mobile/drivers/status';
   static const String driverLiveLocation = '/mobile/drivers/live-location';

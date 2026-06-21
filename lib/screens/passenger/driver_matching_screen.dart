@@ -312,7 +312,9 @@ class _DriverMatchingScreenState extends ConsumerState<DriverMatchingScreen> {
     return PopScope(
       canPop: true,
       onPopInvokedWithResult: (didPop, result) {
-        // Just drop back without cancelling the trip
+        if (didPop) {
+          _tripService.cancelTripRequest(widget.tripRequestId, reason: 'User navigated back').catchError((_) {});
+        }
       },
       child: Scaffold(
         appBar: AppBar(

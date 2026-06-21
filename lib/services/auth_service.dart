@@ -6,7 +6,6 @@ import '../../core/exceptions/app_exceptions.dart';
 import '../../core/storage/secure_storage_service.dart';
 import '../../models/user_model.dart';
 import 'api_repository.dart';
-import 'fcm_service.dart';
 
 /// Authentication service
 class AuthService {
@@ -44,13 +43,6 @@ class AuthService {
       _apiRepository.setAuthToken(response.token);
 
       _logger.d('Login successful for user: ${response.user.id}');
-
-      // Sync FCM token
-      try {
-        await FcmService.instance.registerDevice();
-      } catch (e) {
-        _logger.w('Failed to register FCM device: $e');
-      }
 
       return response.user;
     } catch (e) {

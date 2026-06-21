@@ -148,7 +148,11 @@ class _TripMatchingPageState extends ConsumerState<TripMatchingPage>
         if (current == null) return;
         final previousPhase = previous?.valueOrNull?.phase;
         if (previousPhase != current.phase) {
-          ref.read(tripRepositoryProvider).acknowledgeTripStatus(widget.tripId, current.phase.name);
+          if (current.phase == TripLifecyclePhase.matchTimeout) {
+            ref.read(tripRepositoryProvider).acknowledgeTripStatus(widget.tripId, 'matchTimeout');
+          } else if (current.phase == TripLifecyclePhase.driverAccepted) {
+            ref.read(tripRepositoryProvider).acknowledgeTripStatus(widget.tripId, 'accepted');
+          }
           _routeIfNeeded(current);
         }
       },

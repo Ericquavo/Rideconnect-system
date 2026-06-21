@@ -6,6 +6,7 @@ import 'passenger/passenger_dashboard.dart';
 import 'passenger/pending_approval_page.dart';
 import 'driver/driver_dashboard.dart';
 import '../auth/auth_api.dart';
+import '../auth/auth_session.dart';
 import '../services/app_theme_service.dart';
 import '../repositories/auth_repository.dart';
 import '../services/passenger_api.dart';
@@ -104,6 +105,12 @@ class _LoginPageState extends State<LoginPage>
 
         if (result.token != null) {
           await AuthRepository.instance.saveToken(result.token!);
+          await AuthSession.save(
+            role: normalizedRole,
+            name: result.name,
+            email: result.email,
+            token: result.token,
+          );
         }
 
         try {
@@ -135,6 +142,12 @@ class _LoginPageState extends State<LoginPage>
       if (isDriver) {
         if (result.token != null) {
           await AuthRepository.instance.saveToken(result.token!);
+          await AuthSession.save(
+            role: normalizedRole,
+            name: result.name,
+            email: result.email,
+            token: result.token,
+          );
         }
         if (!mounted) return;
         Navigator.of(context).pushReplacement(

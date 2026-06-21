@@ -54,17 +54,6 @@ class _SearchingDriverScreenState extends State<SearchingDriverScreen> {
         setState(() {
           _secondsElapsed++;
         });
-
-        // 60-second timeout check
-        if (_secondsElapsed >= 60 && !_isFallbackActive) {
-          final isStillMatching = _tripStatus == 'PENDING' ||
-              _tripStatus == 'REQUESTED' ||
-              _tripStatus == 'MATCHING' ||
-              _tripStatus == 'MATCHING_PENDING';
-          if (isStillMatching) {
-            _triggerFallbackAssignment();
-          }
-        }
       }
     });
   }
@@ -179,6 +168,9 @@ class _SearchingDriverScreenState extends State<SearchingDriverScreen> {
       setState(() {
         _error = 'Trip request was cancelled or expired.';
       });
+      if (newStatus == 'EXPIRED') {
+        PassengerApi.instance.acknowledgeTrip(widget.tripId, 'matchTimeout').catchError((_) => {});
+      }
     }
   }
 
@@ -454,8 +446,15 @@ class _SearchingDriverScreenState extends State<SearchingDriverScreen> {
     final seconds = _secondsElapsed % 60;
     final timerString = '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
 
-    return Scaffold(
-      body: Container(
+    return PopScope(
+      canPop: true,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) {
+          PassengerApi.instance.cancelMotorVehicleTrip(widget.tripId, reason: 'User navigated back').catchError((_) {});
+        }
+      },
+      child: Scaffold(
+        body: Container(
         decoration: BoxDecoration(
           gradient: LinearGradient(
             colors: isDark
@@ -538,6 +537,7 @@ class _SearchingDriverScreenState extends State<SearchingDriverScreen> {
           ),
         ),
       ),
+    ),
     );
   }
 

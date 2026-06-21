@@ -1,11 +1,14 @@
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:logger/logger.dart';
+import 'dart:math' as math;
+import 'dart:convert';
 
 class SecureStorageService {
   static const String _tokenKey = 'auth_token';
   static const String _userKey = 'auth_user';
   static const String _refreshTokenKey = 'refresh_token';
   static const String _fcmTokenKey = 'fcm_token';
+  static const String _deviceIdKey = 'device_id';
 
   final FlutterSecureStorage _storage;
   final Logger _logger;
@@ -108,5 +111,23 @@ class SecureStorageService {
   Future<bool> isAuthenticated() async {
     final token = await getToken();
     return token != null && token.isNotEmpty;
+  }
+
+  /// Get or create a persistent device ID
+  Future<String> getOrCreateDeviceId() async {
+    try {
+      String? deviceId = await _storage.read(key: _deviceIdKey);
+      if (deviceId == null) {
+        final rnd = math.Random.secure();
+        final bytes = List<int>.generate(16, (_) => rnd.nextInt(256));
+        deviceId = base64UrlEncode(bytes);
+        await _storage.write(key: _deviceIdKey, value: deviceId);
+        _logger.d('Generated new device ID: $deviceId');
+      }
+      return deviceId;
+    } catch (e) {
+      _logger.e('Error getting/creating device ID: $e');
+      return 'fallback_device_id_${DateTime.now().millisecondsSinceEpoch}';
+    }
   }
 }

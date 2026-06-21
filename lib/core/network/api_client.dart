@@ -37,6 +37,13 @@ class ApiClient {
     _dio.interceptors.add(_LoggingInterceptor(_logger));
     _dio.interceptors.add(_ErrorInterceptor(_logger));
   }
+  String _resolvePath(String path) {
+    if (path.startsWith('/v3/') || path.startsWith('v3/')) {
+      final cleanPath = path.startsWith('/') ? path : '/$path';
+      return 'https://rideconnect-emp0.onrender.com/api$cleanPath';
+    }
+    return path;
+  }
 
   /// GET request
   Future<Response<T>> get<T>(
@@ -45,14 +52,16 @@ class ApiClient {
     Options? options,
   }) async {
     try {
-      _logger.i('GET $path');
+      final resolved = _resolvePath(path);
+      _logger.i('GET $resolved');
       return await _dio.get<T>(
-        path,
+        resolved,
         queryParameters: queryParameters,
         options: options,
       );
     } on DioException catch (e) {
-      _logger.e('GET $path failed: ${e.message}');
+      final resolved = _resolvePath(path);
+      _logger.e('GET $resolved failed: ${e.message}');
       throw _handleError(e);
     }
   }
@@ -65,15 +74,17 @@ class ApiClient {
     Options? options,
   }) async {
     try {
-      _logger.i('POST $path');
+      final resolved = _resolvePath(path);
+      _logger.i('POST $resolved');
       return await _dio.post<T>(
-        path,
+        resolved,
         data: data,
         queryParameters: queryParameters,
         options: options,
       );
     } on DioException catch (e) {
-      _logger.e('POST $path failed: ${e.message}');
+      final resolved = _resolvePath(path);
+      _logger.e('POST $resolved failed: ${e.message}');
       throw _handleError(e);
     }
   }
@@ -86,15 +97,17 @@ class ApiClient {
     Options? options,
   }) async {
     try {
-      _logger.i('PUT $path');
+      final resolved = _resolvePath(path);
+      _logger.i('PUT $resolved');
       return await _dio.put<T>(
-        path,
+        resolved,
         data: data,
         queryParameters: queryParameters,
         options: options,
       );
     } on DioException catch (e) {
-      _logger.e('PUT $path failed: ${e.message}');
+      final resolved = _resolvePath(path);
+      _logger.e('PUT $resolved failed: ${e.message}');
       throw _handleError(e);
     }
   }
@@ -107,15 +120,17 @@ class ApiClient {
     Options? options,
   }) async {
     try {
-      _logger.i('DELETE $path');
+      final resolved = _resolvePath(path);
+      _logger.i('DELETE $resolved');
       return await _dio.delete<T>(
-        path,
+        resolved,
         data: data,
         queryParameters: queryParameters,
         options: options,
       );
     } on DioException catch (e) {
-      _logger.e('DELETE $path failed: ${e.message}');
+      final resolved = _resolvePath(path);
+      _logger.e('DELETE $resolved failed: ${e.message}');
       throw _handleError(e);
     }
   }
@@ -128,15 +143,17 @@ class ApiClient {
     Options? options,
   }) async {
     try {
-      _logger.i('PATCH $path');
+      final resolved = _resolvePath(path);
+      _logger.i('PATCH $resolved');
       return await _dio.patch<T>(
-        path,
+        resolved,
         data: data,
         queryParameters: queryParameters,
         options: options,
       );
     } on DioException catch (e) {
-      _logger.e('PATCH $path failed: ${e.message}');
+      final resolved = _resolvePath(path);
+      _logger.e('PATCH $resolved failed: ${e.message}');
       throw _handleError(e);
     }
   }
@@ -247,8 +264,8 @@ class _AuthInterceptor extends Interceptor {
     ErrorInterceptorHandler handler,
   ) async {
     if (err.response?.statusCode == 401) {
-      _logger.w('Received 401 - Dispatching AuthException for re-login');
-      // Removed eager token clearing to support multi-device login properly.
+      _logger.w('Received 401 - Clearing token and dispatching AuthException for re-login');
+      await _storage.clearToken();
     }
     super.onError(err, handler);
   }

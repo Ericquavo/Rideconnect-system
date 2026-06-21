@@ -235,3 +235,10 @@ final notificationFCMTokenProvider = FutureProvider.autoDispose<String?>((
   final notificationService = ref.watch(notificationServiceProvider);
   return await notificationService.getFCMToken();
 });
+
+final demandOpportunityProvider = StreamProvider<Map<String, dynamic>>((ref) {
+  return FirebaseMessaging.onMessage
+      .where((msg) => msg.data['type'] == 'demand_opportunity')
+      .map((msg) => msg.data);
+});
+

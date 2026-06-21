@@ -12,6 +12,9 @@ import '../../features/trips/presentation/pages/create_trip_page.dart';
 import '../../features/trips/presentation/pages/trip_history_page.dart';
 import '../../features/trips/presentation/pages/trip_matching_page.dart';
 import '../../services/passenger_api.dart';
+import '../../core/config/feature_flags.dart';
+import '../../features/transport_order/presentation/screens/create_transport_order_screen.dart';
+import '../../features/transport_order/presentation/screens/transport_history_screen.dart';
 
 /// Main Passenger Dashboard — hosts the bottom navigation and all sub-pages.
 class PassengerDashboard extends StatefulWidget {
@@ -37,7 +40,6 @@ class _PassengerDashboardState extends State<PassengerDashboard> {
   bool _showNotificationsPage = false;
 
   int _notifCount = 0;
-  List<Map<String, dynamic>> _activeTrips = [];
   final PassengerLanguageService _lang = PassengerLanguageService.instance;
   Timer? _notificationTimer;
 
@@ -60,27 +62,27 @@ class _PassengerDashboardState extends State<PassengerDashboard> {
     _syncNotificationTimer();
     
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _fetchActiveTrips();
+      _checkActiveTrip();
     });
   }
 
-  Future<void> _fetchActiveTrips() async {
+  Future<void> _checkActiveTrip() async {
     try {
-      final allTrips = await PassengerApi.instance.getTrips();
-      final activeTrips = allTrips.where((source) {
-        final statusRaw = source['status'] ?? source['trip_status'];
-        if (statusRaw == null) return false;
-        final rawStatus = statusRaw.toString().toUpperCase();
-        return !rawStatus.contains('COMPLETE') &&
-            !rawStatus.contains('CANCEL') &&
-            rawStatus != 'EXPIRED' &&
-            !rawStatus.contains('FAILED');
-      }).toList();
-
-      if (mounted) {
-        setState(() {
-          _activeTrips = activeTrips;
-        });
+      final data = await PassengerApi.instance.getActiveTrip();
+      final source = data['trip'] is Map<String, dynamic> ? data['trip'] as Map<String, dynamic> : data;
+      
+      final tripIdRaw = source['trip_id'] ?? source['id'];
+      final statusRaw = source['status'] ?? source['trip_status'];
+      
+      if (tripIdRaw != null && statusRaw != null) {
+        final tripId = int.tryParse(tripIdRaw.toString());
+        final status = statusRaw.toString();
+        final rawStatus = status.toUpperCase();
+        
+        if (tripId != null && !rawStatus.contains('COMPLETE') && !rawStatus.contains('CANCEL') && rawStatus != 'EXPIRED' && !rawStatus.contains('FAILED')) {
+          if (!mounted) return;
+          _showActiveTripRecoveryModal(tripId, status, source);
+        }
       }
     } catch (_) {
       // Ignore if no active trip or network error
@@ -142,11 +144,15 @@ class _PassengerDashboardState extends State<PassengerDashboard> {
         onOpenNotifications: _openNotifications,
         onOpenProfile: _openProfileFromHome,
       ),
-      CreateTripPage(onTripCreated: _onBookingCompleted),
-      TripHistoryPage(
-        key: ValueKey(_tripsRefreshToken),
-        bookingSuccessNonce: _bookingSuccessNonce,
-      ),
+      FeatureFlags.useTransportOrderFlow
+          ? const CreateTransportOrderScreen()
+          : CreateTripPage(onTripCreated: _onBookingCompleted),
+      FeatureFlags.useTransportOrderFlow
+          ? const TransportHistoryScreen()
+          : TripHistoryPage(
+              key: ValueKey(_tripsRefreshToken),
+              bookingSuccessNonce: _bookingSuccessNonce,
+            ),
       ProfilePage(name: _passengerName, email: _passengerEmail),
     ];
   }
@@ -191,7 +197,6 @@ class _PassengerDashboardState extends State<PassengerDashboard> {
   }
 
   Future<void> _refreshUnreadCount() async {
-    _fetchActiveTrips();
     if (!_canAutoRefreshBadge) return;
     try {
       final count = await mobileFlowApi.getUnreadCount();
@@ -229,77 +234,49 @@ class _PassengerDashboardState extends State<PassengerDashboard> {
         backgroundColor: scaffoldColor,
         body: content,
         bottomNavigationBar: _buildBottomNav(),
-        floatingActionButton: _activeTrips.isNotEmpty
-            ? FloatingActionButton.extended(
-                onPressed: _showActiveTripsBottomSheet,
-                backgroundColor: const Color(0xFF6C63FF),
-                icon: const Icon(Icons.directions_car, color: Colors.white),
-                label: Text('${_activeTrips.length} Active Trips', style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.bold)),
-              )
-            : null,
       ),
     );
   }
 
-  void _showActiveTripsBottomSheet() {
-    showModalBottomSheet(
+  void _showActiveTripRecoveryModal(int tripId, String status, Map<String, dynamic> tripData) {
+    showDialog(
       context: context,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
-      isScrollControlled: true,
-      builder: (ctx) {
-        return Container(
-          padding: const EdgeInsets.all(24),
-          constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.7),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('Active Trips', style: GoogleFonts.poppins(fontSize: 20, fontWeight: FontWeight.bold)),
-              const SizedBox(height: 16),
-              Flexible(
-                child: ListView.separated(
-                  shrinkWrap: true,
-                  itemCount: _activeTrips.length,
-                  separatorBuilder: (c, i) => const Divider(),
-                  itemBuilder: (c, i) {
-                    final trip = _activeTrips[i];
-                    final tripId = int.tryParse((trip['trip_id'] ?? trip['id']).toString());
-                    final status = (trip['status'] ?? trip['trip_status']).toString();
-                    final pickup = trip['pickup_location']?.toString() ?? 'Pickup';
-                    final dropoff = trip['dropoff_location']?.toString() ?? 'Dropoff';
-
-                    return ListTile(
-                      contentPadding: EdgeInsets.zero,
-                      leading: CircleAvatar(
-                        backgroundColor: const Color(0xFF6C63FF).withOpacity(0.1),
-                        child: const Icon(Icons.location_on, color: Color(0xFF6C63FF)),
-                      ),
-                      title: Text('$pickup → $dropoff', style: GoogleFonts.poppins(fontSize: 14, fontWeight: FontWeight.w600)),
-                      subtitle: Text('Status: $status', style: GoogleFonts.poppins(fontSize: 12, color: Colors.grey)),
-                      trailing: const Icon(Icons.chevron_right),
-                      onTap: () {
-                        Navigator.pop(ctx);
-                        if (tripId != null) {
-                          Navigator.of(context).push(
-                            MaterialPageRoute(
-                              builder: (_) => TripMatchingPage(
-                                tripId: tripId,
-                                initialStatus: status,
-                                initialMatchingStatus: trip['matching_status']?.toString(),
-                                initialData: trip,
-                              ),
-                            ),
-                          );
-                        }
-                      },
-                    );
-                  },
-                ),
-              ),
-            ],
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        title: Text('Trip in Progress', style: GoogleFonts.poppins(fontWeight: FontWeight.bold)),
+        content: Text('You have a trip in progress. Would you like to view your active trip or cancel it to request a new one?', style: GoogleFonts.poppins()),
+        actions: [
+          TextButton(
+            onPressed: () async {
+              Navigator.pop(ctx);
+              try {
+                await PassengerApi.instance.cancelMotorVehicleTrip(tripId, reason: 'User cancelled from recovery modal');
+                if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Trip cancelled.')));
+              } catch (e) {
+                if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to cancel trip: $e')));
+              }
+            },
+            child: Text('Cancel Trip', style: GoogleFonts.poppins(color: Colors.red)),
           ),
-        );
-      },
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => TripMatchingPage(
+                    tripId: tripId,
+                    initialStatus: status,
+                    initialMatchingStatus: tripData['matching_status']?.toString(),
+                    initialData: tripData,
+                  ),
+                ),
+              );
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF6C63FF)),
+            child: Text('View Trip', style: GoogleFonts.poppins(color: Colors.white)),
+          ),
+        ],
+      ),
     );
   }
 

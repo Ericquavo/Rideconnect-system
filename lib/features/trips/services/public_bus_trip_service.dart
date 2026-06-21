@@ -120,23 +120,20 @@ class PublicBusTripService {
       );
 
       final payload = <String, dynamic>{
-        'transport_type': 'PUBLIC_BUS',
-        'seats_reserved': seatsReserved,
-        'corridor_id': corridorId,
-        'boarding_stop_id': boardingStopId,
-        'destination_stop_id': destinationStopId,
-        if (busRouteAssignmentId != null)
-          'bus_route_assignment_id': busRouteAssignmentId,
-        if (pickupLocation != null) 'pickup_location': pickupLocation,
-        if (pickupLat != null) 'pickup_lat': pickupLat,
-        if (pickupLng != null) 'pickup_lng': pickupLng,
-        if (dropoffLocation != null) 'dropoff_location': dropoffLocation,
-        if (dropoffLat != null) 'dropoff_lat': dropoffLat,
-        if (dropoffLng != null) 'dropoff_lng': dropoffLng,
+        'pickup_stop': pickupLocation ?? 'Boarding Stop $boardingStopId',
+        'pickup_lat': pickupLat ?? -1.9440,
+        'pickup_lng': pickupLng ?? 30.0610,
+        'dropoff_stop': dropoffLocation ?? 'Destination Stop $destinationStopId',
+        'dropoff_lat': dropoffLat ?? -1.9536,
+        'dropoff_lng': dropoffLng ?? 30.0928,
+        'route_id': corridorId.toString(),
+        'driver_id': busRouteAssignmentId ?? 78,
+        'passenger_count': seatsReserved,
+        'preferred_time': 'now',
       };
 
       final response = await _api.post(
-        '/passenger/public-bus/request',
+        '/v3/trips/public-bus/request',
         payload,
       );
 
@@ -163,7 +160,7 @@ class PublicBusTripService {
   Future<PublicBusTripStatus> getBusRequest(int requestId) async {
     try {
       final response = await _api.get(
-        '/passenger/public-bus/requests/$requestId',
+        '/v3/trips/$requestId/status',
       );
 
       final data =

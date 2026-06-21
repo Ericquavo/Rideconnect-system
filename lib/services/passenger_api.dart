@@ -36,7 +36,7 @@ class PassengerApi {
   }
 
   Future<Map<String, dynamic>> updateProfile(Map<String, dynamic> payload) =>
-      _put('/profile', payload);
+      _request('POST', '/mobile/profile/update', body: payload, useRootBaseUrl: true);
 
   Future<Map<String, dynamic>> getStats() => _get('/stats');
 
@@ -412,6 +412,10 @@ class PassengerApi {
 
   Future<Map<String, dynamic>> cancelTrip(dynamic tripId) =>
       _put('/trips/$tripId/cancel', <String, dynamic>{});
+
+  /// Acknowledge a trip status (e.g. timeout or accepted)
+  Future<Map<String, dynamic>> acknowledgeTrip(dynamic tripId, String acknowledgementType) =>
+      _post('/trips/$tripId/acknowledge', {'acknowledgement_type': acknowledgementType});
 
   /// DEPRECATED: kept for backward compatibility. The backend has no
   /// PUT /ride-requests/{id}/cancel route. For motor-vehicle trips use

@@ -3,6 +3,7 @@ import 'package:logger/logger.dart';
 import '../../../../core/network/api_client.dart';
 import '../../../../core/network/api_endpoints.dart';
 import '../../../../core/errors/app_exception.dart';
+import '../../../../core/storage/secure_storage_service.dart';
 import '../models/auth_response.dart';
 
 abstract class IAuthDataSource {
@@ -35,12 +36,15 @@ class AuthDataSource implements IAuthDataSource {
     required String fcmToken,
   }) async {
     try {
+      final secureStorage = SecureStorageService();
+      final deviceId = await secureStorage.getOrCreateDeviceId();
       final response = await apiClient.post<Map<String, dynamic>>(
         ApiEndpoints.login,
         data: {
           'email': email,
           'password': password,
           'device_name': deviceName,
+          'device_id': deviceId,
           'fcm_token': fcmToken,
         },
       );
@@ -77,7 +81,12 @@ class AuthDataSource implements IAuthDataSource {
   @override
   Future<void> logout() async {
     try {
-      await apiClient.post(ApiEndpoints.logout);
+      final secureStorage = SecureStorageService();
+      final deviceId = await secureStorage.getOrCreateDeviceId();
+      await apiClient.post(
+        ApiEndpoints.logout,
+        data: {'device_id': deviceId},
+      );
       logger.d('Logout successful');
     } catch (e) {
       logger.e('Logout error: $e');

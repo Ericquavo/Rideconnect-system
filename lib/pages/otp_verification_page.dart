@@ -4,6 +4,7 @@ import '../auth/otp_service.dart';
 import 'passenger/passenger_dashboard.dart';
 import 'driver/driver_dashboard.dart';
 import '../auth/auth_session.dart';
+import '../repositories/auth_repository.dart';
 
 class OtpVerificationPage extends StatefulWidget {
   final String email;
@@ -67,6 +68,9 @@ class _OtpVerificationPageState extends State<OtpVerificationPage> {
     final isDriver = normalizedRole == 'driver';
 
     if (isPassenger) {
+      if (result.token != null) {
+        await AuthRepository.instance.saveToken(result.token!);
+      }
       await AuthSession.save(
         role: normalizedRole,
         name: result.name ?? 'Passenger',
@@ -85,6 +89,9 @@ class _OtpVerificationPageState extends State<OtpVerificationPage> {
         (_) => false,
       );
     } else if (isDriver) {
+      if (result.token != null) {
+        await AuthRepository.instance.saveToken(result.token!);
+      }
       await AuthSession.save(
         role: normalizedRole,
         name: result.name ?? 'Driver',

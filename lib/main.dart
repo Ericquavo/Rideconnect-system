@@ -23,6 +23,8 @@ import 'screens/passenger/motorcycle_request_screen.dart';
 import 'screens/passenger/searching_driver_screen.dart';
 import 'screens/passenger/trip_tracking_screen.dart';
 import 'screens/passenger/live_driver_map_screen.dart';
+import 'core/config/feature_flags.dart';
+import 'features/transport_order/presentation/screens/transport_tracking_screen.dart';
 import 'screens/passenger/my_trips_screen.dart';
 import 'screens/passenger/trip_details_screen.dart';
 import 'screens/passenger/rate_driver_screen.dart';
@@ -35,7 +37,6 @@ import 'services/driver_preferences_service.dart';
 import 'services/passenger_preferences_service.dart';
 import 'services/passenger_language_service.dart';
 import 'services/driver_language_service.dart';
-import 'services/fcm_service.dart';
 import 'services/heartbeat_service.dart';
 
 Future<void> main() async {
@@ -47,7 +48,6 @@ Future<void> main() async {
   await PassengerPreferencesService.init();
   await PassengerLanguageService.instance.init();
   await DriverLanguageService.instance.ensureInitialized();
-  await FcmService.instance.initialize();
 
   // Initialize Firebase (RTDB only, no Firestore) and auth
   await AppInitializer.initialize();
@@ -338,7 +338,12 @@ Route<dynamic>? _onGenerateRoute(RouteSettings settings) {
   if (segments.length == 2 && segments[0] == 'trips') {
     final id = extractId(1, 'tripId');
     if (id != null) {
-      return _slide(TripDetailsScreen(tripId: id), settings);
+      return _slide(
+        FeatureFlags.useTransportOrderFlow
+            ? const TransportTrackingScreen() // Note: No ID passed yet for placeholder
+            : TripDetailsScreen(tripId: id),
+        settings,
+      );
     }
   }
 
@@ -346,7 +351,12 @@ Route<dynamic>? _onGenerateRoute(RouteSettings settings) {
   if (segments.length == 3 && segments[0] == 'trip' && segments[1] == 'track') {
     final id = extractId(2);
     if (id != null) {
-      return _slide(TripTrackingScreen(tripId: id), settings);
+      return _slide(
+        FeatureFlags.useTransportOrderFlow
+            ? const TransportTrackingScreen()
+            : TripTrackingScreen(tripId: id),
+        settings,
+      );
     }
   }
 

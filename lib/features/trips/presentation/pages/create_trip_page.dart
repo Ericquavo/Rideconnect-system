@@ -8,6 +8,7 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'matching_lifecycle_pages.dart';
 import 'trip_matching_page.dart';
 import 'location_picker_page.dart';
+import 'best_matches_driver_page.dart';
 import '../../domain/matching_lifecycle_models.dart';
 import '../../domain/trip_models.dart';
 import '../providers/trip_providers.dart';
@@ -28,8 +29,8 @@ class _CreateTripPageState extends ConsumerState<CreateTripPage> {
   final _pickupController = TextEditingController();
   final _destinationController = TextEditingController();
   final _notesController = TextEditingController();
-  String _vehicleType = 'CAR';
-  String _tripType = 'private';
+  String _vehicleType = 'MOTORCYCLE';
+  String _tripType = 'moto';
   String _scheduleMode = 'immediate';
   String _paymentMethod = 'cash';
   int _seatCount = 1;
@@ -238,7 +239,7 @@ class _CreateTripPageState extends ConsumerState<CreateTripPage> {
         ),
         vehicleType: _vehicleType,
         seatCount: _vehicleType == 'MOTORCYCLE' ? 1 : _seatCount,
-        tripType: _tripType,
+        tripType: _tripType == 'moto' ? 'private' : _tripType,
         scheduleMode: _scheduleMode,
         paymentMethod: _paymentMethod,
         departureTime: _scheduleMode == 'scheduled' ? _departureTime : null,
@@ -259,84 +260,46 @@ class _CreateTripPageState extends ConsumerState<CreateTripPage> {
         debugPrint(
           '[CreateTripPage] Moto trip request succeeded: tripId=$tripId status=${snapshot.status}',
         );
+
         widget.onTripCreated?.call();
         if (!mounted) return;
 
+        // Navigate to manual driver candidate selection screen
         await Navigator.of(context).push(
           MaterialPageRoute(
-            builder:
-                (_) => TripMatchingPage(
-                  tripId: tripId,
-                  initialStatus:
-                      snapshot.trip?.status.apiValue ??
-                      snapshot.status.apiValue,
-                  initialData: {
-                    if (snapshot.trip?.fare != null)
-                      'estimated_fare': snapshot.trip!.fare,
-                  },
-                ),
+            builder: (_) => BestMatchesDriverPage(
+              tripId: tripId,
+              candidates: snapshot.candidates,
+              initialFare: snapshot.trip?.fare ?? snapshot.candidates.firstOrNull?.estimatedFare,
+            ),
           ),
         );
         return;
       }
 
-      // Step 1: Find available drivers first
-      debugPrint('[CreateTripPage] Step 1: Matching drivers...');
-      final matchingSession = await tripRepo.matchPassengerDrivers(
-        transportType: _vehicleType,
-        pickupLat: _pickupLatLng!.latitude,
-        pickupLng: _pickupLatLng!.longitude,
-        dropoffLat: _destinationLatLng!.latitude,
-        dropoffLng: _destinationLatLng!.longitude,
-      );
+      if (_vehicleType == 'CAR') {
+        debugPrint('[CreateTripPage] Requesting Private Car trip directly...');
+        final snapshot = await tripRepo.requestPrivateCarTrip(request);
+        final tripId = snapshot.trip?.id ?? 0;
+        if (tripId <= 0) {
+          throw Exception(
+            'Trip request was accepted but the server did not return a valid trip ID.',
+          );
+        }
 
-      if (matchingSession.drivers.isEmpty) {
-        setState(
-          () =>
-              _error =
-                  _vehicleType == 'MOTORCYCLE'
-                      ? 'No motorcycle drivers are currently available nearby. Please try again later or choose a car ride.'
-                      : 'No available drivers found for this route. Please try again.',
+        debugPrint(
+          '[CreateTripPage] Private Car trip request succeeded: tripId=$tripId status=${snapshot.status}',
+        );
+        widget.onTripCreated?.call();
+        if (!mounted) return;
+
+        await Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => MatchingInProgressPage(tripId: tripId),
+          ),
         );
         return;
       }
-
-      debugPrint(
-        '[CreateTripPage] Found ${matchingSession.drivers.length} drivers',
-      );
-
-      // Step 2: Request the trip through the mobile trips API so it is
-      // persisted as a real trip that matching and driver screens can load.
-      final firstDriver = matchingSession.drivers.first;
-
-      debugPrint(
-        '[CreateTripPage] Step 2: Requesting $_vehicleType trip with driver ${firstDriver.driverId}',
-      );
-
-      final snapshot = await tripRepo.requestMatchedTrip(
-        request.copyWith(
-          driverId: firstDriver.driverId,
-          matchingSessionId: matchingSession.matchingSessionId,
-        ),
-      );
-
-      final tripId = snapshot.trip?.id ?? 0;
-      if (tripId <= 0) {
-        throw Exception(
-          'Trip request was accepted but the server did not return a valid trip ID.',
-        );
-      }
-
-      debugPrint('[CreateTripPage] Trip request succeeded: tripId=$tripId');
-      widget.onTripCreated?.call();
-      if (!mounted) return;
-
-      // Navigate to trip status page
-      await Navigator.of(context).push(
-        MaterialPageRoute(
-          builder: (_) => MatchingInProgressPage(tripId: tripId),
-        ),
-      );
     } catch (e) {
       debugPrint('[CreateTripPage] Error: $e');
       debugPrint('[CreateTripPage] Error type: ${e.runtimeType}');
@@ -366,9 +329,9 @@ class _CreateTripPageState extends ConsumerState<CreateTripPage> {
 
   double _estimateFare() {
     final base = switch (_vehicleType) {
-      'MOTORCYCLE' => 1200.0,
-      'BUS' => 600.0,
-      _ => 2500.0,
+      'MOTORCYCLE' => 720.0,
+      'BUS' => 300.0,
+      _ => 1500.0,
     };
     return base * _seatCount;
   }
@@ -432,163 +395,92 @@ class _CreateTripPageState extends ConsumerState<CreateTripPage> {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     return Scaffold(
-      appBar: AppBar(title: const Text('Create Trip')),
+      backgroundColor: isDark ? const Color(0xFF0A0E1A) : const Color(0xFFF8F9FE),
       body: SafeArea(
         child: Form(
           key: _formKey,
           child: ListView(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
             children: [
-              SegmentedButton<String>(
-                segments: const [
-                  ButtonSegment(
-                    value: 'private',
-                    label: Text('Private'),
-                    icon: Icon(Icons.directions_car),
-                  ),
-                  ButtonSegment(
-                    value: 'public',
-                    label: Text('Public'),
-                    icon: Icon(Icons.directions_bus),
-                  ),
-                  ButtonSegment(
-                    value: 'moto',
-                    label: Text('Moto'),
-                    icon: Icon(Icons.two_wheeler),
-                  ),
-                ],
-                selected: {_tripType},
-                onSelectionChanged: (value) {
-                  final type = value.first;
-                  if (type == 'public') {
-                    Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (_) => const PublicBusBookingPage(),
-                      ),
-                    );
-                    return;
-                  }
-                  setState(() {
-                    _tripType = type;
-                    _vehicleType = type == 'moto' ? 'MOTORCYCLE' : 'CAR';
-                  });
-                },
+              Text(
+                'Request V3 Ride',
+                style: GoogleFonts.poppins(
+                  fontSize: 24,
+                  fontWeight: FontWeight.w600,
+                  color: isDark ? Colors.white : const Color(0xFF0F172A),
+                ),
               ),
-              const SizedBox(height: 16),
-              _buildLocationField(
-                _pickupController,
-                'Pickup location',
-                Icons.my_location_rounded,
+              const SizedBox(height: 24),
+              _buildTabSelector(isDark),
+              const SizedBox(height: 24),
+              _buildCustomLocationField(
+                controller: _pickupController,
+                label: 'Pickup location',
+                prefixIcon: Icons.gps_fixed_rounded,
                 onMapTap: _openPickupLocationPicker,
-              ),
-              TextButton.icon(
-                onPressed: _useCurrentLocation,
-                icon: const Icon(Icons.gps_fixed_rounded),
-                label: const Text('Use current location'),
-              ),
-              _buildLocationField(
-                _destinationController,
-                'Destination',
-                Icons.location_on_rounded,
-                onMapTap: _openDestinationLocationPicker,
-              ),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  Expanded(
-                    child: DropdownButtonFormField<int>(
-                      value: _seatCount,
-                      decoration: const InputDecoration(labelText: 'Seats'),
-                      items:
-                          List.generate(6, (i) => i + 1)
-                              .map(
-                                (v) => DropdownMenuItem(
-                                  value: v,
-                                  child: Text('$v'),
-                                ),
-                              )
-                              .toList(),
-                      onChanged: (v) => setState(() => _seatCount = v ?? 1),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: DropdownButtonFormField<String>(
-                      value: _paymentMethod,
-                      decoration: const InputDecoration(labelText: 'Payment'),
-                      items: const [
-                        DropdownMenuItem(value: 'cash', child: Text('Cash')),
-                        DropdownMenuItem(
-                          value: 'mobile_money',
-                          child: Text('Mobile Money'),
-                        ),
-                        DropdownMenuItem(value: 'card', child: Text('Card')),
-                      ],
-                      onChanged:
-                          (v) => setState(() => _paymentMethod = v ?? 'cash'),
-                    ),
-                  ),
-                ],
-              ),
-              SwitchListTile(
-                value: _scheduleMode == 'scheduled',
-                onChanged: (value) {
-                  if (value) {
-                    _pickSchedule();
-                  } else {
-                    setState(() => _scheduleMode = 'immediate');
-                  }
-                },
-                title: const Text('Schedule trip'),
-                subtitle: Text(
-                  _departureTime?.toLocal().toString() ?? 'Immediate booking',
-                ),
-              ),
-              TextFormField(
-                controller: _notesController,
-                minLines: 2,
-                maxLines: 4,
-                decoration: const InputDecoration(labelText: 'Notes'),
-              ),
-              const SizedBox(height: 14),
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: isDark ? Colors.white10 : const Color(0xFFEFF4FF),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Row(
-                  children: [
-                    const Icon(
-                      Icons.payments_rounded,
-                      color: Color(0xFF10B981),
-                    ),
-                    const SizedBox(width: 10),
-                    Text(
-                      'Estimated fare: ${_estimateFare().toStringAsFixed(0)}',
-                      style: GoogleFonts.poppins(fontWeight: FontWeight.w700),
-                    ),
-                  ],
-                ),
-              ),
-              if (_error != null) ...[
-                const SizedBox(height: 12),
-                Text(_error!, style: const TextStyle(color: Color(0xFFFF5E5B))),
-              ],
-              const SizedBox(height: 18),
-              ElevatedButton.icon(
-                onPressed: _submitting ? null : _submit,
-                icon:
-                    _submitting
-                        ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                        : const Icon(Icons.send_rounded),
-                label: const Text('Request Trip'),
+                context: context,
               ),
               const SizedBox(height: 8),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton.icon(
+                  onPressed: _useCurrentLocation,
+                  style: TextButton.styleFrom(
+                    padding: EdgeInsets.zero,
+                    foregroundColor: const Color(0xFF4C57D6),
+                  ),
+                  icon: const Icon(Icons.my_location_rounded, size: 16),
+                  label: Text(
+                    'Use current location',
+                    style: GoogleFonts.poppins(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+              _buildCustomLocationField(
+                controller: _destinationController,
+                label: 'Destination',
+                prefixIcon: Icons.location_on_rounded,
+                onMapTap: _openDestinationLocationPicker,
+                context: context,
+              ),
+              const SizedBox(height: 24),
+              _buildPaymentDropdown(isDark),
+              if (_vehicleType == 'CAR') ...[
+                const SizedBox(height: 16),
+                _buildSeatSelector(isDark),
+              ],
+              const SizedBox(height: 16),
+              _buildNotesField(isDark),
+              const SizedBox(height: 16),
+              _buildScheduleTile(isDark),
+              const SizedBox(height: 24),
+              _buildFareEstimate(isDark),
+              if (_error != null) ...[
+                const SizedBox(height: 16),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFFECEB),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: const Color(0xFFFF5E5B).withOpacity(0.3)),
+                  ),
+                  child: Text(
+                    _error!,
+                    style: GoogleFonts.poppins(
+                      color: const Color(0xFFFF5E5B),
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+              ],
+              const SizedBox(height: 32),
+              _buildRequestButton(),
+              const SizedBox(height: 24),
             ],
           ),
         ),
@@ -596,30 +488,338 @@ class _CreateTripPageState extends ConsumerState<CreateTripPage> {
     );
   }
 
-  Widget _buildLocationField(
-    TextEditingController controller,
-    String label,
-    IconData icon, {
+  Widget _buildTabSelector(bool isDark) {
+    final borderColor = isDark ? Colors.white24 : Colors.black;
+
+    Widget buildTab(String value, String label, IconData icon, {bool showCheck = false}) {
+      final isSelected = _tripType == value;
+      final selectedColor = const Color(0xFF3B82F6); // Blue color as in the reference image
+
+      return Expanded(
+        child: GestureDetector(
+          onTap: () {
+            if (value == 'public') {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => const PublicBusBookingPage(),
+                ),
+              );
+              return;
+            }
+            setState(() {
+              _tripType = value;
+              _vehicleType = value == 'moto' ? 'MOTORCYCLE' : 'CAR';
+            });
+          },
+          child: Container(
+            padding: const EdgeInsets.symmetric(vertical: 12),
+            decoration: BoxDecoration(
+              color: isSelected ? selectedColor : Colors.transparent,
+              borderRadius: value == 'moto'
+                  ? const BorderRadius.horizontal(left: Radius.circular(20))
+                  : value == 'public'
+                      ? const BorderRadius.horizontal(right: Radius.circular(20))
+                      : BorderRadius.zero,
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  showCheck && isSelected ? Icons.check : icon,
+                  size: 16,
+                  color: isSelected ? Colors.white : (isDark ? Colors.white70 : Colors.black),
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  label,
+                  style: GoogleFonts.poppins(
+                    fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+                    color: isSelected ? Colors.white : (isDark ? Colors.white70 : Colors.black),
+                    fontSize: 13,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Container(
+      decoration: BoxDecoration(
+        border: Border.all(color: borderColor, width: 1.2),
+        borderRadius: BorderRadius.circular(20),
+        color: isDark ? Colors.white.withOpacity(0.05) : Colors.white,
+      ),
+      child: Row(
+        children: [
+          buildTab('moto', 'Moto', Icons.two_wheeler, showCheck: true),
+          Container(width: 1.2, height: 40, color: borderColor),
+          buildTab('private', 'Private', Icons.directions_car),
+          Container(width: 1.2, height: 40, color: borderColor),
+          buildTab('public', 'Public', Icons.directions_bus),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCustomLocationField({
+    required TextEditingController controller,
+    required String label,
+    required IconData prefixIcon,
     required VoidCallback onMapTap,
+    required BuildContext context,
   }) {
-    return TextFormField(
-      controller: controller,
-      readOnly: true,
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final borderColor = isDark ? Colors.white24 : Colors.black;
+
+    return Container(
+      decoration: BoxDecoration(
+        border: Border.all(color: borderColor, width: 1.2),
+        borderRadius: BorderRadius.circular(10),
+        color: isDark ? Colors.white.withOpacity(0.05) : Colors.white,
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 14),
+      child: Row(
+        children: [
+          Icon(prefixIcon, color: isDark ? Colors.white70 : Colors.black, size: 20),
+          const SizedBox(width: 12),
+          Expanded(
+            child: TextFormField(
+              controller: controller,
+              readOnly: true,
+              onTap: onMapTap,
+              style: GoogleFonts.poppins(
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+                color: isDark ? Colors.white : Colors.black,
+              ),
+              decoration: InputDecoration(
+                hintText: label,
+                hintStyle: GoogleFonts.poppins(
+                  color: isDark ? Colors.white38 : Colors.black45,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                ),
+                border: InputBorder.none,
+                contentPadding: const EdgeInsets.symmetric(vertical: 16),
+              ),
+              validator: (value) =>
+                  value == null || value.trim().isEmpty ? '$label is required.' : null,
+            ),
+          ),
+          IconButton(
+            icon: Icon(
+              Icons.map_outlined,
+              color: isDark ? Colors.white70 : Colors.black,
+              size: 20,
+            ),
+            onPressed: onMapTap,
+            tooltip: 'Select on map',
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPaymentDropdown(bool isDark) {
+    return Theme(
+      data: Theme.of(context).copyWith(
+        canvasColor: isDark ? const Color(0xFF131729) : Colors.white,
+      ),
+      child: DropdownButtonFormField<String>(
+        value: _paymentMethod,
+        dropdownColor: isDark ? const Color(0xFF131729) : Colors.white,
+        decoration: InputDecoration(
+          labelText: 'Payment Method',
+          labelStyle: GoogleFonts.poppins(
+            color: isDark ? Colors.white70 : Colors.black87,
+            fontSize: 12,
+            fontWeight: FontWeight.w500,
+          ),
+          floatingLabelBehavior: FloatingLabelBehavior.always,
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(10),
+            borderSide: BorderSide(
+              color: isDark ? Colors.white24 : Colors.black,
+              width: 1.2,
+            ),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(10),
+            borderSide: BorderSide(
+              color: isDark ? Colors.white24 : Colors.black,
+              width: 1.2,
+            ),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(10),
+            borderSide: const BorderSide(
+              color: Color(0xFF6C63FF),
+              width: 1.5,
+            ),
+          ),
+          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        ),
+        style: GoogleFonts.poppins(
+          color: isDark ? Colors.white : Colors.black,
+          fontSize: 14,
+          fontWeight: FontWeight.w600,
+        ),
+        items: const [
+          DropdownMenuItem(value: 'cash', child: Text('Cash')),
+          DropdownMenuItem(value: 'mobile_money', child: Text('Mobile Money')),
+          DropdownMenuItem(value: 'card', child: Text('Card')),
+        ],
+        onChanged: (v) => setState(() => _paymentMethod = v ?? 'cash'),
+      ),
+    );
+  }
+
+  Widget _buildSeatSelector(bool isDark) {
+    return DropdownButtonFormField<int>(
+      value: _seatCount,
       decoration: InputDecoration(
-        labelText: label,
-        prefixIcon: Icon(icon),
-        suffixIcon: IconButton(
-          icon: const Icon(Icons.map_rounded),
-          onPressed: onMapTap,
-          tooltip: 'Select on map',
+        labelText: 'Seats',
+        labelStyle: GoogleFonts.poppins(color: isDark ? Colors.white70 : Colors.black87),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+      ),
+      items: List.generate(6, (i) => i + 1)
+          .map(
+            (v) => DropdownMenuItem(
+              value: v,
+              child: Text('$v', style: GoogleFonts.poppins()),
+            ),
+          )
+          .toList(),
+      onChanged: (v) => setState(() => _seatCount = v ?? 1),
+    );
+  }
+
+  Widget _buildNotesField(bool isDark) {
+    return TextFormField(
+      controller: _notesController,
+      minLines: 1,
+      maxLines: 3,
+      style: GoogleFonts.poppins(fontSize: 14),
+      decoration: InputDecoration(
+        labelText: 'Notes for driver',
+        labelStyle: GoogleFonts.poppins(color: isDark ? Colors.white70 : Colors.black87),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+      ),
+    );
+  }
+
+  Widget _buildScheduleTile(bool isDark) {
+    return Container(
+      decoration: BoxDecoration(
+        border: Border.all(color: isDark ? Colors.white24 : Colors.grey.shade300),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: SwitchListTile(
+        value: _scheduleMode == 'scheduled',
+        onChanged: (value) {
+          if (value) {
+            _pickSchedule();
+          } else {
+            setState(() => _scheduleMode = 'immediate');
+          }
+        },
+        title: Text(
+          'Schedule Trip',
+          style: GoogleFonts.poppins(fontSize: 14, fontWeight: FontWeight.w600),
+        ),
+        subtitle: Text(
+          _departureTime != null && _scheduleMode == 'scheduled'
+              ? _departureTime!.toLocal().toString().substring(0, 16)
+              : 'Immediate booking',
+          style: GoogleFonts.poppins(fontSize: 12),
         ),
       ),
-      validator:
-          (value) =>
-              value == null || value.trim().isEmpty
-                  ? '$label is required.'
-                  : null,
-      onTap: onMapTap,
+    );
+  }
+
+  Widget _buildFareEstimate(bool isDark) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: isDark ? Colors.white.withOpacity(0.05) : const Color(0xFFEFF4FF),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFF4C57D6).withOpacity(0.2)),
+      ),
+      child: Row(
+        children: [
+          const Icon(
+            Icons.payments_rounded,
+            color: Color(0xFF10B981),
+            size: 24,
+          ),
+          const SizedBox(width: 12),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Estimated Fare',
+                style: GoogleFonts.poppins(
+                  fontSize: 12,
+                  color: isDark ? Colors.white70 : Colors.black54,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                'RWF ${_estimateFare().toStringAsFixed(0)}',
+                style: GoogleFonts.poppins(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: isDark ? Colors.white : const Color(0xFF0F172A),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRequestButton() {
+    return SizedBox(
+      width: double.infinity,
+      height: 56,
+      child: ElevatedButton(
+        onPressed: _submitting ? null : _submit,
+        style: ElevatedButton.styleFrom(
+          backgroundColor: const Color(0xFF6C63FF),
+          foregroundColor: Colors.white,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(28),
+          ),
+          elevation: 2,
+        ),
+        child: _submitting
+            ? const SizedBox(
+                width: 24,
+                height: 24,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2.5,
+                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                ),
+              )
+            : Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.send_rounded, size: 20),
+                  const SizedBox(width: 10),
+                  Text(
+                    'Request Trip Now',
+                    style: GoogleFonts.poppins(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+      ),
     );
   }
 }

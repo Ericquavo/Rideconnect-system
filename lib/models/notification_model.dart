@@ -70,6 +70,7 @@ class FCMNotificationPayload {
   static const String driverTripCancelled = 'TRIP_CANCELLED';
   static const String driverTripCompleted = 'TRIP_COMPLETED';
   static const String driverRatingReceived = 'RATING_RECEIVED';
+  static const String driverDemandOpportunity = 'demand_opportunity';
 }
 
 /// Notification event for stream
