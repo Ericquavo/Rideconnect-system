@@ -2,25 +2,29 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 
-import '../../../../core/errors/app_exception.dart';
+import '../../../../auth/auth_api.dart';
 import '../../../../services/app_theme_service.dart';
-import '../providers/auth_provider.dart';
-import '../widgets/error_dialog.dart';
-import 'signup_page.dart';
 
-class LoginPage extends ConsumerStatefulWidget {
-  const LoginPage({super.key});
+class SignupPage extends ConsumerStatefulWidget {
+  const SignupPage({super.key});
 
   @override
-  ConsumerState<LoginPage> createState() => _LoginPageState();
+  ConsumerState<SignupPage> createState() => _SignupPageState();
 }
 
-class _LoginPageState extends ConsumerState<LoginPage>
+class _SignupPageState extends ConsumerState<SignupPage>
     with SingleTickerProviderStateMixin {
   final _formKey = GlobalKey<FormState>();
+  final _nameController = TextEditingController();
   final _emailController = TextEditingController();
+  final _phoneController = TextEditingController();
   final _passwordController = TextEditingController();
+  final _confirmPasswordController = TextEditingController();
+
   bool _obscurePassword = true;
+  bool _obscureConfirm = true;
+  bool _isLoading = false;
+
   late AnimationController _animController;
   late Animation<double> _fadeAnim;
   late Animation<Offset> _slideAnim;
@@ -43,50 +47,194 @@ class _LoginPageState extends ConsumerState<LoginPage>
   @override
   void dispose() {
     _animController.dispose();
+    _nameController.dispose();
     _emailController.dispose();
+    _phoneController.dispose();
     _passwordController.dispose();
+    _confirmPasswordController.dispose();
     super.dispose();
   }
 
-  Future<void> _handleLogin() async {
+  void _showError(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        backgroundColor: const Color(0xFF1E293B),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        content: Text(
+          message,
+          style: GoogleFonts.poppins(color: Colors.white70, fontSize: 13),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _handleSignup() async {
     if (!_formKey.currentState!.validate()) return;
 
+    final name = _nameController.text.trim();
     final email = _emailController.text.trim();
+    final phone = _phoneController.text.trim();
     final password = _passwordController.text;
+    final confirmPassword = _confirmPasswordController.text;
 
     // Hide keyboard
     FocusScope.of(context).unfocus();
 
-    // Attempt login
-    final success = await ref
-        .read(authProvider.notifier)
-        .login(
-          email: email,
-          password: password,
-          deviceName: 'flutter',
-          fcmToken: 'temp-fcm-token', // TODO: Get actual FCM token
-        );
+    setState(() => _isLoading = true);
 
-    if (!mounted) return;
+    try {
+      final result = await AuthApi.register(
+        fullName: name,
+        email: email,
+        phoneNumber: phone,
+        password: password,
+        passwordConfirmation: confirmPassword,
+        role: 'passenger',
+      );
 
-    if (!success) {
-      final authState = ref.read(authProvider);
-      if (authState.error != null) {
-        _showErrorDialog(authState.error!);
+      setState(() => _isLoading = false);
+
+      if (!mounted) return;
+
+      if (!result.success) {
+        _showError(result.message);
+        return;
       }
+
+      _showSuccessDialog();
+    } catch (e) {
+      setState(() => _isLoading = false);
+      _showError('Registration failed: $e');
     }
   }
 
-  void _showErrorDialog(String errorMessage) {
+  void _showSuccessDialog() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     showDialog(
       context: context,
-      builder: (context) => ErrorDialog(message: errorMessage),
+      barrierDismissible: false,
+      barrierColor: Colors.black.withOpacity(0.7),
+      builder: (_) => Dialog(
+        backgroundColor: Colors.transparent,
+        insetPadding: const EdgeInsets.symmetric(horizontal: 28),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 36),
+          decoration: BoxDecoration(
+            color: isDark ? const Color(0xFF111827) : Colors.white,
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(
+              color: isDark ? Colors.white10 : const Color(0xFFE2E8F0),
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: const Color(0xFF2D8CFF).withOpacity(0.15),
+                blurRadius: 40,
+                spreadRadius: 4,
+              ),
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 80,
+                height: 80,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFF4C57D6), Color(0xFF2D8CFF)],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: const Color(0xFF2D8CFF).withOpacity(0.4),
+                      blurRadius: 24,
+                      spreadRadius: 2,
+                    ),
+                  ],
+                ),
+                child: const Icon(
+                  Icons.check_rounded,
+                  color: Colors.white,
+                  size: 40,
+                ),
+              ),
+              const SizedBox(height: 24),
+              Text(
+                'Account Created!',
+                style: GoogleFonts.poppins(
+                  fontSize: 22,
+                  fontWeight: FontWeight.w700,
+                  color: isDark ? Colors.white : const Color(0xFF1E293B),
+                ),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                'Welcome to RideConnect 🎉\nYour account has been successfully created.\nAwait admin approval to start booking rides.',
+                textAlign: TextAlign.center,
+                style: GoogleFonts.poppins(
+                  fontSize: 13,
+                  color: isDark ? Colors.white54 : const Color(0xFF64748B),
+                  height: 1.6,
+                ),
+              ),
+              const SizedBox(height: 30),
+              SizedBox(
+                width: double.infinity,
+                height: 52,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFF4C57D6), Color(0xFF2D8CFF)],
+                    ),
+                    borderRadius: BorderRadius.circular(14),
+                    boxShadow: [
+                      BoxShadow(
+                        color: const Color(0xFF2D8CFF).withOpacity(0.35),
+                        blurRadius: 16,
+                        offset: const Offset(0, 6),
+                      ),
+                    ],
+                  ),
+                  child: ElevatedButton.icon(
+                    onPressed: () {
+                      Navigator.of(context).pop(); // Dismiss dialog
+                      Navigator.of(context).pop(); // Back to login
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.transparent,
+                      shadowColor: Colors.transparent,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
+                    icon: const Icon(
+                      Icons.login_rounded,
+                      color: Colors.white,
+                      size: 18,
+                    ),
+                    label: Text(
+                      'Continue to Login',
+                      style: GoogleFonts.poppins(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    final authState = ref.watch(authProvider);
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
@@ -134,7 +282,7 @@ class _LoginPageState extends ConsumerState<LoginPage>
                   child: SlideTransition(
                     position: _slideAnim,
                     child: Container(
-                      constraints: const BoxConstraints(maxWidth: 400),
+                      constraints: const BoxConstraints(maxWidth: 420),
                       decoration: BoxDecoration(
                         color: isDark ? const Color(0xFF111827) : Colors.white,
                         borderRadius: BorderRadius.circular(28),
@@ -149,7 +297,10 @@ class _LoginPageState extends ConsumerState<LoginPage>
                           ),
                         ],
                       ),
-                      padding: const EdgeInsets.all(28),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 28,
+                        vertical: 36,
+                      ),
                       child: Form(
                         key: _formKey,
                         child: Column(
@@ -165,18 +316,24 @@ class _LoginPageState extends ConsumerState<LoginPage>
                             _buildLogo(),
                             const SizedBox(height: 12),
                             _buildHeader(),
-                            const SizedBox(height: 28),
-                            _buildEmailField(authState),
-                            const SizedBox(height: 16),
-                            _buildPasswordField(authState),
                             const SizedBox(height: 24),
-                            _buildLoginButton(authState),
+                            _buildNameField(),
+                            const SizedBox(height: 16),
+                            _buildEmailField(),
+                            const SizedBox(height: 16),
+                            _buildPhoneField(),
+                            const SizedBox(height: 16),
+                            _buildPasswordField(),
+                            const SizedBox(height: 16),
+                            _buildConfirmPasswordField(),
+                            const SizedBox(height: 24),
+                            _buildSignupButton(),
                             const SizedBox(height: 24),
                             _buildDivider(),
                             const SizedBox(height: 20),
-                            _buildSocialButtons(authState),
-                            const SizedBox(height: 24),
-                            _buildFooter(),
+                            _buildSocialButtons(),
+                            const SizedBox(height: 28),
+                            _buildLoginRedirect(),
                           ],
                         ),
                       ),
@@ -253,7 +410,7 @@ class _LoginPageState extends ConsumerState<LoginPage>
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         Text(
-          'Welcome Back!',
+          'Create Account',
           style: GoogleFonts.poppins(
             fontSize: 24,
             fontWeight: FontWeight.w700,
@@ -261,38 +418,42 @@ class _LoginPageState extends ConsumerState<LoginPage>
           ),
         ),
         const SizedBox(height: 6),
-        RichText(
-          textAlign: TextAlign.center,
-          text: TextSpan(
-            text: 'Login to continue your ride with ',
-            style: GoogleFonts.poppins(
-              fontSize: 13,
-              color: isDark ? Colors.white70 : const Color(0xFF666666),
-            ),
-            children: [
-              TextSpan(
-                text: 'RideConnect',
-                style: GoogleFonts.poppins(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  color: const Color(0xFF2D8CFF),
-                ),
-              ),
-            ],
+        Text(
+          'Sign up to get started with RideConnect',
+          style: GoogleFonts.poppins(
+            fontSize: 13,
+            color: isDark ? Colors.white70 : const Color(0xFF666666),
           ),
+          textAlign: TextAlign.center,
         ),
       ],
     );
   }
 
-  Widget _buildEmailField(AuthState authState) {
+  Widget _buildNameField() {
+    return _InputField(
+      controller: _nameController,
+      label: 'Full Name',
+      hint: 'e.g., John Doe',
+      prefixIcon: Icons.person_outline,
+      keyboardType: TextInputType.name,
+      enabled: !_isLoading,
+      validator: (v) {
+        if (v == null || v.isEmpty) return 'Full name is required';
+        if (v.trim().length < 3) return 'Name must be at least 3 characters';
+        return null;
+      },
+    );
+  }
+
+  Widget _buildEmailField() {
     return _InputField(
       controller: _emailController,
       label: 'Email Address',
       hint: 'e.g., example@email.com',
       prefixIcon: Icons.email_outlined,
       keyboardType: TextInputType.emailAddress,
-      enabled: !authState.isLoading,
+      enabled: !_isLoading,
       validator: (v) {
         if (v == null || v.isEmpty) return 'Email address is required';
         if (!v.contains('@') || !v.contains('.')) {
@@ -303,14 +464,32 @@ class _LoginPageState extends ConsumerState<LoginPage>
     );
   }
 
-  Widget _buildPasswordField(AuthState authState) {
+  Widget _buildPhoneField() {
+    return _InputField(
+      controller: _phoneController,
+      label: 'Phone Number',
+      hint: 'e.g., +250 788 000 000',
+      prefixIcon: Icons.phone_outlined,
+      keyboardType: TextInputType.phone,
+      enabled: !_isLoading,
+      validator: (v) {
+        if (v == null || v.isEmpty) return 'Phone number is required';
+        if (v.replaceAll(RegExp(r'[\s\-\+\(\)]'), '').length < 7) {
+          return 'Enter a valid phone number';
+        }
+        return null;
+      },
+    );
+  }
+
+  Widget _buildPasswordField() {
     return _InputField(
       controller: _passwordController,
       label: 'Password',
       hint: 'Enter your password',
       prefixIcon: Icons.lock_outlined,
       obscureText: _obscurePassword,
-      enabled: !authState.isLoading,
+      enabled: !_isLoading,
       suffixIcon: IconButton(
         icon: Icon(
           _obscurePassword
@@ -323,13 +502,45 @@ class _LoginPageState extends ConsumerState<LoginPage>
       ),
       validator: (v) {
         if (v == null || v.isEmpty) return 'Password is required';
-        if (v.length < 6) return 'Minimum 6 characters';
+        if (v.length < 8) return 'Minimum 8 characters';
+        if (!RegExp(r'[A-Z]').hasMatch(v)) return 'Need uppercase letter';
+        if (!RegExp(r'[a-z]').hasMatch(v)) return 'Need lowercase letter';
+        if (!RegExp(r'[0-9]').hasMatch(v)) return 'Need a number';
+        if (!RegExp(r'[!@#$%^&*()_+=\-\[\]{};:<>?/\\|`~]').hasMatch(v)) {
+          return 'Need a special character';
+        }
         return null;
       },
     );
   }
 
-  Widget _buildLoginButton(AuthState authState) {
+  Widget _buildConfirmPasswordField() {
+    return _InputField(
+      controller: _confirmPasswordController,
+      label: 'Confirm Password',
+      hint: 'Re-enter your password',
+      prefixIcon: Icons.lock_outlined,
+      obscureText: _obscureConfirm,
+      enabled: !_isLoading,
+      suffixIcon: IconButton(
+        icon: Icon(
+          _obscureConfirm
+              ? Icons.visibility_off_outlined
+              : Icons.visibility_outlined,
+          color: const Color(0xFF999999),
+          size: 20,
+        ),
+        onPressed: () => setState(() => _obscureConfirm = !_obscureConfirm),
+      ),
+      validator: (v) {
+        if (v == null || v.isEmpty) return 'Please confirm your password';
+        if (v != _passwordController.text) return 'Passwords do not match';
+        return null;
+      },
+    );
+  }
+
+  Widget _buildSignupButton() {
     return SizedBox(
       width: double.infinity,
       height: 52,
@@ -351,7 +562,7 @@ class _LoginPageState extends ConsumerState<LoginPage>
           ],
         ),
         child: ElevatedButton(
-          onPressed: authState.isLoading ? null : _handleLogin,
+          onPressed: _isLoading ? null : _handleSignup,
           style: ElevatedButton.styleFrom(
             backgroundColor: Colors.transparent,
             shadowColor: Colors.transparent,
@@ -359,7 +570,7 @@ class _LoginPageState extends ConsumerState<LoginPage>
               borderRadius: BorderRadius.circular(12),
             ),
           ),
-          child: authState.isLoading
+          child: _isLoading
               ? const SizedBox(
                   width: 24,
                   height: 24,
@@ -369,7 +580,7 @@ class _LoginPageState extends ConsumerState<LoginPage>
                   ),
                 )
               : Text(
-                  'LOGIN',
+                  'SIGN UP',
                   style: GoogleFonts.poppins(
                     fontSize: 15,
                     fontWeight: FontWeight.w700,
@@ -391,7 +602,7 @@ class _LoginPageState extends ConsumerState<LoginPage>
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 14),
           child: Text(
-            'OR CONTINUE WITH',
+            'OR SIGN UP WITH',
             style: GoogleFonts.poppins(
               fontSize: 11,
               fontWeight: FontWeight.w500,
@@ -404,13 +615,13 @@ class _LoginPageState extends ConsumerState<LoginPage>
     );
   }
 
-  Widget _buildSocialButtons(AuthState authState) {
+  Widget _buildSocialButtons() {
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
         _SocialButton(
           assetPath: 'assets/icon/google.png',
-          onTap: authState.isLoading ? () {} : () {},
+          onTap: _isLoading ? () {} : () {},
         ),
         const SizedBox(width: 16),
         _SocialButton(
@@ -426,52 +637,32 @@ class _LoginPageState extends ConsumerState<LoginPage>
     );
   }
 
-  Widget _buildFooter() {
+  Widget _buildLoginRedirect() {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    return Column(
-      children: [
-        Center(
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Text(
-                "Don't you have an account? ",
-                style: GoogleFonts.poppins(
-                  fontSize: 13,
-                  color: isDark ? Colors.white54 : const Color(0xFF666666),
-                ),
-              ),
-              GestureDetector(
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute<void>(
-                      builder: (context) => const SignupPage(),
-                    ),
-                  );
-                },
-                child: Text(
-                  'Signup',
-                  style: GoogleFonts.poppins(
-                    fontSize: 13,
-                    color: const Color(0xFF2D8CFF),
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-            ],
+    return Center(
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Text(
+            'Already have an account? ',
+            style: GoogleFonts.poppins(
+              fontSize: 13,
+              color: isDark ? Colors.white54 : const Color(0xFF666666),
+            ),
           ),
-        ),
-        const SizedBox(height: 24),
-        Text(
-          'Beta Version - Testing Only',
-          style: GoogleFonts.poppins(
-            fontSize: 11,
-            fontStyle: FontStyle.italic,
-            color: Colors.grey[600],
+          GestureDetector(
+            onTap: () => Navigator.pop(context),
+            child: Text(
+              'Sign In',
+              style: GoogleFonts.poppins(
+                fontSize: 13,
+                color: const Color(0xFF2D8CFF),
+                fontWeight: FontWeight.w600,
+              ),
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }

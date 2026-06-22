@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../services/passenger_api.dart';
+import '../../pages/passenger/public_bus_models.dart';
 
 class BusBookingScreen extends StatefulWidget {
   final int? corridorId;
