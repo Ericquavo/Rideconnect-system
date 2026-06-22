@@ -1209,50 +1209,53 @@ class _HomePageState extends State<HomePage> {
       padding: const EdgeInsets.symmetric(horizontal: 0),
       child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
-        child: Row(
-          children: [
-            // ── Private Ride (CAR - Individual) ─────────────────────────────
-            SizedBox(
-              width: 120,
-              child: _buildRideTypeCard(
-                label: _lang.t('home.private'),
-                description: _lang.t('home.privateDesc'),
-                icon: Icons.person_rounded,
-                color: const Color(0xFF6C63FF),
-                isAvailable: true,
-                onTap: () => _handleRideTypeSelected('CAR', 'PRIVATE'),
+        child: IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // ── Private Ride (CAR - Individual) ─────────────────────────────
+              SizedBox(
+                width: 120,
+                child: _buildRideTypeCard(
+                  label: _lang.t('home.private'),
+                  description: _lang.t('home.privateDesc'),
+                  icon: Icons.person_rounded,
+                  color: const Color(0xFF6C63FF),
+                  isAvailable: true,
+                  onTap: () => _handleRideTypeSelected('CAR', 'PRIVATE'),
+                ),
               ),
-            ),
-            const SizedBox(width: 12),
+              const SizedBox(width: 12),
 
-            // ── Public Ride (Shared rides) ──────────────────────────────────
-            SizedBox(
-              width: 120,
-              child: _buildRideTypeCard(
-                label: _lang.t('home.public'),
-                description: _lang.t('home.publicDesc'),
-                icon: Icons.people_rounded,
-                color: const Color(0xFF3B82F6),
-                isAvailable: true, // Placeholder for shared rides
-                onTap: () => _handleRideTypeSelected('CAR', 'SHARED'),
+              // ── Public Ride (Shared rides) ──────────────────────────────────
+              SizedBox(
+                width: 120,
+                child: _buildRideTypeCard(
+                  label: _lang.t('home.public'),
+                  description: _lang.t('home.publicDesc'),
+                  icon: Icons.people_rounded,
+                  color: const Color(0xFF3B82F6),
+                  isAvailable: true, // Placeholder for shared rides
+                  onTap: () => _handleRideTypeSelected('CAR', 'SHARED'),
+                ),
               ),
-            ),
-            const SizedBox(width: 12),
+              const SizedBox(width: 12),
 
-            // ── Motorcycle (ON_DEMAND only) ─────────────────────────────────
-            SizedBox(
-              width: 120,
-              child: _buildRideTypeCard(
-                label: _lang.t('home.motorcycle'),
-                description: _lang.t('home.motorcycleDesc'),
-                icon: Icons.two_wheeler_rounded,
-                color: const Color(0xFFEA580C),
-                isAvailable: true,
-                onTap: () =>
-                    _handleRideTypeSelected('MOTORCYCLE', 'ON_DEMAND'),
+              // ── Motorcycle (ON_DEMAND only) ─────────────────────────────────
+              SizedBox(
+                width: 120,
+                child: _buildRideTypeCard(
+                  label: _lang.t('home.motorcycle'),
+                  description: _lang.t('home.motorcycleDesc'),
+                  icon: Icons.two_wheeler_rounded,
+                  color: const Color(0xFFEA580C),
+                  isAvailable: true,
+                  onTap: () =>
+                      _handleRideTypeSelected('MOTORCYCLE', 'ON_DEMAND'),
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
