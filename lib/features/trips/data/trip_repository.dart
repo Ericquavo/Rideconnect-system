@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:flutter_polyline_points/flutter_polyline_points.dart';
 
 import '../../../../core/network/api_client.dart';
 import '../../../../core/errors/app_exception.dart';
@@ -139,7 +140,7 @@ class TripRepository {
   }
 
   Future<Trip?> currentPassengerTrip() async {
-    final response = await _api.get('/v1/mobile/trips/current');
+    final response = await _api.get('/mobile/trips/current');
     final map = response.data;
     if (map.isEmpty || map['trip'] == null && map['id'] == null) return null;
     return Trip.fromJson(
@@ -148,7 +149,7 @@ class TripRepository {
   }
 
   Future<MatchingLifecycleSnapshot?> currentPassengerMatching() async {
-    final response = await _api.get('/v1/mobile/trips/current');
+    final response = await _api.get('/mobile/trips/current');
     final map = response.data;
     if (map.isEmpty || map['trip'] == null && map['id'] == null) return null;
     return MatchingLifecycleSnapshot.fromJson(response.data);
@@ -183,8 +184,182 @@ class TripRepository {
   }
 
   Future<TripTracking> trackTrip(int id) async {
-    final response = await _api.get('/v1/mobile/trips/$id/track');
-    return TripTracking.fromJson(response.data);
+    debugPrint('[TripRepository] trackTrip called for tripId: $id');
+    try {
+      // 1. Fetch base trip details for pickup, dropoff, fare, etc.
+      Trip? baseTrip;
+      try {
+        final baseResponse = await _api.get('/passenger/trips/$id');
+        baseTrip = Trip.fromJson(baseResponse.data);
+      } catch (e) {
+        debugPrint('[TripRepository] Error fetching base trip details: $e');
+      }
+
+      // 2. Fetch V3 Active Trip & Tracking Status
+      final response = await _api.get('/v3/trips/$id/status');
+      final data = response.data['data'] ?? response.data;
+      
+      final statusVal = TripStatusX.parse(data['status']);
+      
+      // Parse driver info
+      TripDriver? driver;
+      final driverMap = data['driver'];
+      if (driverMap is Map<String, dynamic>) {
+        driver = TripDriver.fromJson(driverMap);
+      }
+      
+      // Parse vehicle info
+      TripVehicle? vehicle;
+      if (driverMap is Map<String, dynamic>) {
+        vehicle = TripVehicle.fromJson(driverMap);
+      }
+
+      final trip = Trip(
+        id: id,
+        status: statusVal,
+        pickup: baseTrip?.pickup ?? const TripLocation(label: 'Pickup'),
+        destination: baseTrip?.destination ?? const TripLocation(label: 'Destination'),
+        driver: driver ?? baseTrip?.driver,
+        vehicle: vehicle ?? baseTrip?.vehicle,
+        fare: baseTrip?.fare ?? 0,
+        etaText: data['eta']?.toString() ?? baseTrip?.etaText ?? '',
+      );
+
+      // 3. Parse driver location from status as initial fallback
+      LatLng? driverLocation;
+      double speed = 0.0;
+      double heading = 0.0;
+      String updatedAt = '';
+
+      final driverLocMap = data['driver_location'];
+      if (driverLocMap is Map<String, dynamic>) {
+        final lat = _readDouble(driverLocMap, ['lat', 'latitude']);
+        final lng = _readDouble(driverLocMap, ['lng', 'longitude']);
+        if (lat != null && lng != null) {
+          driverLocation = LatLng(lat, lng);
+        }
+        speed = _readDouble(driverLocMap, ['speed', 'velocity']) ?? 0.0;
+        heading = _readDouble(driverLocMap, ['heading', 'bearing']) ?? 0.0;
+        updatedAt = _readString(driverLocMap, ['updated_at', 'timestamp']) ?? '';
+      }
+
+      // 4. Fetch the driver's exact coordinates in real-time from GET /v3/location/live/{driverUserId}
+      final driverUserId = driver?.id ?? baseTrip?.driver?.id;
+      if (driverUserId != null && driverUserId > 0) {
+        try {
+          debugPrint('[TripRepository] Fetching live location for driver user ID: $driverUserId');
+          final liveRes = await _api.get('/v3/location/live/$driverUserId');
+          final liveData = liveRes.data['data'] ?? liveRes.data;
+          if (liveData is Map<String, dynamic>) {
+            final lat = _readDouble(liveData, ['latitude', 'lat']);
+            final lng = _readDouble(liveData, ['longitude', 'lng']);
+            if (lat != null && lng != null) {
+              debugPrint('[TripRepository] Driver live location parsed from /v3/location/live: ($lat, $lng)');
+              driverLocation = LatLng(lat, lng);
+              speed = _readDouble(liveData, ['speed', 'velocity']) ?? speed;
+              heading = _readDouble(liveData, ['heading', 'bearing']) ?? heading;
+              updatedAt = _readString(liveData, ['updated_at', 'timestamp']) ?? updatedAt;
+            }
+          }
+        } catch (e) {
+          debugPrint('[TripRepository] Error fetching live driver location from /v3/location/live/$driverUserId: $e');
+        }
+      }
+
+      // 5. Fetch actual navigation routes from backend compute-route API
+      List<LatLng> driverToPickupRoutePoints = const <LatLng>[];
+      if (driverLocation != null && trip.pickup.latLng != null) {
+        try {
+          final routeRes = await _api.post(
+            '/route/compute',
+            data: {
+              'pickup_lat': driverLocation.latitude,
+              'pickup_lng': driverLocation.longitude,
+              'dropoff_lat': trip.pickup.latLng!.latitude,
+              'dropoff_lng': trip.pickup.latLng!.longitude,
+            },
+          );
+          final routeData = routeRes.data;
+          final polylineStr = routeData['polyline'] as String?;
+          if (polylineStr != null && polylineStr.isNotEmpty) {
+            final polylinePoints = PolylinePoints().decodePolyline(polylineStr);
+            driverToPickupRoutePoints = polylinePoints.map((p) => LatLng(p.latitude, p.longitude)).toList();
+          }
+        } catch (e) {
+          debugPrint('[TripRepository] Error fetching driver to pickup route: $e');
+        }
+        if (driverToPickupRoutePoints.isEmpty) {
+          driverToPickupRoutePoints = [driverLocation, trip.pickup.latLng!];
+        }
+      }
+
+      List<LatLng> pickupToDropoffRoutePoints = const <LatLng>[];
+      if (trip.destination.latLng != null) {
+        final originLat = (statusVal == TripStatus.inProgress && driverLocation != null)
+            ? driverLocation.latitude
+            : (trip.pickup.latLng?.latitude ?? 0.0);
+        final originLng = (statusVal == TripStatus.inProgress && driverLocation != null)
+            ? driverLocation.longitude
+            : (trip.pickup.latLng?.longitude ?? 0.0);
+
+        if (originLat != 0.0 && originLng != 0.0) {
+          try {
+            final routeRes = await _api.post(
+              '/route/compute',
+              data: {
+                'pickup_lat': originLat,
+                'pickup_lng': originLng,
+                'dropoff_lat': trip.destination.latLng!.latitude,
+                'dropoff_lng': trip.destination.latLng!.longitude,
+              },
+            );
+            final routeData = routeRes.data;
+            final polylineStr = routeData['polyline'] as String?;
+            if (polylineStr != null && polylineStr.isNotEmpty) {
+              final polylinePoints = PolylinePoints().decodePolyline(polylineStr);
+              pickupToDropoffRoutePoints = polylinePoints.map((p) => LatLng(p.latitude, p.longitude)).toList();
+            }
+          } catch (e) {
+            debugPrint('[TripRepository] Error fetching pickup/driver to dropoff route: $e');
+          }
+        }
+        if (pickupToDropoffRoutePoints.isEmpty && trip.pickup.latLng != null) {
+          pickupToDropoffRoutePoints = [
+            LatLng(originLat, originLng),
+            trip.destination.latLng!,
+          ];
+        }
+      }
+
+      return TripTracking(
+        trip: trip,
+        driverLocation: driverLocation,
+        route: pickupToDropoffRoutePoints,
+        driverToPickupRoute: driverToPickupRoutePoints,
+        etaText: data['eta']?.toString() ?? '',
+        distanceText: data['distance_remaining']?.toString() ?? '',
+        speed: speed,
+        heading: heading,
+        updatedAt: updatedAt,
+      );
+    } catch (e) {
+      debugPrint('[TripRepository] Error in trackTrip for tripId $id: $e');
+      rethrow;
+    }
+  }
+
+  Future<List<Trip>> passengerTripsV3() async {
+    final response = await _api.get('/v3/trips');
+    final data = response.data['data'] ?? response.data;
+    if (data is List) {
+      return data.map((t) => Trip.fromJson(Map<String, dynamic>.from(t as Map))).toList();
+    }
+    return [];
+  }
+
+  Future<MatchingLifecycleSnapshot> getMatchingStatusV3(int tripId) async {
+    final response = await _api.get('/v3/trips/$tripId/matching-status');
+    return MatchingLifecycleSnapshot.fromJson(response.data);
   }
 
   Future<MatchingLifecycleSnapshot> lifecycleSnapshotForTrip(
@@ -274,21 +449,25 @@ class TripRepository {
   }) async {
     await _api.post(
       '/v3/trips/$tripId/pay',
-      data: {'amount': amount, 'payment_method': method},
+      data: {
+        'trip_id': tripId,
+        'payment_method': method,
+        'amount': amount,
+      },
     );
   }
 
   Future<void> storePublicTransportFeedback({
     required int tripId,
     required int rating,
-    String? comments,
+    String? comment,
   }) async {
     await _api.post(
       '/v3/trips/$tripId/rate',
       data: {
         'rating': rating,
-        if (comments != null && comments.trim().isNotEmpty)
-          'comments': comments.trim(),
+        if (comment != null && comment.trim().isNotEmpty)
+          'comment': comment.trim(),
       },
     );
   }
@@ -302,13 +481,20 @@ class TripRepository {
   }
 
   Future<List<Trip>> incomingDriverTrips() async {
-    final response = await _api.get('/v3/driver/trips/incoming');
+    final response = await _api.get('/v3/driver/trips');
     final data = response.data;
-    if (data is Map && data['trips'] != null) {
-      final trips = data['trips'];
+    if (data is Map) {
+      final trips = data['trips'] ?? data['history'] ?? data['data'];
       if (trips is List) {
-        return trips.map((t) => Trip.fromJson(t)).toList();
+        return trips
+            .map((t) => Trip.fromJson(Map<String, dynamic>.from(t as Map)))
+            .toList();
       }
+    }
+    if (data is List) {
+      return data
+          .map((t) => Trip.fromJson(Map<String, dynamic>.from(t as Map)))
+          .toList();
     }
     return [];
   }
@@ -327,9 +513,22 @@ class TripRepository {
     return Trip.fromJson(response.data);
   }
 
+  Future<Trip> startTripV3(int id) async {
+    final response = await _api.post('/v3/trips/$id/start');
+    return Trip.fromJson(response.data);
+  }
+
   Future<Trip> completeDriverTrip(int id) async {
     final response = await _api.put('/v3/trips/$id/complete');
     return Trip.fromJson(response.data);
+  }
+
+  Future<void> markDriverArrivedV3(int id) async {
+    try {
+      await _api.post('/v3/trips/$id/arrived');
+    } catch (_) {
+      await _api.put('/v3/trips/$id/arrived');
+    }
   }
 
   Future<void> updateDriverStatus(bool isOnline) async {
@@ -352,19 +551,77 @@ class TripRepository {
   }
 
   Future<List<Trip>> driverTripHistory() async {
-    final response = await _api.get('/driver/trips');
+    final response = await _api.get('/v3/driver/trips');
     final data = response.data;
-    if (data is Map && data['trips'] != null) {
-      final trips = data['trips'];
+    if (data is Map) {
+      final trips = data['trips'] ?? data['history'] ?? data['data'];
       if (trips is List) {
-        return trips.map((t) => Trip.fromJson(t)).toList();
+        return trips
+            .map((t) => Trip.fromJson(Map<String, dynamic>.from(t as Map)))
+            .toList();
       }
     }
     return [];
   }
 
   Future<Map<String, dynamic>> driverEarnings() async {
-    final response = await _api.get('/driver/earnings');
-    return response.data;
+    final response = await _api.get('/v3/driver/earnings');
+    final data = response.data;
+    if (data is Map) {
+      return Map<String, dynamic>.from(data);
+    }
+    return <String, dynamic>{};
+  }
+
+  Future<List<LatLng>> computeRoute(LatLng origin, LatLng dest) async {
+    try {
+      final routeRes = await _api.post(
+        '/route/compute',
+        data: {
+          'pickup_lat': origin.latitude,
+          'pickup_lng': origin.longitude,
+          'dropoff_lat': dest.latitude,
+          'dropoff_lng': dest.longitude,
+        },
+      );
+      final routeData = routeRes.data;
+      final polylineStr = routeData['polyline'] as String?;
+      if (polylineStr != null && polylineStr.isNotEmpty) {
+        final polylinePoints = PolylinePoints().decodePolyline(polylineStr);
+        return polylinePoints.map((p) => LatLng(p.latitude, p.longitude)).toList();
+      }
+    } catch (e) {
+      debugPrint('[TripRepository] Error computing route: $e');
+    }
+    return [origin, dest];
+  }
+
+  static double? _readDouble(Map<String, dynamic> source, List<String> keys) {
+    for (final key in keys) {
+      final value = source[key];
+      if (value is num) return value.toDouble();
+      if (value is String) return double.tryParse(value.trim());
+    }
+    return null;
+  }
+
+  static int? _readInt(Map<String, dynamic> source, List<String> keys) {
+    for (final key in keys) {
+      final value = source[key];
+      if (value is int) return value;
+      if (value is num) return value.toInt();
+      if (value is String) return int.tryParse(value.trim());
+    }
+    return null;
+  }
+
+  static String? _readString(Map<String, dynamic> source, List<String> keys) {
+    for (final key in keys) {
+      final value = source[key];
+      if (value == null) continue;
+      final text = value.toString().trim();
+      if (text.isNotEmpty) return text;
+    }
+    return null;
   }
 }

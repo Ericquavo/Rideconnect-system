@@ -182,6 +182,48 @@ class _NotificationCard extends StatelessWidget {
   final Color textPrimary;
   final Color textSecondary;
 
+  int? _extractTripId(Map<String, dynamic> source) {
+    // 1. Direct fields
+    for (final key in ['trip_id', 'ride_id', 'tripId', 'rideId', 'booking_id', 'bookingId', 'id']) {
+      final val = source[key];
+      if (val != null) {
+        final parsed = int.tryParse(val.toString());
+        if (parsed != null && parsed > 0) return parsed;
+      }
+    }
+    // 2. Data / nested fields
+    final data = source['data'];
+    if (data is Map) {
+      for (final key in ['trip_id', 'ride_id', 'tripId', 'rideId', 'booking_id', 'bookingId', 'id']) {
+        final val = data[key];
+        if (val != null) {
+          final parsed = int.tryParse(val.toString());
+          if (parsed != null && parsed > 0) return parsed;
+        }
+      }
+    }
+    // 3. Payload / nested fields
+    final payload = source['payload'];
+    if (payload is Map) {
+      for (final key in ['trip_id', 'ride_id', 'tripId', 'rideId', 'booking_id', 'bookingId', 'id']) {
+        final val = payload[key];
+        if (val != null) {
+          final parsed = int.tryParse(val.toString());
+          if (parsed != null && parsed > 0) return parsed;
+        }
+      }
+    }
+    // 4. Try parsing from message body if it has text like "Trip #123" or similar
+    final bodyText = (source['body'] ?? source['message'] ?? source['content'] ?? '').toString();
+    final match = RegExp(r'#(?:trip|ride|booking|)?\s*(\d+)', caseSensitive: false).firstMatch(bodyText);
+    if (match != null) {
+      final parsed = int.tryParse(match.group(1) ?? '');
+      if (parsed != null && parsed > 0) return parsed;
+    }
+    
+    return null;
+  }
+
   @override
   Widget build(BuildContext context) {
     final title = notification['title']?.toString()
@@ -196,83 +238,115 @@ class _NotificationCard extends StatelessWidget {
     final createdAt = notification['created_at']?.toString() ?? '';
     final isRead = notification['read_at'] != null;
 
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: isRead ? card : (isDark
-            ? const Color(0xFF6C63FF).withValues(alpha: 0.06)
-            : const Color(0xFFEEECFF)),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: isRead
-              ? (isDark ? Colors.white.withValues(alpha: 0.06) : const Color(0xFFE2E8F0))
-              : const Color(0xFF6C63FF).withValues(alpha: 0.2),
-        ),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            width: 42,
-            height: 42,
-            decoration: BoxDecoration(
-              gradient: LinearGradient(colors: _typeGradient(type)),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Icon(_typeIcon(type), color: Colors.white, size: 20),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        title,
-                        style: GoogleFonts.poppins(
-                          color: textPrimary,
-                          fontSize: 13,
-                          fontWeight: isRead ? FontWeight.w500 : FontWeight.w700,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                    if (!isRead)
-                      Container(
-                        width: 8, height: 8,
-                        decoration: const BoxDecoration(
-                          color: Color(0xFF6C63FF),
-                          shape: BoxShape.circle,
-                        ),
-                      ),
-                  ],
+    return GestureDetector(
+      onTap: () {
+        if (!isRead) {
+          final id = notification['id'];
+          if (id != null) {
+            PassengerApi.instance.markNotificationRead(id).catchError((_) => <String, dynamic>{});
+          }
+        }
+        
+        final tripId = _extractTripId(notification);
+        if (tripId != null) {
+          Navigator.pushNamed(
+            context,
+            '/trip/track/$tripId',
+          );
+        } else {
+          showDialog(
+            context: context,
+            builder: (context) => AlertDialog(
+              title: Text(title),
+              content: Text(body),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Close'),
                 ),
-                if (body.isNotEmpty) ...[
-                  const SizedBox(height: 4),
-                  Text(
-                    body,
-                    style: GoogleFonts.poppins(color: textSecondary, fontSize: 12),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ],
-                if (createdAt.isNotEmpty) ...[
-                  const SizedBox(height: 6),
-                  Text(
-                    _formatDate(createdAt),
-                    style: GoogleFonts.poppins(
-                      color: isDark ? Colors.white38 : const Color(0xFF94A3B8),
-                      fontSize: 10,
-                    ),
-                  ),
-                ],
               ],
             ),
+          );
+        }
+      },
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: isRead ? card : (isDark
+              ? const Color(0xFF6C63FF).withValues(alpha: 0.06)
+              : const Color(0xFFEEECFF)),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: isRead
+                ? (isDark ? Colors.white.withValues(alpha: 0.06) : const Color(0xFFE2E8F0))
+                : const Color(0xFF6C63FF).withValues(alpha: 0.2),
           ),
-        ],
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: 42,
+              height: 42,
+              decoration: BoxDecoration(
+                gradient: LinearGradient(colors: _typeGradient(type)),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(_typeIcon(type), color: Colors.white, size: 20),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          title,
+                          style: GoogleFonts.poppins(
+                            color: textPrimary,
+                            fontSize: 13,
+                            fontWeight: isRead ? FontWeight.w500 : FontWeight.w700,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      if (!isRead)
+                        Container(
+                          width: 8, height: 8,
+                          decoration: const BoxDecoration(
+                            color: Color(0xFF6C63FF),
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                    ],
+                  ),
+                  if (body.isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      body,
+                      style: GoogleFonts.poppins(color: textSecondary, fontSize: 12),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                  if (createdAt.isNotEmpty) ...[
+                    const SizedBox(height: 6),
+                    Text(
+                      _formatDate(createdAt),
+                      style: GoogleFonts.poppins(
+                        color: isDark ? Colors.white38 : const Color(0xFF94A3B8),
+                        fontSize: 10,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

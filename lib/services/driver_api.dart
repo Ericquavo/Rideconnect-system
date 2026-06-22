@@ -59,9 +59,9 @@ class DriverApi {
     int perPage = 20,
     bool onlyUnread = false,
   }) async {
-    final response = await _requestRoot(
+    final response = await _requestHost(
       'GET', 
-      '/notifications?page=$page&per_page=$perPage&only_unread=$onlyUnread'
+      '/api/v3/driver/notifications?page=$page&per_page=$perPage&only_unread=$onlyUnread'
     );
     return extractList(
       response,
@@ -70,7 +70,7 @@ class DriverApi {
   }
 
   Future<int> getUnreadNotificationCount() async {
-    final response = await _requestRoot('GET', '/notifications/unread-count');
+    final response = await _requestHost('GET', '/api/v3/driver/notifications/unread-count');
     final data = extractDataMap(response);
     return readInt(data, const [
       'unread_count',
@@ -80,16 +80,16 @@ class DriverApi {
   }
 
   Future<Map<String, dynamic>> markNotificationRead(dynamic id) =>
-      _requestRoot('PUT', '/notifications/$id/read', body: <String, dynamic>{});
+      _requestHost('PUT', '/api/v3/driver/notifications/$id/read', body: <String, dynamic>{});
 
   Future<Map<String, dynamic>> markAllNotificationsRead() =>
-      _requestRoot('PUT', '/notifications/read-all', body: <String, dynamic>{});
+      _requestHost('PUT', '/api/v3/driver/notifications/read-all', body: <String, dynamic>{});
 
   Future<Map<String, dynamic>> clearActionedNotifications() =>
-      _requestRoot('DELETE', '/notifications/clear-actioned');
+      _requestHost('DELETE', '/api/v3/driver/notifications/clear-actioned');
 
   Future<Map<String, dynamic>> deleteNotification(dynamic id) =>
-      _requestRoot('DELETE', '/notifications/$id');
+      _requestHost('DELETE', '/api/v3/driver/notifications/$id');
 
   Future<List<Map<String, dynamic>>> getTrips() async {
     final response = await _get('/trips');
@@ -140,9 +140,13 @@ class DriverApi {
       bookingId: bookingId,
     );
     try {
-      return await _put('/trip-requests/$id/accept', payload);
+      return await _requestHost('POST', '/api/v3/trips/$id/accept', body: payload);
     } catch (_) {
-      return _put('/requests/$id/accept', payload);
+      try {
+        return await _put('/trip-requests/$id/accept', payload);
+      } catch (_) {
+        return _put('/requests/$id/accept', payload);
+      }
     }
   }
 
@@ -159,9 +163,13 @@ class DriverApi {
       bookingId: bookingId,
     );
     try {
-      return await _put('/trip-requests/$id/reject', payload);
+      return await _requestHost('POST', '/api/v3/trips/$id/reject', body: payload);
     } catch (_) {
-      return _put('/requests/$id/reject', payload);
+      try {
+        return await _put('/trip-requests/$id/reject', payload);
+      } catch (_) {
+        return _put('/requests/$id/reject', payload);
+      }
     }
   }
 

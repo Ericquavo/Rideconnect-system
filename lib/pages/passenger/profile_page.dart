@@ -3,6 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../auth/auth_api.dart';
 import '../../auth/auth_session.dart';
 import '../../services/passenger_api.dart';
+import '../../services/location_service.dart';
 import '../../services/app_theme_service.dart';
 import '../../services/passenger_preferences_service.dart';
 import '../../services/passenger_language_service.dart';
@@ -845,6 +846,7 @@ class _ProfilePageState extends State<ProfilePage> {
     if (_isLoggingOut) return;
     setState(() => _isLoggingOut = true);
 
+    LocationService.instance.stopTracking();
     final session = await AuthSession.load();
     await AuthApi.logout(token: session?.token);
     await AuthApi.clearSession(token: session?.token);

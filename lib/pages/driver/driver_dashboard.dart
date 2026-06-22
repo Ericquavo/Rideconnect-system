@@ -24,6 +24,7 @@ import '../../features/trips/presentation/pages/driver_trip_pages.dart';
 import '../../screens/driver/driver_active_trip_screen.dart';
 import '../../screens/driver/driver_incoming_request_screen.dart';
 import '../../core/services/rtdb_service.dart';
+import '../../services/location_service.dart';
 import 'dart:convert';
 
 class DriverDashboard extends StatefulWidget {
@@ -81,7 +82,20 @@ class _DriverDashboardState extends State<DriverDashboard> {
     
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _checkActiveTrip();
+      _initLocationService();
     });
+  }
+
+  Future<void> _initLocationService() async {
+    try {
+      final session = await AuthSession.load();
+      final token = session?.token;
+      if (token != null && token.isNotEmpty) {
+        await LocationService.instance.startTracking(token);
+      }
+    } catch (e) {
+      print("Failed to initialize driver location service: $e");
+    }
   }
 
   Future<void> _checkActiveTrip() async {
@@ -94,6 +108,11 @@ class _DriverDashboardState extends State<DriverDashboard> {
       
       if (trip != null && trip.isActive) {
         if (!mounted) return;
+        
+        try {
+          await LocationService.instance.startTracking(session.token!, activeTripId: trip.id);
+        } catch (_) {}
+
         Navigator.of(context).push(
           MaterialPageRoute(
             builder: (_) => DriverActiveTripScreen(
@@ -101,7 +120,9 @@ class _DriverDashboardState extends State<DriverDashboard> {
               authToken: session.token!,
             ),
           ),
-        );
+        ).then((_) {
+          _initLocationService();
+        });
       }
     } catch (_) {
       // Ignore if no active trip or network error
@@ -110,6 +131,7 @@ class _DriverDashboardState extends State<DriverDashboard> {
 
   @override
   void dispose() {
+    LocationService.instance.stopTracking();
     _lang.languageNotifier.removeListener(_onLanguageChanged);
     DriverPreferencesService.appNotificationsNotifier.removeListener(
       _onNotificationPreferencesChanged,
@@ -548,6 +570,7 @@ class _DriverDashboardState extends State<DriverDashboard> {
   }
 
   Future<void> _logout(BuildContext context) async {
+    LocationService.instance.stopTracking();
     final session = await AuthSession.load();
     await AuthApi.logout(token: session?.token);
     await AuthApi.clearSession(token: session?.token);

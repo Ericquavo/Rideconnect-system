@@ -32,8 +32,11 @@ class MobileFlowApiService {
         filtered[k] = v.trim();
       }
     });
+    final base = path.contains('/v3/')
+        ? 'https://rideconnect-emp0.onrender.com/api'
+        : baseUrl;
     return Uri.parse(
-      '$baseUrl$path',
+      '$base$path',
     ).replace(queryParameters: filtered.isEmpty ? null : filtered);
   }
 
@@ -81,7 +84,7 @@ class MobileFlowApiService {
   }) async {
     final res = await _client
         .get(
-          _uri('/notifications', <String, String?>{
+          _uri('/v3/notifications', <String, String?>{
             'only_clearable':
                 onlyClearable == null
                     ? null
@@ -123,7 +126,7 @@ class MobileFlowApiService {
   Future<Map<String, dynamic>> clearActionedNotifications() async {
     final res = await _client
         .delete(
-          _uri('/notifications/clear-actioned'),
+          _uri('/v3/notifications/clear-actioned'),
           headers: await _headers(),
         )
         .timeout(const Duration(seconds: 20));
@@ -134,7 +137,7 @@ class MobileFlowApiService {
 
   Future<void> deleteNotification(int id) async {
     final res = await _client
-        .delete(_uri('/notifications/$id'), headers: await _headers())
+        .delete(_uri('/v3/notifications/$id'), headers: await _headers())
         .timeout(const Duration(seconds: 20));
     final envelope = _decodeMap(res);
     _ensureSuccess(res, envelope);
@@ -142,7 +145,7 @@ class MobileFlowApiService {
 
   Future<int> getUnreadCount() async {
     final res = await _client
-        .get(_uri('/notifications/unread-count'), headers: await _headers())
+        .get(_uri('/v3/notifications/unread-count'), headers: await _headers())
         .timeout(const Duration(seconds: 20));
     final envelope = _decodeMap(res);
     _ensureSuccess(res, envelope);
@@ -160,7 +163,7 @@ class MobileFlowApiService {
   Future<void> markNotificationRead(int id) async {
     final res = await _client
         .put(
-          _uri('/notifications/$id/read'),
+          _uri('/v3/notifications/$id/read'),
           headers: await _headers(),
           body: jsonEncode(<String, dynamic>{}),
         )
@@ -172,7 +175,7 @@ class MobileFlowApiService {
   Future<void> markAllNotificationsRead() async {
     final res = await _client
         .put(
-          _uri('/notifications/read-all'),
+          _uri('/v3/notifications/read-all'),
           headers: await _headers(),
           body: jsonEncode(<String, dynamic>{}),
         )
@@ -349,6 +352,7 @@ class MobileNotificationItem {
     required this.createdAt,
     required this.read,
     this.canBeCleared = false,
+    this.tripId,
   });
 
   final int id;
@@ -358,6 +362,7 @@ class MobileNotificationItem {
   final DateTime? createdAt;
   final bool read;
   final bool canBeCleared;
+  final int? tripId;
 
   factory MobileNotificationItem.fromJson(Map<String, dynamic> json) {
     return MobileNotificationItem(
@@ -377,6 +382,23 @@ class MobileNotificationItem {
           (_readString(json, <String>['status']) == 'read'),
       canBeCleared:
           _readBool(json, <String>['can_be_cleared', 'canBeCleared']) ?? false,
+      tripId: _readInt(json, <String>['trip_id', 'tripId', 'ride_id', 'rideId', 'booking_id', 'bookingId']) ??
+          (() {
+            final data = json['data'];
+            if (data is Map<String, dynamic>) {
+              return _readInt(data, <String>['trip_id', 'tripId', 'ride_id', 'rideId', 'booking_id', 'bookingId']);
+            }
+            final payload = json['payload'];
+            if (payload is Map<String, dynamic>) {
+              return _readInt(payload, <String>['trip_id', 'tripId', 'ride_id', 'rideId', 'booking_id', 'bookingId']);
+            }
+            final bodyText = (json['body'] ?? json['message'] ?? json['content'] ?? '').toString();
+            final match = RegExp(r'#(?:trip|ride|booking|)?\s*(\d+)', caseSensitive: false).firstMatch(bodyText);
+            if (match != null) {
+              return int.tryParse(match.group(1) ?? '');
+            }
+            return null;
+          })(),
     );
   }
 }

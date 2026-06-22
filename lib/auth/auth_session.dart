@@ -1,4 +1,7 @@
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'dart:convert';
+
 
 class AuthSessionData {
   final String role;
@@ -41,15 +44,34 @@ class AuthSession {
 
   static Future<AuthSessionData?> load() async {
     final prefs = await SharedPreferences.getInstance();
-    final role = prefs.getString(_kRole);
-    final name = prefs.getString(_kName);
-    final email = prefs.getString(_kEmail);
+    var role = prefs.getString(_kRole);
+    var name = prefs.getString(_kName);
+    var email = prefs.getString(_kEmail);
+    var token = prefs.getString(_kToken);
+
+    if (role == null || role.isEmpty || name == null || email == null || token == null || token.isEmpty) {
+      // Fallback: Read from FlutterSecureStorage (used by Riverpod auth flow)
+      try {
+        const secureStorage = FlutterSecureStorage();
+        final secureToken = await secureStorage.read(key: 'auth_token');
+        final secureUserJson = await secureStorage.read(key: 'auth_user');
+        if (secureToken != null && secureToken.isNotEmpty && secureUserJson != null) {
+          final userMap = jsonDecode(secureUserJson) as Map<String, dynamic>;
+          name = userMap['name']?.toString() ?? '';
+          email = userMap['email']?.toString() ?? '';
+          role = userMap['role']?.toString()?.toLowerCase() ?? '';
+          token = secureToken;
+          
+          // Sync back to SharedPreferences
+          await save(role: role, name: name, email: email, token: token);
+        }
+      } catch (_) {}
+    }
 
     if (role == null || role.isEmpty || name == null || email == null) {
       return null;
     }
 
-    final token = prefs.getString(_kToken);
     return AuthSessionData(role: role, name: name, email: email, token: token);
   }
 
@@ -59,6 +81,12 @@ class AuthSession {
     await prefs.remove(_kName);
     await prefs.remove(_kEmail);
     await prefs.remove(_kToken);
+    try {
+      const secureStorage = FlutterSecureStorage();
+      await secureStorage.delete(key: 'auth_token');
+      await secureStorage.delete(key: 'auth_user');
+      await secureStorage.delete(key: 'access_token');
+    } catch (_) {}
   }
 
   /// Returns the `Authorization: Bearer …` header map.

@@ -25,6 +25,8 @@ class _DriverNotificationsPageState extends State<DriverNotificationsPage> {
   String? _error;
   List<Map<String, dynamic>> _items = <Map<String, dynamic>>[];
   Timer? _refreshTimer;
+  final Set<String> _acceptedNotifications = <String>{};
+  final Set<String> _dbAcceptedIds = <String>{};
 
   @override
   void initState() {
@@ -103,9 +105,47 @@ class _DriverNotificationsPageState extends State<DriverNotificationsPage> {
       final data = await _api.getNotifications();
       final filtered =
           _unreadOnly ? data.where((item) => !_isRead(item)).toList() : data;
+
+      final acceptedIds = <String>{};
+
+      try {
+        final reqs = await _api.getTripRequests();
+        for (final req in reqs) {
+          final id = _extractString(req, const ['id', 'request_id', 'trip_request_id', 'trip_id']);
+          final status = _extractString(req, const ['status', 'trip_status', 'state']);
+          if (id.isNotEmpty && _isAcceptedStatus(status)) {
+            acceptedIds.add(id);
+          }
+        }
+      } catch (_) {}
+
+      try {
+        final trips = await _api.getTrips();
+        for (final trip in trips) {
+          final id = _extractString(trip, const ['id', 'trip_id', 'ride_id']);
+          final status = _extractString(trip, const ['status', 'trip_status', 'state']);
+          if (id.isNotEmpty && _isAcceptedStatus(status)) {
+            acceptedIds.add(id);
+          }
+        }
+      } catch (_) {}
+
+      try {
+        final bookings = await _api.getBookings();
+        for (final booking in bookings) {
+          final id = _extractString(booking, const ['id', 'booking_id', 'order_id']);
+          final status = _extractString(booking, const ['status', 'trip_status', 'state']);
+          if (id.isNotEmpty && _isAcceptedStatus(status)) {
+            acceptedIds.add(id);
+          }
+        }
+      } catch (_) {}
+
       if (!mounted) return;
       setState(() {
         _items = filtered;
+        _dbAcceptedIds.clear();
+        _dbAcceptedIds.addAll(acceptedIds);
         _loading = false;
       });
     } catch (e) {
@@ -115,6 +155,16 @@ class _DriverNotificationsPageState extends State<DriverNotificationsPage> {
         _loading = false;
       });
     }
+  }
+
+  bool _isAcceptedStatus(String status) {
+    final s = status.toLowerCase();
+    return s.contains('accept') ||
+        s.contains('confirm') ||
+        s.contains('progress') ||
+        s.contains('assign') ||
+        s.contains('arrive') ||
+        s.contains('complete');
   }
 
   Future<void> _markRead(Map<String, dynamic> item) async {
@@ -523,6 +573,10 @@ class _DriverNotificationsPageState extends State<DriverNotificationsPage> {
         );
       }
 
+      if (accepted) {
+        _acceptedNotifications.add(actionKey);
+      }
+
       // Attempt to notify passenger if passenger ID is available
       if (passengerId.isNotEmpty) {
         try {
@@ -735,6 +789,17 @@ class _DriverNotificationsPageState extends State<DriverNotificationsPage> {
       if (lower == 'true' || lower == '1' || lower == 'yes') return true;
       if (lower == 'false' || lower == '0' || lower == 'no') return false;
     }
+
+    // Also check if already accepted in the database
+    final rideId = _extractId(source, const ['ride_id', 'ride_request_id', 'rideId', 'rideid', 'trip_id', 'tripId']);
+    final requestId = _extractId(source, const ['request_id', 'trip_request_id', 'reference_id', 'referenceId', 'request_id_string']);
+    final bookingId = _extractId(source, const ['booking_id', 'order_id', 'orderId', 'bookingId']);
+
+    final isDbAccepted = (rideId.isNotEmpty && _dbAcceptedIds.contains(rideId)) ||
+        (requestId.isNotEmpty && _dbAcceptedIds.contains(requestId)) ||
+        (bookingId.isNotEmpty && _dbAcceptedIds.contains(bookingId));
+
+    if (isDbAccepted) return false;
 
     // Check status - pending requests need action
     final status =
@@ -1123,7 +1188,47 @@ class _DriverNotificationsPageState extends State<DriverNotificationsPage> {
     final bool? processingAction = _processingActions[notificationKey];
     final isProcessing = processingAction != null;
 
-    if (_isActionRequired(item)) {
+    final status = _extractString(item, const <String>['status']).toLowerCase();
+    
+    final rideId = _extractId(item, const ['ride_id', 'ride_request_id', 'rideId', 'rideid', 'trip_id', 'tripId']);
+    final requestId = _extractId(item, const ['request_id', 'trip_request_id', 'reference_id', 'referenceId', 'request_id_string']);
+    final bookingId = _extractId(item, const ['booking_id', 'order_id', 'orderId', 'bookingId']);
+
+    final isDbAccepted = (rideId.isNotEmpty && _dbAcceptedIds.contains(rideId)) ||
+        (requestId.isNotEmpty && _dbAcceptedIds.contains(requestId)) ||
+        (bookingId.isNotEmpty && _dbAcceptedIds.contains(bookingId));
+
+    final isAccepted = _acceptedNotifications.contains(notificationKey) ||
+        isDbAccepted ||
+        status.contains('accept') ||
+        status.contains('confirm');
+
+    if (isAccepted) {
+      buttons.add(
+        ElevatedButton.icon(
+          onPressed: null,
+          icon: const Icon(Icons.check_rounded, size: 16),
+          label: Text(
+            'Accepted',
+            style: GoogleFonts.poppins(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: const Color(0xFF3B82F6),
+            foregroundColor: Colors.white,
+            disabledBackgroundColor: const Color(0xFF3B82F6),
+            disabledForegroundColor: Colors.white,
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
+            elevation: 0,
+          ),
+        ),
+      );
+    } else if (_isActionRequired(item)) {
       buttons.add(
         ElevatedButton.icon(
           onPressed:

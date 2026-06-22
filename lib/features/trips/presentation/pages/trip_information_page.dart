@@ -8,6 +8,7 @@ import '../../domain/matching_lifecycle_models.dart';
 import '../../domain/trip_models.dart';
 import '../providers/trip_providers.dart';
 import 'trip_matching_page.dart';
+import 'live_trip_tracking_page.dart';
 
 class TripInformationPage extends ConsumerStatefulWidget {
   final int tripId;
@@ -27,7 +28,7 @@ class TripInformationPage extends ConsumerStatefulWidget {
 
 class _TripInformationPageState extends ConsumerState<TripInformationPage> with SingleTickerProviderStateMixin {
   bool _notifying = false;
-  bool _notified = false;
+  bool _isWaitingResponse = false;
   String? _error;
   late AnimationController _pulseController;
 
@@ -49,6 +50,7 @@ class _TripInformationPageState extends ConsumerState<TripInformationPage> with 
   Future<void> _notifyDriver() async {
     setState(() {
       _notifying = true;
+      _isWaitingResponse = true;
       _error = null;
     });
 
@@ -59,17 +61,19 @@ class _TripInformationPageState extends ConsumerState<TripInformationPage> with 
         tripId: widget.tripId,
         driverId: widget.selectedDriver.driverId,
       );
+      await tripRepo.notifyDriver(
+        tripId: widget.tripId,
+        driverId: widget.selectedDriver.driverId,
+      );
 
-      if (mounted) {
-        setState(() {
-          _notifying = false;
-          _notified = true;
-        });
-      }
+      setState(() {
+        _notifying = false;
+      });
     } catch (e) {
       if (mounted) {
         setState(() {
           _notifying = false;
+          _isWaitingResponse = false;
           _error = 'Failed to notify driver: ${e.toString()}';
         });
       }
@@ -87,24 +91,169 @@ class _TripInformationPageState extends ConsumerState<TripInformationPage> with 
       tripMatchingProvider(widget.tripId),
       (prev, next) {
         final snap = next.valueOrNull;
-        if (snap != null) {
-          // If driver confirms, or trip starts, transition immediately to the tracker screen
+        if (snap != null && _isWaitingResponse) {
+          debugPrint('[TripInformationPage] Real-time matching status: ${snap.status}');
           if (snap.status == MatchingLifecycleStatus.driverAcknowledged ||
               snap.status == MatchingLifecycleStatus.driverArriving ||
               snap.status == MatchingLifecycleStatus.pickedUp ||
               snap.status == MatchingLifecycleStatus.inProgress) {
+            
+            // Driver accepted! Automatically navigate to LiveTripTrackingPage
             Navigator.of(context).pushReplacement(
               MaterialPageRoute(
-                builder: (_) => TripMatchingPage(
-                  tripId: widget.tripId,
-                  initialStatus: snap.status.apiValue,
-                ),
+                builder: (_) => LiveTripTrackingPage(tripId: widget.tripId),
               ),
             );
+          } else if (snap.status == MatchingLifecycleStatus.driverRejected ||
+                     snap.status == MatchingLifecycleStatus.noDriversAvailable) {
+            // Driver rejected!
+            setState(() {
+              _isWaitingResponse = false;
+              _error = 'The driver has rejected your request. Please notify another driver or create a new request.';
+            });
           }
         }
       },
     );
+
+    if (_isWaitingResponse) {
+      return Scaffold(
+        backgroundColor: isDark ? const Color(0xFF0A0E1A) : const Color(0xFFF8F9FE),
+        appBar: AppBar(
+          title: Text(
+            'Trip Tracking',
+            style: GoogleFonts.poppins(
+              fontWeight: FontWeight.w600,
+              fontSize: 18,
+              color: isDark ? Colors.white : const Color(0xFF0F172A),
+            ),
+          ),
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          automaticallyImplyLeading: false,
+        ),
+        body: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Spacer(),
+                // Radar / Pulsing Indicator
+                Center(
+                  child: ScaleTransition(
+                    scale: Tween<double>(begin: 0.9, end: 1.1).animate(
+                      CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
+                    ),
+                    child: Container(
+                      width: 140,
+                      height: 140,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: const Color(0xFF6C63FF).withValues(alpha: 0.1),
+                        border: Border.all(color: const Color(0xFF6C63FF).withValues(alpha: 0.2), width: 2),
+                      ),
+                      child: const Center(
+                        child: Icon(
+                          Icons.notifications_active_rounded,
+                          size: 54,
+                          color: Color(0xFF6C63FF),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 40),
+                Text(
+                  'Waiting for driver response...',
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.poppins(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: isDark ? Colors.white : const Color(0xFF0F172A),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'We have notified ${widget.selectedDriver.driverName}. They are currently reviewing your ride request.',
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.poppins(
+                    fontSize: 14,
+                    color: Colors.grey,
+                  ),
+                ),
+                const SizedBox(height: 40),
+                // Show Driver Card
+                _buildInfoCard(
+                  isDark: isDark,
+                  child: Row(
+                    children: [
+                      CircleAvatar(
+                        radius: 24,
+                        backgroundColor: const Color(0xFF6C63FF).withValues(alpha: 0.1),
+                        backgroundImage: widget.selectedDriver.profilePhotoUrl != null
+                            ? NetworkImage(widget.selectedDriver.profilePhotoUrl!)
+                            : null,
+                        child: widget.selectedDriver.profilePhotoUrl == null
+                            ? const Icon(Icons.person_rounded, color: Color(0xFF6C63FF))
+                            : null,
+                      ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              widget.selectedDriver.driverName,
+                              style: GoogleFonts.poppins(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w600,
+                                color: isDark ? Colors.white : const Color(0xFF0F172A),
+                              ),
+                            ),
+                            Row(
+                              children: [
+                                const Icon(Icons.star_rounded, color: Colors.amber, size: 14),
+                                const SizedBox(width: 4),
+                                Text(
+                                  widget.selectedDriver.displayRating,
+                                  style: GoogleFonts.poppins(fontSize: 12, color: Colors.grey),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const Spacer(),
+                OutlinedButton(
+                  onPressed: () async {
+                    try {
+                      await ref.read(tripRepositoryProvider).cancelPassengerTrip(widget.tripId);
+                    } catch (_) {}
+                    if (mounted) {
+                      Navigator.of(context).pop();
+                    }
+                  },
+                  style: OutlinedButton.styleFrom(
+                    minimumSize: const Size(double.infinity, 50),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                    side: const BorderSide(color: Colors.redAccent),
+                  ),
+                  child: Text(
+                    'Cancel Request',
+                    style: GoogleFonts.poppins(color: Colors.redAccent, fontWeight: FontWeight.w600),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
 
     return Scaffold(
       backgroundColor: isDark ? const Color(0xFF0A0E1A) : const Color(0xFFF8F9FE),
@@ -125,16 +274,10 @@ class _TripInformationPageState extends ConsumerState<TripInformationPage> with 
         ),
       ),
       body: SafeArea(
-        child: matchState.when(
-          loading: () => const Center(child: CircularProgressIndicator()),
-          error: (err, _) => Center(
-            child: Text(
-              'Failed to load trip: $err',
-              style: GoogleFonts.poppins(color: const Color(0xFFFF5E5B)),
-            ),
-          ),
-          data: (snapshot) {
-            final trip = snapshot.trip;
+        child: Builder(
+          builder: (context) {
+            final snapshot = matchState.valueOrNull;
+            final trip = snapshot?.trip;
             final pickupLabel = trip?.pickup.label ?? 'Detecting pickup...';
             final destinationLabel = trip?.destination.label ?? 'Detecting destination...';
             final fareValue = trip?.fare ?? widget.initialFare ?? widget.selectedDriver.estimatedFare;
@@ -345,8 +488,47 @@ class _TripInformationPageState extends ConsumerState<TripInformationPage> with 
                   const SizedBox(height: 20),
                 ],
 
-                // Action Area: Notify Driver or Wait for Feedback
-                if (!_notified)
+                // Action Area: Notify Driver or notify another / create new request
+                if (_error != null && (_error!.contains('rejected') || _error!.contains('reject') || _error!.contains('Feedback'))) ...[
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: () => Navigator.of(context).pop(),
+                          icon: const Icon(Icons.arrow_back_rounded),
+                          label: Text(
+                            'Notify Another',
+                            style: GoogleFonts.poppins(fontSize: 14, fontWeight: FontWeight.w600),
+                          ),
+                          style: OutlinedButton.styleFrom(
+                            minimumSize: const Size(double.infinity, 56),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(28),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          onPressed: () => Navigator.of(context).popUntil((route) => route.isFirst),
+                          icon: const Icon(Icons.add_road_rounded),
+                          label: Text(
+                            'New Request',
+                            style: GoogleFonts.poppins(fontSize: 14, fontWeight: FontWeight.w600, color: Colors.white),
+                          ),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF6C63FF),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(28),
+                            ),
+                            minimumSize: const Size(double.infinity, 56),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ] else ...[
                   SizedBox(
                     width: double.infinity,
                     height: 56,
@@ -372,44 +554,8 @@ class _TripInformationPageState extends ConsumerState<TripInformationPage> with 
                         elevation: 2,
                       ),
                     ),
-                  )
-                else
-                  // Widget stating "Wait for driver Feedback"
-                  ScaleTransition(
-                    scale: Tween<double>(begin: 0.95, end: 1.05).animate(
-                      CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
-                    ),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFFFFBEB),
-                        border: Border.all(color: const Color(0xFFF59E0B).withOpacity(0.4), width: 1.5),
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          const SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2.5,
-                              valueColor: AlwaysStoppedAnimation<Color>(Color(0xFFF59E0B)),
-                            ),
-                          ),
-                          const SizedBox(width: 14),
-                          Text(
-                            'Wait for driver Feedback',
-                            style: GoogleFonts.poppins(
-                              color: const Color(0xFFB45309),
-                              fontWeight: FontWeight.w700,
-                              fontSize: 15,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
                   ),
+                ],
                 const SizedBox(height: 24),
               ],
             );

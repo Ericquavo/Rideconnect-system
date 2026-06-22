@@ -16,6 +16,9 @@ import '../../core/config/feature_flags.dart';
 import '../../features/transport_order/presentation/screens/create_transport_order_screen.dart';
 import '../../features/transport_order/presentation/screens/transport_history_screen.dart';
 
+import '../../services/location_service.dart';
+import '../../auth/auth_session.dart';
+
 /// Main Passenger Dashboard — hosts the bottom navigation and all sub-pages.
 class PassengerDashboard extends StatefulWidget {
   final String passengerName;
@@ -63,7 +66,20 @@ class _PassengerDashboardState extends State<PassengerDashboard> {
     
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _checkActiveTrip();
+      _initLocationService();
     });
+  }
+
+  Future<void> _initLocationService() async {
+    try {
+      final session = await AuthSession.load();
+      final token = session?.token;
+      if (token != null && token.isNotEmpty) {
+        await LocationService.instance.startTracking(token);
+      }
+    } catch (e) {
+      print("Failed to initialize passenger location service: $e");
+    }
   }
 
   Future<void> _checkActiveTrip() async {
@@ -101,6 +117,7 @@ class _PassengerDashboardState extends State<PassengerDashboard> {
     PassengerPreferencesService.autoRefreshDashboardNotifier.removeListener(
       _onNotificationPreferencesChanged,
     );
+    LocationService.instance.stopTracking();
     _notificationTimer?.cancel();
     super.dispose();
   }

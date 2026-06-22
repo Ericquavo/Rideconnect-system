@@ -254,74 +254,102 @@ class _NotificationsPageState extends State<NotificationsPage> {
                 )
               else
                 ..._items.map(
-                  (item) => Container(
-                    margin: const EdgeInsets.only(top: 10),
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: cardBg,
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(
-                        color:
-                            item.read
-                                ? Colors.transparent
-                                : const Color(
-                                  0xFF6C63FF,
-                                ).withValues(alpha: 0.45),
+                  (item) => GestureDetector(
+                    onTap: () {
+                      if (!item.read) {
+                        _markRead(item);
+                      }
+                      
+                      if (item.tripId != null) {
+                        Navigator.pushNamed(
+                          context,
+                          '/trip/track/${item.tripId}',
+                        );
+                      } else {
+                        showDialog(
+                          context: context,
+                          builder: (context) => AlertDialog(
+                            title: Text(item.title),
+                            content: Text(item.body),
+                            actions: [
+                              TextButton(
+                                onPressed: () => Navigator.pop(context),
+                                child: const Text('Close'),
+                              ),
+                            ],
+                          ),
+                        );
+                      }
+                    },
+                    child: Container(
+                      margin: const EdgeInsets.only(top: 10),
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: cardBg,
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(
+                          color:
+                              item.read
+                                  ? Colors.transparent
+                                  : const Color(
+                                    0xFF6C63FF,
+                                  ).withValues(alpha: 0.45),
+                        ),
                       ),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                item.title,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: GoogleFonts.poppins(
-                                  color: textPrimary,
-                                  fontWeight: FontWeight.w600,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  item.title,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: GoogleFonts.poppins(
+                                    color: textPrimary,
+                                    fontWeight: FontWeight.w600,
+                                  ),
                                 ),
                               ),
-                            ),
-                            const SizedBox(width: 8),
-                            Text(
-                              _timeLabel(item.createdAt),
-                              style: GoogleFonts.poppins(
-                                color: textSecondary,
-                                fontSize: 11,
+                              const SizedBox(width: 8),
+                              Text(
+                                _timeLabel(item.createdAt),
+                                style: GoogleFonts.poppins(
+                                  color: textSecondary,
+                                  fontSize: 11,
+                                ),
                               ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          item.body,
-                          style: GoogleFonts.poppins(color: textSecondary),
-                        ),
-                        const SizedBox(height: 10),
-                        Wrap(
-                          spacing: 8,
-                          runSpacing: 6,
-                          children: [
-                            if (!item.read)
+                            ],
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            item.body,
+                            style: GoogleFonts.poppins(color: textSecondary),
+                          ),
+                          const SizedBox(height: 10),
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 6,
+                            children: [
+                              if (!item.read)
+                                OutlinedButton.icon(
+                                  onPressed: () => _markRead(item),
+                                  icon: const Icon(Icons.done_rounded, size: 16),
+                                  label: Text(_lang.t('notifications.markRead')),
+                                ),
                               OutlinedButton.icon(
-                                onPressed: () => _markRead(item),
-                                icon: const Icon(Icons.done_rounded, size: 16),
-                                label: Text(_lang.t('notifications.markRead')),
+                                onPressed: () => _deleteItem(item),
+                                icon: const Icon(
+                                  Icons.delete_outline_rounded,
+                                  size: 16,
+                                ),
+                                label: Text(_lang.t('notifications.delete')),
                               ),
-                            OutlinedButton.icon(
-                              onPressed: () => _deleteItem(item),
-                              icon: const Icon(
-                                Icons.delete_outline_rounded,
-                                size: 16,
-                              ),
-                              label: Text(_lang.t('notifications.delete')),
-                            ),
-                          ],
-                        ),
-                      ],
+                            ],
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ),

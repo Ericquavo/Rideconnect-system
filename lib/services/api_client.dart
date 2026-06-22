@@ -3,6 +3,7 @@
 import 'package:dio/dio.dart';
 import 'package:rideconnect_app/config/api_config.dart'; // adjust import path if needed
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:logger/logger.dart';
 
 class ApiClient {
@@ -28,7 +29,22 @@ class ApiClient {
   void _addInterceptors() {
     // Authorization interceptor
     dio.interceptors.add(InterceptorsWrapper(onRequest: (options, handler) async {
-      final token = await _storage.read(key: 'access_token');
+      String? token;
+      try {
+        token = await _storage.read(key: 'auth_token');
+        if (token == null || token.isEmpty) {
+          token = await _storage.read(key: 'access_token');
+        }
+      } catch (_) {}
+
+      // SharedPreferences fallback
+      if (token == null || token.isEmpty) {
+        try {
+          final prefs = await SharedPreferences.getInstance();
+          token = prefs.getString('auth.token') ?? prefs.getString('auth_token');
+        } catch (_) {}
+      }
+
       if (token != null && token.isNotEmpty) {
         options.headers[ApiHeaders.authorization] = 'Bearer $token';
       }

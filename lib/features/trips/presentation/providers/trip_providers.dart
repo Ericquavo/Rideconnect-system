@@ -1,6 +1,6 @@
 import 'dart:async';
-
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 import '../../../../core/network/api_client.dart';
 import '../../data/trip_lifecycle_service.dart';
@@ -69,7 +69,7 @@ class TripTrackingNotifier
   @override
   Future<TripTracking> build(int arg) async {
     ref.onDispose(() => _timer?.cancel());
-    _timer = Timer.periodic(const Duration(seconds: 8), (_) => refresh());
+    _timer = Timer.periodic(const Duration(seconds: 3), (_) => refresh());
     return ref.read(tripRepositoryProvider).trackTrip(arg);
   }
 
@@ -204,3 +204,63 @@ class MotorVehicleTripMatchingRequest {
   @override
   int get hashCode => Object.hash(tripId, initialStatus, initialMatchingStatus);
 }
+
+final driverLocationProvider = StateNotifierProvider.family.autoDispose<DriverLocationNotifier, AsyncValue<LatLng?>, int>(
+  (ref, driverId) => DriverLocationNotifier(ref, driverId),
+);
+
+class DriverLocationNotifier extends StateNotifier<AsyncValue<LatLng?>> {
+  DriverLocationNotifier(this.ref, this.driverId) : super(const AsyncValue.loading()) {
+    _timer = Timer.periodic(const Duration(seconds: 3), (_) => fetchLocation());
+    fetchLocation();
+  }
+
+  final Ref ref;
+  final int driverId;
+  Timer? _timer;
+
+  Future<void> fetchLocation() async {
+    try {
+      final repo = ref.read(tripRepositoryProvider);
+      final response = await repo.lifecycleSnapshotForTrip(driverId); // fallback status check or location check
+      // We can hit /v3/location/live/{driverId} or status
+      final liveRes = await ref.read(apiClientProvider).get('/v3/location/live/$driverId');
+      final liveData = liveRes.data['data'] ?? liveRes.data;
+      if (liveData is Map<String, dynamic>) {
+        final lat = double.tryParse(liveData['latitude']?.toString() ?? liveData['lat']?.toString() ?? '');
+        final lng = double.tryParse(liveData['longitude']?.toString() ?? liveData['lng']?.toString() ?? '');
+        if (lat != null && lng != null) {
+          state = AsyncValue.data(LatLng(lat, lng));
+          return;
+        }
+      }
+      state = const AsyncValue.data(null);
+    } catch (e, st) {
+      // Fallback to /v3/location/{userId} if live endpoint fails
+      try {
+        final res = await ref.read(apiClientProvider).get('/v3/location/$driverId');
+        final data = res.data['data'] ?? res.data;
+        if (data is Map<String, dynamic>) {
+          final lat = double.tryParse(data['latitude']?.toString() ?? data['lat']?.toString() ?? '');
+          final lng = double.tryParse(data['longitude']?.toString() ?? data['lng']?.toString() ?? '');
+          if (lat != null && lng != null) {
+            state = AsyncValue.data(LatLng(lat, lng));
+            return;
+          }
+        }
+      } catch (_) {}
+      state = AsyncValue.error(e, st);
+    }
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+}
+
+final routeProvider = FutureProvider.family.autoDispose<List<LatLng>, (LatLng, LatLng)>((ref, coords) async {
+  final repo = ref.read(tripRepositoryProvider);
+  return repo.computeRoute(coords.$1, coords.$2);
+});

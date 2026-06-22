@@ -248,7 +248,12 @@ class Trip {
     'fare': fare,
     // Add more fields as needed for UI
   };
-  factory Trip.fromJson(Map<String, dynamic> json) {
+  factory Trip.fromJson(Map<String, dynamic> rawJson) {
+    final json = rawJson['data'] is Map<String, dynamic>
+        ? rawJson['data'] as Map<String, dynamic>
+        : (rawJson['trip'] is Map<String, dynamic>
+            ? rawJson['trip'] as Map<String, dynamic>
+            : rawJson);
     final driver = json['driver'];
     final vehicle = json['vehicle'];
     return Trip(
@@ -319,13 +324,23 @@ class TripTracking {
     required this.trip,
     this.driverLocation,
     this.route = const <LatLng>[],
+    this.driverToPickupRoute = const <LatLng>[],
     this.etaText = '',
+    this.distanceText = '',
+    this.speed = 0.0,
+    this.heading = 0.0,
+    this.updatedAt = '',
   });
 
   final Trip trip;
   final LatLng? driverLocation;
   final List<LatLng> route;
+  final List<LatLng> driverToPickupRoute;
   final String etaText;
+  final String distanceText;
+  final double speed;
+  final double heading;
+  final String updatedAt;
 
   factory TripTracking.fromJson(Map<String, dynamic> json) {
     final tripMap =
@@ -352,7 +367,12 @@ class TripTracking {
       trip: Trip.fromJson(tripMap),
       driverLocation: lat == null || lng == null ? null : LatLng(lat, lng),
       route: route,
+      driverToPickupRoute: const <LatLng>[],
       etaText: _readString(json, ['eta', 'eta_text', 'duration']) ?? '',
+      distanceText: _readString(json, ['distance_remaining', 'distance']) ?? '',
+      speed: _readDouble(driverMap, ['speed', 'velocity']) ?? 0.0,
+      heading: _readDouble(driverMap, ['heading', 'bearing']) ?? 0.0,
+      updatedAt: _readString(json, ['updated_at', 'timestamp']) ?? '',
     );
   }
 }
