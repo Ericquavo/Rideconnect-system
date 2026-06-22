@@ -1219,11 +1219,8 @@ class _HomePageState extends State<HomePage> {
                 description: _lang.t('home.privateDesc'),
                 icon: Icons.person_rounded,
                 color: const Color(0xFF6C63FF),
-                isAvailable: _rideTypeFallbackMode || _carRides.isNotEmpty,
-                onTap:
-                    (_rideTypeFallbackMode || _carRides.isNotEmpty)
-                        ? () => _handleRideTypeSelected('CAR', 'PRIVATE')
-                        : null,
+                isAvailable: true,
+                onTap: () => _handleRideTypeSelected('CAR', 'PRIVATE'),
               ),
             ),
             const SizedBox(width: 12),
@@ -1250,13 +1247,9 @@ class _HomePageState extends State<HomePage> {
                 description: _lang.t('home.motorcycleDesc'),
                 icon: Icons.two_wheeler_rounded,
                 color: const Color(0xFFEA580C),
-                isAvailable:
-                    _rideTypeFallbackMode || _motorcycleRides.isNotEmpty,
-                onTap:
-                    (_rideTypeFallbackMode || _motorcycleRides.isNotEmpty)
-                        ? () =>
-                            _handleRideTypeSelected('MOTORCYCLE', 'ON_DEMAND')
-                        : null,
+                isAvailable: true,
+                onTap: () =>
+                    _handleRideTypeSelected('MOTORCYCLE', 'ON_DEMAND'),
               ),
             ),
           ],
