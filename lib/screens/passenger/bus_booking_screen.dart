@@ -68,8 +68,24 @@ class _BusBookingScreenState extends State<BusBookingScreen> {
       }
     } catch (e) {
       if (mounted) {
+        debugPrint('[BusBookingScreen] booking error: $e');
+        String errMsg = e.toString().replaceFirst('Exception: ', '');
+        if (e is PassengerApiException) {
+          if (e.fieldErrors.isNotEmpty) {
+            errMsg = e.fieldErrors.values.first;
+          } else if (e.errorCode != null && e.errorCode!.isNotEmpty) {
+            final msg = publicBusErrorMessage(e.errorCode);
+            if (msg != 'Something went wrong. Please try again.') {
+              errMsg = msg;
+            } else if (e.message.isNotEmpty) {
+              errMsg = e.message;
+            }
+          } else if (e.message.isNotEmpty) {
+            errMsg = e.message;
+          }
+        }
         setState(() {
-          _error = e.toString().replaceFirst('Exception: ', '');
+          _error = errMsg;
           _isBooking = false;
         });
       }

@@ -580,17 +580,27 @@ class _PublicBusBookingPageState extends State<PublicBusBookingPage> {
 
   String _friendlyError(Object error) {
     if (error is PassengerApiException) {
+      debugPrint('[PublicBusBookingPage] Booking error: message="${error.message}", code="${error.errorCode}", statusCode=${error.statusCode}, fieldErrors=${error.fieldErrors}, raw=${error.raw}');
+      if (error.fieldErrors.isNotEmpty) {
+        return error.fieldErrors.values.first;
+      }
       if (error.errorCode != null && error.errorCode!.isNotEmpty) {
-        return publicBusErrorMessage(error.errorCode);
+        final mapped = publicBusErrorMessage(error.errorCode);
+        if (mapped != 'Something went wrong. Please try again.') {
+          return mapped;
+        }
       }
       if (error.isForbidden) {
         return 'You are not allowed to book a bus seat.';
       }
       if (error.isValidationError) {
-        return 'We could not book this bus seat. Please check your selection and try again.';
+        return error.message.isNotEmpty && error.message != 'Request failed (422)'
+            ? error.message
+            : 'We could not book this bus seat. Please check your selection and try again.';
       }
       return error.message;
     }
+    debugPrint('[PublicBusBookingPage] Unexpected booking error: $error');
     return error.toString().replaceFirst('Exception: ', '');
   }
 
